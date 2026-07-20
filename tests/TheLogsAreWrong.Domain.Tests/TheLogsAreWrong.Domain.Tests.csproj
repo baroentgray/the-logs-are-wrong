@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\TheLogsAreWrong.Domain\TheLogsAreWrong.Domain.csproj" />
+    <ProjectReference Include="..\..\src\TheLogsAreWrong.Config.Yaml\TheLogsAreWrong.Config.Yaml.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="18.8.1" />
+    <PackageReference Include="xunit.v3" Version="3.2.2" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="3.1.5">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
+  </ItemGroup>
+  <ItemGroup>
+    <Content Include="..\..\data\*.yaml" CopyToOutputDirectory="PreserveNewest" Link="Fixtures\%(Filename)%(Extension)" />
+    <Content Include="..\..\src\TheLogsAreWrong.Config.Yaml\YamlConfigurationLoader.cs" CopyToOutputDirectory="PreserveNewest" Link="ProductionSources\YamlConfigurationLoader.cs" />
+    <Content Include="..\..\src\TheLogsAreWrong.Config.Yaml\Parsing\YamlDocumentParser.cs" CopyToOutputDirectory="PreserveNewest" Link="ProductionSources\YamlDocumentParser.cs" />
+  </ItemGroup>
+</Project>
