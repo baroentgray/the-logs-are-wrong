@@ -1,0 +1,36 @@
+{
+  "package": "the_logs_are_wrong_gate0_v1_2",
+  "source_design": "the_logs_are_wrong_design_v5_2.md",
+  "file_count": 29,
+  "status": "APPROVED_FOR_GATE_1",
+  "includes_source_design": true,
+  "review_prompts": [
+    "CODEX_FEASIBILITY_PROMPT.md",
+    "CLAUDE_RED_TEAM_PROMPT.md"
+  ],
+  "codex_verdict": "FEASIBLE_WITH_CHANGES",
+  "claude_verdict": "APPROVE_WITH_CHANGES",
+  "claude_findings_closed": true,
+  "sergey_decisions": {
+    "learning_deadline_seconds": 840,
+    "containment_interval_inference": "accepted_without_jitter"
+  },
+  "approved_by": "Sergey",
+  "approved_date": "2026-07-19",
+  "change_type": "branding_only",
+  "software_requirements_added": true,
+  "version": "1.2",
+  "project_title": "THE LOGS ARE WRONG",
+  "tagline": "Quota still applies.",
+  "repository_slug": "the-logs-are-wrong",
+  "root_namespace": "TheLogsAreWrong",
+  "internal_code": "TLAW",
+  "branding_approved_by": "Sergey",
+  "branding_approved_date": "2026-07-20",
+  "gate0_reopened": false,
+  "legacy_lineage": {
+    "previous_package": "nochnaya_smena_gate0_v1_1",
+    "previous": "nochnaya_smena_gate0_v1_0",
+    "source_draft": "nochnaya_smena_gate0_draft_0_3"
+  }
+}

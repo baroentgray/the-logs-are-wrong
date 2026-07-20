@@ -1,0 +1,13 @@
+schema_version: 1
+profiles:
+  LOCAL_ROUTINE: {executor: local, actual_model: '<fill locally>', reasoning: low, max_risk: low}
+  CODEX_FAST: {executor: codex, actual_model: '<fast Codex model>', reasoning: low, max_risk: low}
+  CODEX_STANDARD: {executor: codex, actual_model: '<standard Codex model>', reasoning: medium, max_risk: medium}
+  CODEX_DEEP: {executor: codex, actual_model: '<strong Codex model>', reasoning: high, max_risk: high}
+  CLAUDE_REVIEW: {executor: claude, actual_model: '<strong review model>', reasoning: high, max_risk: high}
+  CLAUDE_ARCHITECT: {executor: claude, actual_model: '<strongest architecture model>', reasoning: max, max_risk: high}
+  CLAUDE_BLENDER: {executor: claude, actual_model: '<model with Blender tools>', reasoning: high, max_risk: high}
+routing_rules:
+  automatic_fallback_must_not_be_more_expensive: true
+  stronger_profile_requires_checkpoint: true
+  unknown_quota_treated_as: yellow

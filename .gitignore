@@ -1,0 +1,44 @@
+# ---------------------------------------------------------------------------
+# THE LOGS ARE WRONG (TLAW)
+# Minimal ignore set prepared for future .NET / Unity work.
+# Gate 0 documents, contracts and scripts stay tracked.
+# ---------------------------------------------------------------------------
+
+# --- IDEs ---
+.vs/
+.idea/
+.vscode/
+
+# --- .NET build output ---
+bin/
+obj/
+[Oo]bj/
+TestResults/
+*.user
+*.suo
+
+# --- Generic build output ---
+[Bb]uild/
+[Bb]uilds/
+
+# --- Unity ---
+[Ll]ibrary/
+[Tt]emp/
+UserSettings/
+MemoryCaptures/
+Recordings/
+
+# --- Logs, caches, temporary files ---
+[Ll]ogs/
+*.log
+*.tmp
+
+# --- Secrets / local environment ---
+.env
+.env.*
+!.env.example
+
+# --- Local AI configuration (examples stay tracked) ---
+.ai/model-profiles.yaml
+.ai/run-context.yaml
+.claude/settings.local.json

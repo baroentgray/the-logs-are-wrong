@@ -1,0 +1,140 @@
+schema_version: 2
+shift_id: P0_SHIFT_A
+seed: 47001
+profiles:
+  learning:
+    intake_timeout_seconds: 60
+    hard_shift_deadline_seconds: 840
+  pressure:
+    intake_timeout_seconds: 45
+    hard_shift_deadline_seconds: 600
+objectives:
+  quota:
+    total: 9
+    by_species:
+      pine: 5
+      oak: 4
+  min_correctly_processed_anomalies: 2
+supply:
+  total: 12
+  free_writeoff_buffer: 3
+scheduler:
+  capacities:
+    feed_gate: 1
+    intake: 1
+    procedure: 1
+    saw_queue: 1
+    saw: 1
+    containment: unlimited
+  initial_admission_delay_seconds: 0
+  normal_feed_delay_seconds: 5
+  early_feed_delay_seconds: 2
+  saw_cycle_seconds: 6
+  repair_hold_seconds: 6
+  movement_noise_seconds: 2
+  default_timeout_route: saw_queue
+  same_tick_order:
+  - hold_and_procedure_completions
+  - accepted_intents_by_server_receive_sequence
+  - deadline_expirations
+  - saw_transitions
+  - feed_and_auto_routes
+  - derived_states
+  - event_emission
+line_noise:
+  quiet_when_all_inactive:
+  - saw
+  - movement_noise
+  - repair
+  penitent_confirm_requires_continuous_quiet_seconds: 4
+  reset_test_progress_when_loud: true
+  pause_intake_timer_during_test: false
+resources:
+  consumable:
+    holy_water: 2
+    salt: 2
+    red_tape: 2
+  reusable:
+  - sound_meter
+  - choir_cassette
+  - scale
+  - caliper
+  - relabel_stamp
+  - hamster_statue
+containment:
+  unlimited_capacity: true
+  ritual_hold_seconds: 4
+  service_requested_grace_seconds: 20
+  overdue_seconds: 10
+  interval_by_danger_weight:
+    '1': 90
+    '2': 75
+    3_or_more: 60
+  after_successful_ritual:
+    return_state: STABLE
+    retain_logs: true
+    retain_danger_weight: true
+    restart_interval_from_current_weight: true
+  prototype_incident:
+    type: forced_line_pause
+    duration_seconds: 8
+    remains_incident_until_ritual: true
+    repeat_before_resolution: false
+  post_facto_interval_inference:
+    allowed: true
+    rationale: legal deduction after irreversible writeoff; exact countdown is not
+      shown
+    seeded_jitter: false
+success_predicate:
+  all:
+  - quota_by_species_met
+  - correctly_processed_anomalies_at_least_2
+manifest:
+- id: log_01
+  true_species: pine
+  declared_species: pine
+  anomaly: none
+- id: log_02
+  true_species: oak
+  declared_species: oak
+  anomaly: none
+- id: log_03
+  true_species: pine
+  declared_species: pine
+  anomaly: PENITENT_TRUNK
+- id: log_04
+  true_species: pine
+  declared_species: pine
+  anomaly: none
+- id: log_05
+  true_species: oak
+  declared_species: pine
+  anomaly: FALSE_SPECIES
+- id: log_06
+  true_species: oak
+  declared_species: oak
+  anomaly: RESIN_BLASPHEMER
+- id: log_07
+  true_species: oak
+  declared_species: oak
+  anomaly: none
+- id: log_08
+  true_species: oak
+  declared_species: oak
+  anomaly: PENITENT_TRUNK
+- id: log_09
+  true_species: pine
+  declared_species: pine
+  anomaly: none
+- id: log_10
+  true_species: pine
+  declared_species: pine
+  anomaly: RESIN_BLASPHEMER
+- id: log_11
+  true_species: oak
+  declared_species: oak
+  anomaly: none
+- id: log_12
+  true_species: pine
+  declared_species: pine
+  anomaly: none

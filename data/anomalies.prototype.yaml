@@ -1,0 +1,136 @@
+schema_version: 2
+anomalies:
+  PENITENT_TRUNK:
+    danger_weight: 1
+    instant_clues:
+    - dark_resin
+    - cold_bark
+    observed_clues:
+    - whisper_under_line_noise
+    confirm_test:
+      required_line_noise: QUIET
+      duration_seconds: 4
+      continuous: true
+      reset_when_condition_lost: true
+      result: spoken_names_detected
+      tools:
+      - sound_meter
+    processing:
+      required_flags:
+      - SANITIZED_PENITENT
+      route_without_flags: allowed
+      on_correct:
+        terminal_state: PROCESSED
+        quota_credit:
+          species: true_species
+          units: 1
+        correct_anomaly_delta: 1
+        effects: []
+      on_incorrect:
+        terminal_state: PROCESSED
+        quota_credit:
+          species: none
+          units: 0
+        correct_anomaly_delta: 0
+        effects:
+        - type: time_penalty
+          event: FALSE_PA_ANNOUNCEMENT
+          duration_seconds: 8
+    procedure:
+      steps:
+      - item: holy_water
+        hold_seconds: 3
+        consumes: true
+      grants_flags:
+      - SANITIZED_PENITENT
+  RESIN_BLASPHEMER:
+    danger_weight: 1
+    instant_clues:
+    - amber_resin
+    - incense_odor
+    observed_clues:
+    - faint_choir
+    confirm_test:
+      duration_seconds: 4
+      continuous: true
+      result: choir_resonance
+      tools:
+      - choir_cassette
+    processing:
+      required_flags:
+      - SEALED_RESIN
+      route_without_flags: allowed
+      on_correct:
+        terminal_state: PROCESSED
+        quota_credit:
+          species: true_species
+          units: 1
+        correct_anomaly_delta: 1
+        effects: []
+      on_incorrect:
+        terminal_state: PROCESSED
+        quota_credit:
+          species: none
+          units: 0
+        correct_anomaly_delta: 0
+        effects:
+        - type: lock
+          event: RESIN_BUTTON_LOCK
+          target: nearest_line_button
+          duration_seconds: 10
+    procedure:
+      steps:
+      - item: salt
+        consumes: true
+      - item: red_tape
+        consumes: true
+      grants_flags:
+      - SEALED_RESIN
+    wrong_actions:
+      holy_water:
+        terminal_state: unchanged
+        effects:
+        - type: lock
+          event: RESIN_BUTTON_LOCK
+          target: nearest_line_button
+          duration_seconds: 10
+        consumes: true
+  FALSE_SPECIES:
+    danger_weight: 0
+    instant_clues:
+    - texture_document_mismatch
+    observed_clues:
+    - suspicious_mass
+    confirm_test:
+      tools:
+      - scale
+      - caliper
+      duration_seconds: 6
+      continuous: false
+      result: true_species_identified
+    processing:
+      required_flags:
+      - CORRECTLY_RELABELED
+      route_without_flags: allowed
+      on_correct:
+        terminal_state: PROCESSED
+        quota_credit:
+          species: true_species
+          units: 1
+        correct_anomaly_delta: 1
+        effects: []
+      on_incorrect:
+        terminal_state: PROCESSED
+        quota_credit:
+          species: declared_species
+          units: 1
+        correct_anomaly_delta: 0
+        effects:
+        - type: miscredit
+          event: CREDIT_TO_DECLARED_SPECIES
+    procedure:
+      steps:
+      - item: relabel_stamp
+        consumes: false
+      grants_flags:
+      - CORRECTLY_RELABELED
