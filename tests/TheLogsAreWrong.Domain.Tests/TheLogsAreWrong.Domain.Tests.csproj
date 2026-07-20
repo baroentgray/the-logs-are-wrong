@@ -18,5 +18,7 @@
     <Content Include="..\..\data\*.yaml" CopyToOutputDirectory="PreserveNewest" Link="Fixtures\%(Filename)%(Extension)" />
     <Content Include="..\..\src\TheLogsAreWrong.Config.Yaml\YamlConfigurationLoader.cs" CopyToOutputDirectory="PreserveNewest" Link="ProductionSources\YamlConfigurationLoader.cs" />
     <Content Include="..\..\src\TheLogsAreWrong.Config.Yaml\Parsing\YamlDocumentParser.cs" CopyToOutputDirectory="PreserveNewest" Link="ProductionSources\YamlDocumentParser.cs" />
+    <Content Include="..\..\src\TheLogsAreWrong.Domain\**\*.cs" Exclude="..\..\src\TheLogsAreWrong.Domain\bin\**\*;..\..\src\TheLogsAreWrong.Domain\obj\**\*" CopyToOutputDirectory="PreserveNewest" Link="DomainSources\%(RecursiveDir)%(Filename)%(Extension)" />
+    <Content Include="..\..\src\TheLogsAreWrong.Domain\TheLogsAreWrong.Domain.csproj" CopyToOutputDirectory="PreserveNewest" Link="DomainSources\TheLogsAreWrong.Domain.csproj" />
   </ItemGroup>
 </Project>
