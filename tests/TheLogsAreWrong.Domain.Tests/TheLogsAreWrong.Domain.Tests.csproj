@@ -16,5 +16,7 @@
   </ItemGroup>
   <ItemGroup>
     <Content Include="..\..\data\*.yaml" CopyToOutputDirectory="PreserveNewest" Link="Fixtures\%(Filename)%(Extension)" />
+    <Content Include="..\..\src\TheLogsAreWrong.Config.Yaml\YamlConfigurationLoader.cs" CopyToOutputDirectory="PreserveNewest" Link="ProductionSources\YamlConfigurationLoader.cs" />
+    <Content Include="..\..\src\TheLogsAreWrong.Config.Yaml\Parsing\YamlDocumentParser.cs" CopyToOutputDirectory="PreserveNewest" Link="ProductionSources\YamlDocumentParser.cs" />
   </ItemGroup>
 </Project>

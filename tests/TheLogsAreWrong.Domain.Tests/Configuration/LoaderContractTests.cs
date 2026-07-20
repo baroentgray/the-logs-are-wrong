@@ -1,4 +1,5 @@
 using TheLogsAreWrong.Config.Yaml;
+using TheLogsAreWrong.Domain.Configuration.Diagnostics;
 
 namespace TheLogsAreWrong.Domain.Tests.Configuration;
 
@@ -33,11 +34,26 @@ public sealed class LoaderContractTests
     public void Diagnostics_are_sorted_by_the_document_code_path_and_message_contract()
     {
         var loader = new YamlConfigurationLoader();
-        var result = loader.Load("schema_version: 3", "schema_version: 3");
+        var shift = Fixture.ShiftYaml
+            .Replace("  total: 12", "  total: 11", StringComparison.Ordinal);
+        var anomalies = Fixture.AnomaliesYaml
+            .Replace("    danger_weight: 1", "    danger_weight: -1", StringComparison.Ordinal);
 
-        Assert.Collection(
-            result.Diagnostics,
-            diagnostic => Assert.Equal(("TLAW-CFG-004", "schema_version"), (diagnostic.Code, diagnostic.Path)),
-            diagnostic => Assert.Equal(("TLAW-CFG-004", "schema_version"), (diagnostic.Code, diagnostic.Path)));
+        var expected = new[]
+        {
+            (ConfigurationDocument.Shift, "TLAW-CFG-113", "supply.total", "Supply total must equal manifest count."),
+            (ConfigurationDocument.Shift, "TLAW-CFG-114", "supply.free_writeoff_buffer", "Writeoff buffer must equal supply minus quota."),
+            (ConfigurationDocument.Anomalies, "TLAW-CFG-203", "anomalies.PENITENT_TRUNK.danger_weight", "Danger weight cannot be negative."),
+            (ConfigurationDocument.Anomalies, "TLAW-CFG-203", "anomalies.RESIN_BLASPHEMER.danger_weight", "Danger weight cannot be negative.")
+        };
+
+        var actualRuns = Enumerable.Range(0, 5)
+            .Select(_ => loader.Load(shift, anomalies).Diagnostics
+                .Select(static diagnostic => (diagnostic.Document, diagnostic.Code, diagnostic.Path, diagnostic.Message))
+                .ToArray())
+            .ToArray();
+
+        Assert.All(actualRuns, actual => Assert.Equal(expected, actual));
+        Assert.All(actualRuns.Skip(1), actual => Assert.Equal(actualRuns[0], actual));
     }
 }

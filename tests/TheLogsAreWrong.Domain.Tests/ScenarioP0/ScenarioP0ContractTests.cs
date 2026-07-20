@@ -48,6 +48,10 @@ public sealed class ScenarioP0ContractTests
         Assert.Equal(4, shift.LineNoise.PenitentConfirmRequiresContinuousQuietSeconds);
         Assert.False(shift.LineNoise.PauseIntakeTimerDuringTest);
         Assert.Equal(new[] { 4, 20, 10 }, new[] { shift.Containment.RitualHoldSeconds, shift.Containment.ServiceRequestedGraceSeconds, shift.Containment.OverdueSeconds });
+        Assert.Equal(90, shift.Containment.IntervalByDangerWeight["1"]);
+        Assert.Equal(75, shift.Containment.IntervalByDangerWeight["2"]);
+        Assert.Equal(60, shift.Containment.IntervalByDangerWeight["3_or_more"]);
+        Assert.Equal("forced_line_pause", shift.Containment.PrototypeIncident.Type);
         Assert.Equal(8, shift.Containment.PrototypeIncident.DurationSeconds);
     }
 
@@ -68,8 +72,10 @@ public sealed class ScenarioP0ContractTests
         Assert.Equal(8, Assert.Single(penitent.Processing.OnIncorrect.Effects).DurationSeconds);
         Assert.Equal(EffectType.@lock, Assert.Single(resin.Processing.OnIncorrect.Effects).Type);
         Assert.Equal("nearest_line_button", Assert.Single(resin.Processing.OnIncorrect.Effects).Target);
+        Assert.Equal(10, Assert.Single(resin.Processing.OnIncorrect.Effects).DurationSeconds);
         Assert.Equal(SpeciesCreditRule.declared_species, falseSpecies.Processing.OnIncorrect.QuotaCredit.Species);
         Assert.Equal(EffectType.miscredit, Assert.Single(falseSpecies.Processing.OnIncorrect.Effects).Type);
+        Assert.Equal("CREDIT_TO_DECLARED_SPECIES", Assert.Single(falseSpecies.Processing.OnIncorrect.Effects).Event.Value);
         Assert.All(anomalies.Values, anomaly =>
         {
             Assert.Equal(SpeciesCreditRule.true_species, anomaly.Processing.OnCorrect.QuotaCredit.Species);
