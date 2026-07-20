@@ -45,6 +45,17 @@ public sealed class SequencingContractTests
     }
 
     [Fact]
+    public void Ordering_notions_are_distinct_value_types()
+    {
+        Assert.NotEqual(typeof(ServerTick), typeof(EventSequence));
+        Assert.NotEqual(typeof(ServerTick), typeof(StateVersion));
+        Assert.NotEqual(typeof(ServerTick), typeof(ServerReceiveSequence));
+        Assert.NotEqual(typeof(EventSequence), typeof(StateVersion));
+        Assert.NotEqual(typeof(EventSequence), typeof(ServerReceiveSequence));
+        Assert.NotEqual(typeof(StateVersion), typeof(ServerReceiveSequence));
+    }
+
+    [Fact]
     public void Ordering_values_are_value_based_and_culture_invariant()
     {
         var sequence = EventSequence.From(42);
