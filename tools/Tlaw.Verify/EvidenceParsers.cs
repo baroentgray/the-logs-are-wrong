@@ -72,6 +72,7 @@ public static class Gate0Verifier
     public static Gate0Evidence Verify(string repositoryRoot, Gate0Baseline baseline)
     {
         var mismatches = new List<string>();
+        var expectedPaths = baseline.Files.Select(file => file.Path).ToHashSet(StringComparer.Ordinal);
         foreach (var file in baseline.Files)
         {
             var path = Path.Combine(repositoryRoot, file.Path.Replace('/', Path.DirectorySeparatorChar));
@@ -81,12 +82,30 @@ public static class Gate0Verifier
             }
         }
 
+        foreach (var frozenDirectory in new[] { "docs", "data", "reviews", "scripts", "source" })
+        {
+            var directory = Path.Combine(repositoryRoot, frozenDirectory);
+            if (!Directory.Exists(directory))
+            {
+                continue;
+            }
+
+            foreach (var path in Directory.EnumerateFiles(directory, "*", SearchOption.AllDirectories))
+            {
+                var relativePath = Path.GetRelativePath(repositoryRoot, path).Replace(Path.DirectorySeparatorChar, '/');
+                if (!expectedPaths.Contains(relativePath))
+                {
+                    mismatches.Add(relativePath);
+                }
+            }
+        }
+
         return new Gate0Evidence(
             mismatches.Count == 0 ? EvidenceStatus.PASS : EvidenceStatus.FAIL,
             baseline.BaselineId,
             baseline.SourceSha,
             baseline.Files.Select(file => file.Path).ToArray(),
-            mismatches);
+            mismatches.OrderBy(path => path, StringComparer.Ordinal).ToArray());
     }
 }
 

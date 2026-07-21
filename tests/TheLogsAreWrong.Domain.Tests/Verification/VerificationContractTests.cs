@@ -104,6 +104,29 @@ public sealed class VerificationContractTests
     }
 
     [Fact]
+    public void Gate_baseline_rejects_an_extra_file_in_a_frozen_directory()
+    {
+        var root = CreateTemporaryRoot();
+        try
+        {
+            var approved = Path.Combine(root, "docs", "contract.md");
+            Directory.CreateDirectory(Path.GetDirectoryName(approved)!);
+            File.WriteAllText(approved, "approved");
+            var baseline = new Gate0Baseline("fixture", "4056157", [new Gate0FileHash("docs/contract.md", Sha256Hasher.HashFile(approved))]);
+            File.WriteAllText(Path.Combine(root, "docs", "unexpected.md"), "unexpected");
+
+            var mismatch = Gate0Verifier.Verify(root, baseline);
+
+            Assert.Equal(EvidenceStatus.FAIL, mismatch.Status);
+            Assert.Contains("docs/unexpected.md", mismatch.Mismatches);
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
     public void Domain_package_reference_detector_reports_runtime_dependencies()
     {
         var root = CreateTemporaryRoot();
