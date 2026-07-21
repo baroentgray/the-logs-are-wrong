@@ -1,0 +1,32 @@
+{
+  "baselineId": "gate0-approved-4056157",
+  "sourceSha": "4056157d8df6742d60711fa4a34b92364b2cb2dc",
+  "files": [
+    { "path": "AGENTS.md", "sha256": "ef56cfd06345cdff792780c21129169244ccf8dd8558e7fb50fde8b4188c4bb5" },
+    { "path": "data/anomalies.prototype.yaml", "sha256": "6517c145ad41410131ff50bf691fe9c37fb33e1cb8e065e42adb97364f4785d7" },
+    { "path": "data/shift_p0.yaml", "sha256": "cd08ddfc6f354a1fddec7ee751007c95920cdbd26afa6350a068c350d88277e7" },
+    { "path": "docs/adr/ADR-001_NETWORK_STACK.md", "sha256": "239f4b490a0c7a6c3d357ef0d8a5da957f1211d0312500267fa7b5944b90b8b7" },
+    { "path": "docs/adr/ADR-002_VOICE_STACK.md", "sha256": "316c168be11e499745e013f48ae1b72f6955c42666ba97e40db2c8aaf30d326e" },
+    { "path": "docs/ANOMALY_MATRIX.md", "sha256": "cc39f014a1b0889091982dbe7c44687c9fd39296f7b601605e27191442bcad00" },
+    { "path": "docs/DEVELOPMENT_WORKFLOW.md", "sha256": "6c0a902529d56884ac0e9afc38059b705cbabe35e72e6831b17d6f3ccd79429c" },
+    { "path": "docs/FIRST_SHIFT_SPEC.md", "sha256": "b911d604312b87452fe3fa1f217d7430f9e9c9cbe2b2b329f5b433ed05ce12b4" },
+    { "path": "docs/GAME_PILLARS.md", "sha256": "0a9bdc169ea6e307f3cd536019bfd19d2cfcbc53db493a74ffd7885a8a20af5f" },
+    { "path": "docs/INTAKE_SCHEDULER.md", "sha256": "882a05e475520c7afdc1f6b8f14a5547e6e4609ad8c7e85c77b013d248bda2f3" },
+    { "path": "docs/LOG_STATE_MACHINE.md", "sha256": "0f17a5a00683996adc4f7e650c691e64bca674a820912f4e0fb007e492397a47" },
+    { "path": "docs/MODEL_ROUTING.md", "sha256": "4806a6f3ad5faeed94f207d40e8dc255b001be623bfe0d78a4061007bb41b482" },
+    { "path": "docs/NETWORK_RULES.md", "sha256": "2077f8f345277e953e6dfadb1b2ae43c5cecd20038498a68fc8b524eeac36687" },
+    { "path": "docs/PROTOTYPE_SCOPE.md", "sha256": "a8d0ae5d07e45ac987f53ef6d7a92de313c011bf568309bdb49aaa3b4dc0bd46" },
+    { "path": "docs/UI_SIGNALS.md", "sha256": "97af1a2cd60aa60e334219d693550cd8a3d77f2b6c1c7250f1cd3ca85118653a" },
+    { "path": "GATE_0_APPROVAL.md", "sha256": "6b9dba7f7438f481c28535c791a2665ae47d1e6dbb1682f99d57d4c1f970d834" },
+    { "path": "GATE_0_EXIT_CHECKLIST.md", "sha256": "0fa908d0c0f71aca4d9263fea4badacf8ff65cd06d3ab8d6f284e1a30945afa0" },
+    { "path": "package_manifest.json", "sha256": "ab2d56378cbdb0f3ab394591543c2c7b5244b4b777f8622a9a5dfa90f64b0561" },
+    { "path": "PROJECT_IDENTITY.md", "sha256": "cd9a372603f0df225461c6afd62291906aef68f0f0427de3e9443868d7db0163" },
+    { "path": "README_GATE0.md", "sha256": "db9eba9dbf7bc400b2fd1f5d83ddb9d01b2cce8427844a065d4a8ad2ebab777d" },
+    { "path": "reviews/CLAUDE_RED_TEAM_REVIEW.md", "sha256": "b2e455a23e6838be6961bdf3c9f13f60ed46f06202baf1ceb36f00daa49ea3c8" },
+    { "path": "reviews/CODEX_FEASIBILITY_REVIEW.md", "sha256": "4619125d8fcc8ab55b8e2f3ee36042346ce72615132f1925d1fcb2ff9fc476b5" },
+    { "path": "scripts/check-environment.ps1", "sha256": "116eba7be8dc582b46a7d1a65b86492b909716b416ecd20e68946ad92128cb63" },
+    { "path": "SERGEY_FINAL_APPROVAL.md", "sha256": "0eff1282bab223b7008f655e90809cd70fc406a0d5132a53ce92fddc1f58b62f" },
+    { "path": "SOFTWARE_REQUIREMENTS.md", "sha256": "4533850cc39e57bb187685706a9e63556c269b6b0936099509f98cf25cecd29b" },
+    { "path": "source/the_logs_are_wrong_design_v5_2.md", "sha256": "412ae03f539a9f22371388e1b56ac882a4ae99c760b0037a8f4e41969655491b" }
+  ]
+}
