@@ -101,33 +101,44 @@ public sealed record Gate0GitSnapshot(
     Gate0ChangeSet Committed,
     Gate0ChangeSet Staged,
     Gate0ChangeSet Unstaged,
-    Gate0ChangeSet Untracked);
+    Gate0ChangeSet Untracked,
+    GitObjectReaderEvidence? GitObjectReader = null);
 
 public static class Gate0Verifier
 {
     public static Gate0Evidence Verify(Gate0Baseline baseline, Gate0GitSnapshot snapshot)
     {
         var mismatches = new List<string>();
-        foreach (var file in baseline.Files)
+        if (snapshot.GitObjectReader is { Status: not EvidenceStatus.PASS } reader)
         {
-            if (!snapshot.BaselineObjects.TryGetValue(file.Path, out var baselineObject))
+            foreach (var failure in reader.Failures)
             {
-                mismatches.Add($"baseline-object:{file.Path}");
-                continue;
+                mismatches.Add($"git-object-reader:{failure.Category}:{failure.Path ?? "(no path)"}");
             }
+        }
+        else
+        {
+            foreach (var file in baseline.Files)
+            {
+                if (!snapshot.BaselineObjects.TryGetValue(file.Path, out var baselineObject))
+                {
+                    mismatches.Add($"baseline-object:{file.Path}");
+                    continue;
+                }
 
-            if (!string.Equals(Sha256Hasher.HashCanonicalGitObject(baselineObject), file.Sha256, StringComparison.OrdinalIgnoreCase))
-            {
-                mismatches.Add($"baseline-content:{file.Path}");
-            }
+                if (!string.Equals(Sha256Hasher.HashCanonicalGitObject(baselineObject), file.Sha256, StringComparison.OrdinalIgnoreCase))
+                {
+                    mismatches.Add($"baseline-content:{file.Path}");
+                }
 
-            if (!snapshot.HeadObjects.TryGetValue(file.Path, out var headObject))
-            {
-                mismatches.Add($"head-object:{file.Path}");
-            }
-            else if (!string.Equals(Sha256Hasher.HashCanonicalGitObject(headObject), file.Sha256, StringComparison.OrdinalIgnoreCase))
-            {
-                mismatches.Add($"head-content:{file.Path}");
+                if (!snapshot.HeadObjects.TryGetValue(file.Path, out var headObject))
+                {
+                    mismatches.Add($"head-object:{file.Path}");
+                }
+                else if (!string.Equals(Sha256Hasher.HashCanonicalGitObject(headObject), file.Sha256, StringComparison.OrdinalIgnoreCase))
+                {
+                    mismatches.Add($"head-content:{file.Path}");
+                }
             }
         }
 
@@ -145,7 +156,8 @@ public static class Gate0Verifier
             snapshot.Committed.Paths.OrderBy(path => path, StringComparer.Ordinal).ToArray(),
             snapshot.Staged.Paths.OrderBy(path => path, StringComparer.Ordinal).ToArray(),
             snapshot.Unstaged.Paths.OrderBy(path => path, StringComparer.Ordinal).ToArray(),
-            snapshot.Untracked.Paths.OrderBy(path => path, StringComparer.Ordinal).ToArray());
+            snapshot.Untracked.Paths.OrderBy(path => path, StringComparer.Ordinal).ToArray(),
+            snapshot.GitObjectReader);
     }
 
     private static void AddChangeSetMismatches(string name, Gate0ChangeSet changes, ICollection<string> mismatches)

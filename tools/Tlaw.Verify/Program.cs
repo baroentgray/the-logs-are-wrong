@@ -112,13 +112,6 @@ public static class Program
         return execution;
     }
 
-    private static async Task<BinaryCommandExecution> RunBinaryAsync(string name, string executable, IReadOnlyList<string> arguments, string root, string logsDirectory, ICollection<CommandEvidence> commands)
-    {
-        var execution = await CommandRunner.RunBinaryAsync(executable, arguments, root, Path.Combine(logsDirectory, $"{name}.log"));
-        commands.Add(execution.Evidence with { LogPath = Path.GetRelativePath(root, execution.Evidence.LogPath) });
-        return execution;
-    }
-
     private static async Task<(CommandExecution Execution, string Value)> RunValueAsync(string name, string executable, IReadOnlyList<string> arguments, string root, string logsDirectory, ICollection<CommandEvidence> commands)
     {
         var execution = await RunAsync(name, executable, arguments, root, logsDirectory, commands);
@@ -169,19 +162,26 @@ public static class Program
             var baseline = Gate0BaselineLoader.Load(Path.Combine(repositoryRoot, "tools", "Tlaw.Verify", "Gate0", "gate0-baseline.json"));
             var baselineObjects = new Dictionary<string, byte[]>(StringComparer.Ordinal);
             var headObjects = new Dictionary<string, byte[]>(StringComparer.Ordinal);
-            for (var index = 0; index < baseline.Files.Count; index++)
-            {
-                var file = baseline.Files[index];
-                var source = await RunBinaryAsync($"gate0-source-{index:D2}", gitExecutable, ["cat-file", "blob", $"{baseline.SourceSha}:{file.Path}"], repositoryRoot, logsDirectory, commands);
-                if (source.Evidence.ExitCode == 0)
+            var objectRequests = baseline.Files
+                .SelectMany(file => new[]
                 {
-                    baselineObjects[file.Path] = source.Output;
+                    new GitObjectRequest($"baseline:{file.Path}", $"{baseline.SourceSha}:{file.Path}", file.Path),
+                    new GitObjectRequest($"head:{file.Path}", $"HEAD:{file.Path}", file.Path)
+                })
+                .ToArray();
+            var reader = new GitObjectBatchReader();
+            var objectRead = await reader.ReadAsync(gitExecutable, ["cat-file", "--batch"], repositoryRoot, Path.Combine(logsDirectory, "gate0-object-reader.log"), objectRequests);
+            commands.Add(objectRead.Command with { LogPath = Path.GetRelativePath(repositoryRoot, objectRead.Command.LogPath) });
+            foreach (var file in baseline.Files)
+            {
+                if (objectRead.Objects.TryGetValue($"baseline:{file.Path}", out var source))
+                {
+                    baselineObjects[file.Path] = source;
                 }
 
-                var head = await RunBinaryAsync($"gate0-head-{index:D2}", gitExecutable, ["cat-file", "blob", $"HEAD:{file.Path}"], repositoryRoot, logsDirectory, commands);
-                if (head.Evidence.ExitCode == 0)
+                if (objectRead.Objects.TryGetValue($"head:{file.Path}", out var head))
                 {
-                    headObjects[file.Path] = head.Output;
+                    headObjects[file.Path] = head;
                 }
             }
 
@@ -194,11 +194,11 @@ public static class Program
             var staged = await ReadGate0ChangeSetAsync("gate0-staged", ["diff", "--cached", "--name-only", "--", ..pathspecs], gitExecutable, repositoryRoot, logsDirectory, commands);
             var unstaged = await ReadGate0ChangeSetAsync("gate0-unstaged", ["diff", "--name-only", "--", ..pathspecs], gitExecutable, repositoryRoot, logsDirectory, commands);
             var untracked = await ReadGate0ChangeSetAsync("gate0-untracked", ["ls-files", "--others", "--exclude-standard", "--", ..pathspecs], gitExecutable, repositoryRoot, logsDirectory, commands);
-            return Gate0Verifier.Verify(baseline, new Gate0GitSnapshot(baselineObjects, headObjects, committed, staged, unstaged, untracked));
+            return Gate0Verifier.Verify(baseline, new Gate0GitSnapshot(baselineObjects, headObjects, committed, staged, unstaged, untracked, objectRead.Evidence));
         }
-        catch (Exception)
+        catch (Exception exception)
         {
-            return new Gate0Evidence(EvidenceStatus.FAIL, string.Empty, string.Empty, [], ["baseline manifest missing or invalid"], [], [], [], []);
+            return new Gate0Evidence(EvidenceStatus.FAIL, string.Empty, string.Empty, [], [$"gate0-verifier:{exception.GetType().Name}"], [], [], [], []);
         }
     }
 
