@@ -1,6 +1,7 @@
 {
   "schema": "tlaw.verification/v1",
   "verdict": "PASS",
+  "isDetachedHead": false,
   "build": {
     "warnings": 0,
     "errors": 0

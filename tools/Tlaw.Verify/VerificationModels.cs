@@ -34,7 +34,16 @@ public sealed record BuildEvidence(EvidenceStatus Status, int Warnings, int Erro
 
 public sealed record TestEvidence(EvidenceStatus Status, int Passed, int Failed, int Skipped, int Total, string? TrxPath);
 
-public sealed record Gate0Evidence(EvidenceStatus Status, string BaselineId, string SourceSha, IReadOnlyList<string> CheckedFiles, IReadOnlyList<string> Mismatches);
+public sealed record Gate0Evidence(
+    EvidenceStatus Status,
+    string BaselineId,
+    string SourceSha,
+    IReadOnlyList<string> CheckedFiles,
+    IReadOnlyList<string> Mismatches,
+    IReadOnlyList<string> CommittedDifferences,
+    IReadOnlyList<string> StagedChanges,
+    IReadOnlyList<string> UnstagedChanges,
+    IReadOnlyList<string> UntrackedChanges);
 
 public sealed record ArchitectureEvidence(EvidenceStatus Status, IReadOnlyList<string> Checks);
 
@@ -45,7 +54,8 @@ public sealed record VerificationReport(
     DateTimeOffset StartedAtUtc,
     DateTimeOffset FinishedAtUtc,
     string RepositoryRoot,
-    string Branch,
+    string? Branch,
+    bool IsDetachedHead,
     string ActualHeadSha,
     string ExpectedHeadSha,
     string ActualBaseSha,
@@ -84,12 +94,13 @@ public static class VerificationReportSerializer
 
 public static class VerificationVerdictEvaluator
 {
-    public static VerdictOutcome Evaluate(VerificationReport report)
+    public static VerdictOutcome Evaluate(VerificationReport report, bool allowDetachedHead = false)
     {
         var failures = new List<string>();
 
         Require(!string.IsNullOrWhiteSpace(report.RepositoryRoot), "repository root is missing", failures);
-        Require(!string.IsNullOrWhiteSpace(report.Branch), "branch is missing", failures);
+        Require(!string.IsNullOrWhiteSpace(report.Branch) || (report.IsDetachedHead && allowDetachedHead), "branch is missing", failures);
+        Require(!report.IsDetachedHead || allowDetachedHead, "detached head requires the explicit allow flag", failures);
         Require(!string.IsNullOrWhiteSpace(report.ActualHeadSha), "actual head is missing", failures);
         Require(!string.IsNullOrWhiteSpace(report.ExpectedHeadSha), "expected head is missing", failures);
         Require(string.Equals(report.ActualHeadSha, report.ExpectedHeadSha, StringComparison.OrdinalIgnoreCase), "actual head does not equal expected head", failures);

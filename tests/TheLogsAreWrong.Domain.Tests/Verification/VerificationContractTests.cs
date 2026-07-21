@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text;
 using Tlaw.Verify;
 
 namespace TheLogsAreWrong.Domain.Tests.Verification;
@@ -53,6 +54,27 @@ public sealed class VerificationContractTests
     }
 
     [Fact]
+    public void Detached_head_is_rejected_without_the_explicit_allow_flag()
+    {
+        var report = PassingReport() with { Branch = null, IsDetachedHead = true };
+
+        var outcome = VerificationVerdictEvaluator.Evaluate(report);
+
+        Assert.Equal(VerificationVerdict.FAIL, outcome.Verdict);
+        Assert.Contains(outcome.FailureReasons, reason => reason.Contains("branch", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public void Detached_head_is_accepted_only_with_the_explicit_allow_flag()
+    {
+        var report = PassingReport() with { Branch = null, IsDetachedHead = true };
+
+        var outcome = VerificationVerdictEvaluator.Evaluate(report, allowDetachedHead: true);
+
+        Assert.Equal(VerificationVerdict.PASS, outcome.Verdict);
+    }
+
+    [Fact]
     public void Trx_counter_parser_reads_structured_test_counts()
     {
         var path = Path.Combine(AppContext.BaseDirectory, "VerificationFixtures", "sample.trx");
@@ -79,51 +101,45 @@ public sealed class VerificationContractTests
     }
 
     [Fact]
-    public void Gate_baseline_success_and_mismatch_are_detected()
+    public void Gate_git_object_hashes_are_independent_of_checkout_line_endings()
     {
-        var root = CreateTemporaryRoot();
-        try
-        {
-            var file = Path.Combine(root, "docs", "contract.md");
-            Directory.CreateDirectory(Path.GetDirectoryName(file)!);
-            File.WriteAllText(file, "approved");
-            var baseline = new Gate0Baseline("fixture", "4056157", [new Gate0FileHash("docs/contract.md", Sha256Hasher.HashFile(file))]);
+        var gitBlobWithLf = Encoding.UTF8.GetBytes("approved\n");
+        var checkoutWithCrLf = Encoding.UTF8.GetBytes("approved\r\n");
+        var baseline = GateBaseline("docs/contract.md", gitBlobWithLf);
+        var snapshot = GateSnapshot(gitBlobWithLf, checkoutWithCrLf);
 
-            Assert.Equal(EvidenceStatus.PASS, Gate0Verifier.Verify(root, baseline).Status);
+        var gate = Gate0Verifier.Verify(baseline, snapshot);
 
-            File.WriteAllText(file, "changed");
-            var mismatch = Gate0Verifier.Verify(root, baseline);
-
-            Assert.Equal(EvidenceStatus.FAIL, mismatch.Status);
-            Assert.Equal(["docs/contract.md"], mismatch.Mismatches);
-        }
-        finally
-        {
-            Directory.Delete(root, recursive: true);
-        }
+        Assert.Equal(EvidenceStatus.PASS, gate.Status);
+        Assert.Empty(gate.Mismatches);
     }
 
     [Fact]
-    public void Gate_baseline_rejects_an_extra_file_in_a_frozen_directory()
+    public void Gate_real_content_change_is_detected()
     {
-        var root = CreateTemporaryRoot();
-        try
-        {
-            var approved = Path.Combine(root, "docs", "contract.md");
-            Directory.CreateDirectory(Path.GetDirectoryName(approved)!);
-            File.WriteAllText(approved, "approved");
-            var baseline = new Gate0Baseline("fixture", "4056157", [new Gate0FileHash("docs/contract.md", Sha256Hasher.HashFile(approved))]);
-            File.WriteAllText(Path.Combine(root, "docs", "unexpected.md"), "unexpected");
+        var baselineContent = Encoding.UTF8.GetBytes("approved\n");
+        var baseline = GateBaseline("docs/contract.md", baselineContent);
+        var snapshot = GateSnapshot(baselineContent, Encoding.UTF8.GetBytes("changed\n"), committed: ["docs/contract.md"]);
 
-            var mismatch = Gate0Verifier.Verify(root, baseline);
+        var gate = Gate0Verifier.Verify(baseline, snapshot);
 
-            Assert.Equal(EvidenceStatus.FAIL, mismatch.Status);
-            Assert.Contains("docs/unexpected.md", mismatch.Mismatches);
-        }
-        finally
-        {
-            Directory.Delete(root, recursive: true);
-        }
+        Assert.Equal(EvidenceStatus.FAIL, gate.Status);
+        Assert.Contains("head-content:docs/contract.md", gate.Mismatches);
+        Assert.Contains("committed:docs/contract.md", gate.Mismatches);
+    }
+
+    [Fact]
+    public void Gate_staged_and_unstaged_changes_are_detected_separately()
+    {
+        var content = Encoding.UTF8.GetBytes("approved\n");
+        var baseline = GateBaseline("docs/contract.md", content);
+        var snapshot = GateSnapshot(content, content, staged: ["docs/contract.md"], unstaged: ["docs/contract.md"]);
+
+        var gate = Gate0Verifier.Verify(baseline, snapshot);
+
+        Assert.Equal(EvidenceStatus.FAIL, gate.Status);
+        Assert.Contains("staged:docs/contract.md", gate.Mismatches);
+        Assert.Contains("unstaged:docs/contract.md", gate.Mismatches);
     }
 
     [Fact]
@@ -155,6 +171,7 @@ public sealed class VerificationContractTests
 
         Assert.Equal(expected.RootElement.GetProperty("schema").GetString(), actual.RootElement.GetProperty("schema").GetString());
         Assert.Equal(expected.RootElement.GetProperty("verdict").GetString(), actual.RootElement.GetProperty("verdict").GetString());
+        Assert.Equal(expected.RootElement.GetProperty("isDetachedHead").GetBoolean(), actual.RootElement.GetProperty("isDetachedHead").GetBoolean());
         Assert.Equal(expected.RootElement.GetProperty("tests").GetProperty("total").GetInt32(), actual.RootElement.GetProperty("tests").GetProperty("total").GetInt32());
         Assert.Equal(expected.RootElement.GetProperty("build").GetProperty("warnings").GetInt32(), actual.RootElement.GetProperty("build").GetProperty("warnings").GetInt32());
     }
@@ -165,6 +182,7 @@ public sealed class VerificationContractTests
         DateTimeOffset.UnixEpoch,
         "/repo",
         "main",
+        false,
         "aaaa",
         "aaaa",
         "base",
@@ -181,11 +199,28 @@ public sealed class VerificationContractTests
         new BuildEvidence(EvidenceStatus.PASS, 0, 0),
         new TestEvidence(EvidenceStatus.PASS, 3, 0, 0, 3, "test.trx"),
         new CheckEvidence(EvidenceStatus.PASS),
-        new Gate0Evidence(EvidenceStatus.PASS, "fixture", "4056157", ["docs/contract.md"], []),
+        new Gate0Evidence(EvidenceStatus.PASS, "fixture", "4056157", ["docs/contract.md"], [], [], [], [], []),
         new ArchitectureEvidence(EvidenceStatus.PASS, ["ArchitectureGuardTests: PASS"]),
         new DomainDependenciesEvidence(EvidenceStatus.PASS, []),
         VerificationVerdict.PASS,
         []);
+
+    private static Gate0Baseline GateBaseline(string path, byte[] content) =>
+        new("fixture", "4056157", [new Gate0FileHash(path, Sha256Hasher.HashCanonicalGitObject(content))]);
+
+    private static Gate0GitSnapshot GateSnapshot(
+        byte[] baselineContent,
+        byte[] headContent,
+        IReadOnlyList<string>? committed = null,
+        IReadOnlyList<string>? staged = null,
+        IReadOnlyList<string>? unstaged = null) =>
+        new(
+            new Dictionary<string, byte[]> { ["docs/contract.md"] = baselineContent },
+            new Dictionary<string, byte[]> { ["docs/contract.md"] = headContent },
+            new Gate0ChangeSet(committed ?? [], Succeeded: true),
+            new Gate0ChangeSet(staged ?? [], Succeeded: true),
+            new Gate0ChangeSet(unstaged ?? [], Succeeded: true),
+            new Gate0ChangeSet([], Succeeded: true));
 
     private static string CreateTemporaryRoot()
     {

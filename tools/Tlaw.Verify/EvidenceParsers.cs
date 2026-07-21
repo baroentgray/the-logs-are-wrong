@@ -52,6 +52,32 @@ public static class Sha256Hasher
         using var stream = File.OpenRead(path);
         return Convert.ToHexString(SHA256.HashData(stream)).ToLowerInvariant();
     }
+
+    public static string HashCanonicalGitObject(byte[] bytes) => HashBytes(CanonicalizeLineEndings(bytes));
+
+    public static string HashBytes(byte[] bytes) => Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant();
+
+    private static byte[] CanonicalizeLineEndings(byte[] bytes)
+    {
+        using var normalized = new MemoryStream(bytes.Length);
+        for (var index = 0; index < bytes.Length; index++)
+        {
+            if (bytes[index] == '\r')
+            {
+                normalized.WriteByte((byte)'\n');
+                if (index + 1 < bytes.Length && bytes[index + 1] == '\n')
+                {
+                    index++;
+                }
+            }
+            else
+            {
+                normalized.WriteByte(bytes[index]);
+            }
+        }
+
+        return normalized.ToArray();
+    }
 }
 
 public static class Gate0BaselineLoader
@@ -67,45 +93,73 @@ public static class Gate0BaselineLoader
     }
 }
 
+public sealed record Gate0ChangeSet(IReadOnlyList<string> Paths, bool Succeeded);
+
+public sealed record Gate0GitSnapshot(
+    IReadOnlyDictionary<string, byte[]> BaselineObjects,
+    IReadOnlyDictionary<string, byte[]> HeadObjects,
+    Gate0ChangeSet Committed,
+    Gate0ChangeSet Staged,
+    Gate0ChangeSet Unstaged,
+    Gate0ChangeSet Untracked);
+
 public static class Gate0Verifier
 {
-    public static Gate0Evidence Verify(string repositoryRoot, Gate0Baseline baseline)
+    public static Gate0Evidence Verify(Gate0Baseline baseline, Gate0GitSnapshot snapshot)
     {
         var mismatches = new List<string>();
-        var expectedPaths = baseline.Files.Select(file => file.Path).ToHashSet(StringComparer.Ordinal);
         foreach (var file in baseline.Files)
         {
-            var path = Path.Combine(repositoryRoot, file.Path.Replace('/', Path.DirectorySeparatorChar));
-            if (!File.Exists(path) || !string.Equals(Sha256Hasher.HashFile(path), file.Sha256, StringComparison.OrdinalIgnoreCase))
+            if (!snapshot.BaselineObjects.TryGetValue(file.Path, out var baselineObject))
             {
-                mismatches.Add(file.Path);
-            }
-        }
-
-        foreach (var frozenDirectory in new[] { "docs", "data", "reviews", "scripts", "source" })
-        {
-            var directory = Path.Combine(repositoryRoot, frozenDirectory);
-            if (!Directory.Exists(directory))
-            {
+                mismatches.Add($"baseline-object:{file.Path}");
                 continue;
             }
 
-            foreach (var path in Directory.EnumerateFiles(directory, "*", SearchOption.AllDirectories))
+            if (!string.Equals(Sha256Hasher.HashCanonicalGitObject(baselineObject), file.Sha256, StringComparison.OrdinalIgnoreCase))
             {
-                var relativePath = Path.GetRelativePath(repositoryRoot, path).Replace(Path.DirectorySeparatorChar, '/');
-                if (!expectedPaths.Contains(relativePath))
-                {
-                    mismatches.Add(relativePath);
-                }
+                mismatches.Add($"baseline-content:{file.Path}");
+            }
+
+            if (!snapshot.HeadObjects.TryGetValue(file.Path, out var headObject))
+            {
+                mismatches.Add($"head-object:{file.Path}");
+            }
+            else if (!string.Equals(Sha256Hasher.HashCanonicalGitObject(headObject), file.Sha256, StringComparison.OrdinalIgnoreCase))
+            {
+                mismatches.Add($"head-content:{file.Path}");
             }
         }
+
+        AddChangeSetMismatches("committed", snapshot.Committed, mismatches);
+        AddChangeSetMismatches("staged", snapshot.Staged, mismatches);
+        AddChangeSetMismatches("unstaged", snapshot.Unstaged, mismatches);
+        AddChangeSetMismatches("untracked", snapshot.Untracked, mismatches);
 
         return new Gate0Evidence(
             mismatches.Count == 0 ? EvidenceStatus.PASS : EvidenceStatus.FAIL,
             baseline.BaselineId,
             baseline.SourceSha,
             baseline.Files.Select(file => file.Path).ToArray(),
-            mismatches.OrderBy(path => path, StringComparer.Ordinal).ToArray());
+            mismatches.OrderBy(path => path, StringComparer.Ordinal).ToArray(),
+            snapshot.Committed.Paths.OrderBy(path => path, StringComparer.Ordinal).ToArray(),
+            snapshot.Staged.Paths.OrderBy(path => path, StringComparer.Ordinal).ToArray(),
+            snapshot.Unstaged.Paths.OrderBy(path => path, StringComparer.Ordinal).ToArray(),
+            snapshot.Untracked.Paths.OrderBy(path => path, StringComparer.Ordinal).ToArray());
+    }
+
+    private static void AddChangeSetMismatches(string name, Gate0ChangeSet changes, ICollection<string> mismatches)
+    {
+        if (!changes.Succeeded)
+        {
+            mismatches.Add($"{name}-check-failed");
+            return;
+        }
+
+        foreach (var path in changes.Paths)
+        {
+            mismatches.Add($"{name}:{path}");
+        }
     }
 }
 

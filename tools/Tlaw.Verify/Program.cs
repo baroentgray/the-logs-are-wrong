@@ -24,9 +24,11 @@ public static class Program
         var actualBase = await RunGitValueAsync("base", ["merge-base", "HEAD", "origin/main"], gitExecutable, repositoryRoot, logsDirectory, commands);
         var status = await RunGitValueAsync("status", ["status", "--porcelain=v1"], gitExecutable, repositoryRoot, logsDirectory, commands);
         var dotnetSdk = await RunValueAsync("dotnet-version", "dotnet", ["--version"], repositoryRoot, logsDirectory, commands);
+        var isDetachedHead = string.IsNullOrWhiteSpace(branch.Value);
         report = report with
         {
-            Branch = branch.Value,
+            Branch = isDetachedHead ? null : branch.Value,
+            IsDetachedHead = isDetachedHead,
             ActualHeadSha = actualHead.Value,
             ActualBaseSha = actualBase.Value,
             CleanTree = status.Execution.Evidence.ExitCode == 0 && string.IsNullOrWhiteSpace(status.Value),
@@ -61,14 +63,14 @@ public static class Program
 
         report = report with
         {
-            Gate0 = VerifyGate0(repositoryRoot),
+            Gate0 = await VerifyGate0Async(repositoryRoot, gitExecutable, logsDirectory, commands),
             Architecture = ExtractArchitecture(report.Tests),
             DomainDependencies = VerifyDomainDependencies(repositoryRoot),
             FinishedAtUtc = DateTimeOffset.UtcNow,
             Commands = commands.ToArray()
         };
 
-        var outcome = VerificationVerdictEvaluator.Evaluate(report);
+        var outcome = VerificationVerdictEvaluator.Evaluate(report, options.AllowDetachedHead);
         report = report with { Verdict = outcome.Verdict, FailureReasons = outcome.FailureReasons };
         var jsonPath = Path.Combine(artifactsDirectory, "verification.json");
         await File.WriteAllTextAsync(jsonPath, VerificationReportSerializer.Serialize(report));
@@ -84,7 +86,8 @@ public static class Program
         startedAt,
         startedAt,
         repositoryRoot,
-        string.Empty,
+        null,
+        false,
         string.Empty,
         options.ExpectedHeadSha ?? string.Empty,
         string.Empty,
@@ -105,6 +108,13 @@ public static class Program
     private static async Task<CommandExecution> RunAsync(string name, string executable, IReadOnlyList<string> arguments, string root, string logsDirectory, ICollection<CommandEvidence> commands)
     {
         var execution = await CommandRunner.RunAsync(executable, arguments, root, Path.Combine(logsDirectory, $"{name}.log"));
+        commands.Add(execution.Evidence with { LogPath = Path.GetRelativePath(root, execution.Evidence.LogPath) });
+        return execution;
+    }
+
+    private static async Task<BinaryCommandExecution> RunBinaryAsync(string name, string executable, IReadOnlyList<string> arguments, string root, string logsDirectory, ICollection<CommandEvidence> commands)
+    {
+        var execution = await CommandRunner.RunBinaryAsync(executable, arguments, root, Path.Combine(logsDirectory, $"{name}.log"));
         commands.Add(execution.Evidence with { LogPath = Path.GetRelativePath(root, execution.Evidence.LogPath) });
         return execution;
     }
@@ -152,17 +162,55 @@ public static class Program
         }
     }
 
-    private static Gate0Evidence VerifyGate0(string repositoryRoot)
+    private static async Task<Gate0Evidence> VerifyGate0Async(string repositoryRoot, string gitExecutable, string logsDirectory, ICollection<CommandEvidence> commands)
     {
         try
         {
             var baseline = Gate0BaselineLoader.Load(Path.Combine(repositoryRoot, "tools", "Tlaw.Verify", "Gate0", "gate0-baseline.json"));
-            return Gate0Verifier.Verify(repositoryRoot, baseline);
+            var baselineObjects = new Dictionary<string, byte[]>(StringComparer.Ordinal);
+            var headObjects = new Dictionary<string, byte[]>(StringComparer.Ordinal);
+            for (var index = 0; index < baseline.Files.Count; index++)
+            {
+                var file = baseline.Files[index];
+                var source = await RunBinaryAsync($"gate0-source-{index:D2}", gitExecutable, ["cat-file", "blob", $"{baseline.SourceSha}:{file.Path}"], repositoryRoot, logsDirectory, commands);
+                if (source.Evidence.ExitCode == 0)
+                {
+                    baselineObjects[file.Path] = source.Output;
+                }
+
+                var head = await RunBinaryAsync($"gate0-head-{index:D2}", gitExecutable, ["cat-file", "blob", $"HEAD:{file.Path}"], repositoryRoot, logsDirectory, commands);
+                if (head.Evidence.ExitCode == 0)
+                {
+                    headObjects[file.Path] = head.Output;
+                }
+            }
+
+            var pathspecs = baseline.Files
+                .Select(file => file.Path)
+                .Concat(["docs", "data", "reviews", "scripts", "source"])
+                .Distinct(StringComparer.Ordinal)
+                .ToArray();
+            var committed = await ReadGate0ChangeSetAsync("gate0-committed", ["diff", "--name-only", $"{baseline.SourceSha}..HEAD", "--", ..pathspecs], gitExecutable, repositoryRoot, logsDirectory, commands);
+            var staged = await ReadGate0ChangeSetAsync("gate0-staged", ["diff", "--cached", "--name-only", "--", ..pathspecs], gitExecutable, repositoryRoot, logsDirectory, commands);
+            var unstaged = await ReadGate0ChangeSetAsync("gate0-unstaged", ["diff", "--name-only", "--", ..pathspecs], gitExecutable, repositoryRoot, logsDirectory, commands);
+            var untracked = await ReadGate0ChangeSetAsync("gate0-untracked", ["ls-files", "--others", "--exclude-standard", "--", ..pathspecs], gitExecutable, repositoryRoot, logsDirectory, commands);
+            return Gate0Verifier.Verify(baseline, new Gate0GitSnapshot(baselineObjects, headObjects, committed, staged, unstaged, untracked));
         }
         catch (Exception)
         {
-            return new Gate0Evidence(EvidenceStatus.FAIL, string.Empty, string.Empty, [], ["baseline manifest missing or invalid"]);
+            return new Gate0Evidence(EvidenceStatus.FAIL, string.Empty, string.Empty, [], ["baseline manifest missing or invalid"], [], [], [], []);
         }
+    }
+
+    private static async Task<Gate0ChangeSet> ReadGate0ChangeSetAsync(string name, IReadOnlyList<string> arguments, string gitExecutable, string repositoryRoot, string logsDirectory, ICollection<CommandEvidence> commands)
+    {
+        var execution = await RunAsync(name, gitExecutable, arguments, repositoryRoot, logsDirectory, commands);
+        var paths = OutputValue(execution)
+            .Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Select(path => path.Replace('\\', '/'))
+            .OrderBy(path => path, StringComparer.Ordinal)
+            .ToArray();
+        return new Gate0ChangeSet(paths, execution.Evidence.ExitCode == 0);
     }
 
     private static ArchitectureEvidence ExtractArchitecture(TestEvidence? tests)
@@ -195,7 +243,7 @@ public static class Program
     }
 }
 
-public sealed record VerificationOptions(string? ExpectedHeadSha, string? ExpectedBaseSha, string? RepositoryRoot, string? ArtifactsDirectory)
+public sealed record VerificationOptions(string? ExpectedHeadSha, string? ExpectedBaseSha, string? RepositoryRoot, string? ArtifactsDirectory, bool AllowDetachedHead)
 {
     public static VerificationOptions Parse(IReadOnlyList<string> arguments)
     {
@@ -203,24 +251,33 @@ public sealed record VerificationOptions(string? ExpectedHeadSha, string? Expect
         string? expectedBase = null;
         string? repositoryRoot = null;
         string? artifactsDirectory = null;
-        for (var index = 0; index < arguments.Count; index += 2)
+        var allowDetachedHead = false;
+        for (var index = 0; index < arguments.Count; index++)
         {
-            if (index + 1 >= arguments.Count)
+            var option = arguments[index];
+            if (option == "--allow-detached-head")
             {
-                throw new ArgumentException($"Missing value for '{arguments[index]}'.");
+                allowDetachedHead = true;
+                continue;
             }
 
-            switch (arguments[index])
+            if (index + 1 >= arguments.Count)
             {
-                case "--expected-head": expectedHead = arguments[index + 1]; break;
-                case "--expected-base": expectedBase = arguments[index + 1]; break;
-                case "--repository-root": repositoryRoot = Path.GetFullPath(arguments[index + 1]); break;
-                case "--artifacts-directory": artifactsDirectory = Path.GetFullPath(arguments[index + 1]); break;
-                default: throw new ArgumentException($"Unknown argument '{arguments[index]}'.");
+                throw new ArgumentException($"Missing value for '{option}'.");
+            }
+
+            var value = arguments[++index];
+            switch (option)
+            {
+                case "--expected-head": expectedHead = value; break;
+                case "--expected-base": expectedBase = value; break;
+                case "--repository-root": repositoryRoot = Path.GetFullPath(value); break;
+                case "--artifacts-directory": artifactsDirectory = Path.GetFullPath(value); break;
+                default: throw new ArgumentException($"Unknown argument '{option}'.");
             }
         }
 
-        return new VerificationOptions(expectedHead, expectedBase, repositoryRoot, artifactsDirectory);
+        return new VerificationOptions(expectedHead, expectedBase, repositoryRoot, artifactsDirectory, allowDetachedHead);
     }
 }
 
