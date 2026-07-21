@@ -8,5 +8,11 @@
   },
   "tests": {
     "total": 3
+  },
+  "gate0": {
+    "gitObjectReader": {
+      "mode": "git-cat-file-batch",
+      "processCount": 1
+    }
   }
 }

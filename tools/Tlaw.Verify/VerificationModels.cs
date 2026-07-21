@@ -43,7 +43,8 @@ public sealed record Gate0Evidence(
     IReadOnlyList<string> CommittedDifferences,
     IReadOnlyList<string> StagedChanges,
     IReadOnlyList<string> UnstagedChanges,
-    IReadOnlyList<string> UntrackedChanges);
+    IReadOnlyList<string> UntrackedChanges,
+    GitObjectReaderEvidence? GitObjectReader = null);
 
 public sealed record ArchitectureEvidence(EvidenceStatus Status, IReadOnlyList<string> Checks);
 
@@ -138,6 +139,13 @@ public static class VerificationVerdictEvaluator
         if (report.Gate0 is not null)
         {
             Require(report.Gate0.Mismatches.Count == 0, "Gate 0 mismatches were found", failures);
+            if (report.Gate0.GitObjectReader is { Status: not EvidenceStatus.PASS } reader)
+            {
+                foreach (var failure in reader.Failures)
+                {
+                    failures.Add($"Git object reader failed: {failure.Category} ({failure.Path ?? "(no path)"})");
+                }
+            }
         }
 
         if (report.DomainDependencies is not null)

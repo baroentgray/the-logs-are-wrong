@@ -143,6 +143,33 @@ public sealed class VerificationContractTests
     }
 
     [Fact]
+    public void Gate_untracked_protected_path_is_detected()
+    {
+        var content = Encoding.UTF8.GetBytes("approved\n");
+        var baseline = GateBaseline("docs/contract.md", content);
+        var snapshot = GateSnapshot(content, content, untracked: ["docs/untracked.md"]);
+
+        var gate = Gate0Verifier.Verify(baseline, snapshot);
+
+        Assert.Equal(EvidenceStatus.FAIL, gate.Status);
+        Assert.Contains("untracked:docs/untracked.md", gate.Mismatches);
+    }
+
+    [Fact]
+    public void Gate_missing_and_renamed_files_are_detected()
+    {
+        var content = Encoding.UTF8.GetBytes("approved\n");
+        var baseline = GateBaseline("docs/contract.md", content);
+        var missing = GateSnapshot(content, headContent: null, committed: ["docs/contract.md", "docs/renamed.md"]);
+
+        var gate = Gate0Verifier.Verify(baseline, missing);
+
+        Assert.Equal(EvidenceStatus.FAIL, gate.Status);
+        Assert.Contains("head-object:docs/contract.md", gate.Mismatches);
+        Assert.Contains("committed:docs/renamed.md", gate.Mismatches);
+    }
+
+    [Fact]
     public void Domain_package_reference_detector_reports_runtime_dependencies()
     {
         var root = CreateTemporaryRoot();
@@ -174,6 +201,19 @@ public sealed class VerificationContractTests
         Assert.Equal(expected.RootElement.GetProperty("isDetachedHead").GetBoolean(), actual.RootElement.GetProperty("isDetachedHead").GetBoolean());
         Assert.Equal(expected.RootElement.GetProperty("tests").GetProperty("total").GetInt32(), actual.RootElement.GetProperty("tests").GetProperty("total").GetInt32());
         Assert.Equal(expected.RootElement.GetProperty("build").GetProperty("warnings").GetInt32(), actual.RootElement.GetProperty("build").GetProperty("warnings").GetInt32());
+        Assert.Equal(expected.RootElement.GetProperty("gate0").GetProperty("gitObjectReader").GetProperty("mode").GetString(), actual.RootElement.GetProperty("gate0").GetProperty("gitObjectReader").GetProperty("mode").GetString());
+        Assert.Equal(expected.RootElement.GetProperty("gate0").GetProperty("gitObjectReader").GetProperty("processCount").GetInt32(), actual.RootElement.GetProperty("gate0").GetProperty("gitObjectReader").GetProperty("processCount").GetInt32());
+    }
+
+    [Fact]
+    public void Markdown_report_projects_batch_reader_evidence()
+    {
+        var markdown = MarkdownReportRenderer.Render(PassingReport());
+
+        Assert.Contains("Git object reader", markdown, StringComparison.Ordinal);
+        Assert.Contains("mode: git-cat-file-batch", markdown, StringComparison.Ordinal);
+        Assert.Contains("processes: 1", markdown, StringComparison.Ordinal);
+        Assert.Contains("Log: logs/gate0-object-reader.log", markdown, StringComparison.Ordinal);
     }
 
     private static VerificationReport PassingReport() => new(
@@ -199,7 +239,8 @@ public sealed class VerificationContractTests
         new BuildEvidence(EvidenceStatus.PASS, 0, 0),
         new TestEvidence(EvidenceStatus.PASS, 3, 0, 0, 3, "test.trx"),
         new CheckEvidence(EvidenceStatus.PASS),
-        new Gate0Evidence(EvidenceStatus.PASS, "fixture", "4056157", ["docs/contract.md"], [], [], [], [], []),
+        new Gate0Evidence(EvidenceStatus.PASS, "fixture", "4056157", ["docs/contract.md"], [], [], [], [], [],
+            new GitObjectReaderEvidence("git-cat-file-batch", 1, 2, 2, EvidenceStatus.PASS, 0, "logs/gate0-object-reader.log", [])),
         new ArchitectureEvidence(EvidenceStatus.PASS, ["ArchitectureGuardTests: PASS"]),
         new DomainDependenciesEvidence(EvidenceStatus.PASS, []),
         VerificationVerdict.PASS,
@@ -210,17 +251,18 @@ public sealed class VerificationContractTests
 
     private static Gate0GitSnapshot GateSnapshot(
         byte[] baselineContent,
-        byte[] headContent,
+        byte[]? headContent,
         IReadOnlyList<string>? committed = null,
         IReadOnlyList<string>? staged = null,
-        IReadOnlyList<string>? unstaged = null) =>
+        IReadOnlyList<string>? unstaged = null,
+        IReadOnlyList<string>? untracked = null) =>
         new(
             new Dictionary<string, byte[]> { ["docs/contract.md"] = baselineContent },
-            new Dictionary<string, byte[]> { ["docs/contract.md"] = headContent },
+            headContent is null ? new Dictionary<string, byte[]>() : new Dictionary<string, byte[]> { ["docs/contract.md"] = headContent },
             new Gate0ChangeSet(committed ?? [], Succeeded: true),
             new Gate0ChangeSet(staged ?? [], Succeeded: true),
             new Gate0ChangeSet(unstaged ?? [], Succeeded: true),
-            new Gate0ChangeSet([], Succeeded: true));
+            new Gate0ChangeSet(untracked ?? [], Succeeded: true));
 
     private static string CreateTemporaryRoot()
     {
