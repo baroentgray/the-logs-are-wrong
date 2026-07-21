@@ -1,0 +1,11 @@
+{
+  "schema": "tlaw.verification/v1",
+  "verdict": "PASS",
+  "build": {
+    "warnings": 0,
+    "errors": 0
+  },
+  "tests": {
+    "total": 3
+  }
+}

@@ -5,6 +5,7 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\TheLogsAreWrong.Domain\TheLogsAreWrong.Domain.csproj" />
     <ProjectReference Include="..\..\src\TheLogsAreWrong.Config.Yaml\TheLogsAreWrong.Config.Yaml.csproj" />
+    <ProjectReference Include="..\..\tools\Tlaw.Verify\Tlaw.Verify.csproj" />
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="18.8.1" />
@@ -20,5 +21,7 @@
     <Content Include="..\..\src\TheLogsAreWrong.Config.Yaml\Parsing\YamlDocumentParser.cs" CopyToOutputDirectory="PreserveNewest" Link="ProductionSources\YamlDocumentParser.cs" />
     <Content Include="..\..\src\TheLogsAreWrong.Domain\**\*.cs" Exclude="..\..\src\TheLogsAreWrong.Domain\bin\**\*;..\..\src\TheLogsAreWrong.Domain\obj\**\*" CopyToOutputDirectory="PreserveNewest" Link="DomainSources\%(RecursiveDir)%(Filename)%(Extension)" />
     <Content Include="..\..\src\TheLogsAreWrong.Domain\TheLogsAreWrong.Domain.csproj" CopyToOutputDirectory="PreserveNewest" Link="DomainSources\TheLogsAreWrong.Domain.csproj" />
+    <Content Include="Verification\Fixtures\*.json" CopyToOutputDirectory="PreserveNewest" Link="VerificationFixtures\%(Filename)%(Extension)" />
+    <Content Include="Verification\Fixtures\*.trx" CopyToOutputDirectory="PreserveNewest" Link="VerificationFixtures\%(Filename)%(Extension)" />
   </ItemGroup>
 </Project>

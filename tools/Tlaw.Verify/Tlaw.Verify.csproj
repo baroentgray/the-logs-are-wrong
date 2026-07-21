@@ -1,0 +1,7 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <AssemblyName>Tlaw.Verify</AssemblyName>
+    <RootNamespace>Tlaw.Verify</RootNamespace>
+  </PropertyGroup>
+</Project>
