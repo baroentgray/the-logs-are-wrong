@@ -98,7 +98,7 @@ public sealed class AgentProtocolContractTests
                 reference: https://linear.app/baronet/issue/BAR-31
             human:
               required: true
-              question: 
+              question: ""
               safe_options: []
             """;
         var result = PacketValidator.Validate(packet, PacketSchemaRegistry.Load(SchemaRoot));
