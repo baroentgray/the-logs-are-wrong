@@ -140,7 +140,7 @@ public static class VerificationVerdictEvaluator
     private static void RequireCommand(IReadOnlyList<CommandEvidence> commands, string executable, string firstArgument, ICollection<string> failures)
     {
         var command = commands.FirstOrDefault(candidate =>
-            string.Equals(candidate.Executable, executable, StringComparison.OrdinalIgnoreCase) &&
+            string.Equals(Path.GetFileNameWithoutExtension(candidate.Executable), executable, StringComparison.OrdinalIgnoreCase) &&
             candidate.Arguments.FirstOrDefault() is { } argument &&
             string.Equals(argument, firstArgument, StringComparison.OrdinalIgnoreCase));
 

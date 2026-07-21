@@ -18,10 +18,11 @@ public static class Program
         var commands = new List<CommandEvidence>();
         var report = CreateInitialReport(repositoryRoot, options, startedAt);
 
-        var branch = await RunGitValueAsync("branch", ["branch", "--show-current"], repositoryRoot, logsDirectory, commands);
-        var actualHead = await RunGitValueAsync("head", ["rev-parse", "HEAD"], repositoryRoot, logsDirectory, commands);
-        var actualBase = await RunGitValueAsync("base", ["merge-base", "HEAD", "origin/main"], repositoryRoot, logsDirectory, commands);
-        var status = await RunGitValueAsync("status", ["status", "--porcelain=v1"], repositoryRoot, logsDirectory, commands);
+        var gitExecutable = ToolExecutableResolver.ResolveGitExecutable();
+        var branch = await RunGitValueAsync("branch", ["branch", "--show-current"], gitExecutable, repositoryRoot, logsDirectory, commands);
+        var actualHead = await RunGitValueAsync("head", ["rev-parse", "HEAD"], gitExecutable, repositoryRoot, logsDirectory, commands);
+        var actualBase = await RunGitValueAsync("base", ["merge-base", "HEAD", "origin/main"], gitExecutable, repositoryRoot, logsDirectory, commands);
+        var status = await RunGitValueAsync("status", ["status", "--porcelain=v1"], gitExecutable, repositoryRoot, logsDirectory, commands);
         var dotnetSdk = await RunValueAsync("dotnet-version", "dotnet", ["--version"], repositoryRoot, logsDirectory, commands);
         report = report with
         {
@@ -48,10 +49,10 @@ public static class Program
         var test = await RunAsync("test", "dotnet", ["test", "--configuration", "Release", "--no-build", "--no-restore", "--logger", "trx;LogFileName=verification.trx", "--results-directory", testResultsDirectory], repositoryRoot, logsDirectory, commands);
         report = report with { Tests = CreateTestEvidence(test, trxPath), Commands = commands.ToArray() };
 
-        var diffCheck = await RunAsync("diff-check", "git", ["diff", "--check"], repositoryRoot, logsDirectory, commands);
+        var diffCheck = await RunAsync("diff-check", gitExecutable, ["diff", "--check"], repositoryRoot, logsDirectory, commands);
         var diffRangeCheck = string.IsNullOrWhiteSpace(report.ActualBaseSha)
             ? null
-            : await RunAsync("diff-range-check", "git", ["diff", "--check", $"{report.ActualBaseSha}...HEAD"], repositoryRoot, logsDirectory, commands);
+            : await RunAsync("diff-range-check", gitExecutable, ["diff", "--check", $"{report.ActualBaseSha}...HEAD"], repositoryRoot, logsDirectory, commands);
         report = report with
         {
             DiffCheck = new CheckEvidence(ToStatus(diffCheck.Evidence.ExitCode) == EvidenceStatus.PASS && (diffRangeCheck is null || ToStatus(diffRangeCheck.Evidence.ExitCode) == EvidenceStatus.PASS) ? EvidenceStatus.PASS : EvidenceStatus.FAIL),
@@ -114,8 +115,8 @@ public static class Program
         return (execution, OutputValue(execution));
     }
 
-    private static Task<(CommandExecution Execution, string Value)> RunGitValueAsync(string name, IReadOnlyList<string> arguments, string root, string logsDirectory, ICollection<CommandEvidence> commands) =>
-        RunValueAsync(name, "git", arguments, root, logsDirectory, commands);
+    private static Task<(CommandExecution Execution, string Value)> RunGitValueAsync(string name, IReadOnlyList<string> arguments, string gitExecutable, string root, string logsDirectory, ICollection<CommandEvidence> commands) =>
+        RunValueAsync(name, gitExecutable, arguments, root, logsDirectory, commands);
 
     private static string OutputValue(CommandExecution execution)
     {
