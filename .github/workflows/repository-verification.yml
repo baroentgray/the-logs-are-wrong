@@ -1,0 +1,44 @@
+name: Repository verification
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    name: Deterministic verification
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout the exact source revision
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Install the pinned .NET SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+
+      - name: Fetch main for base evidence
+        run: git fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main
+
+      - name: Verify repository
+        run: dotnet run --configuration Release --project tools/Tlaw.Verify -- --expected-head "${{ github.event.pull_request.head.sha || github.sha }}" --allow-detached-head
+
+      - name: Upload verification evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: verification-${{ github.run_id }}
+          if-no-files-found: warn
+          path: |
+            artifacts/verification/verification.json
+            artifacts/verification/verification.md
+            artifacts/verification/logs/**
+            artifacts/verification/test-results/**

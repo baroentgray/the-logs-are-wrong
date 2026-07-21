@@ -30,6 +30,7 @@ Recordings/
 
 # --- Logs, caches, temporary files ---
 [Ll]ogs/
+/artifacts/
 *.log
 *.tmp
 
