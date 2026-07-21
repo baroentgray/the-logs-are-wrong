@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "tlaw.agent-handoff/v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "task_id", "status", "main_sha", "human_summary", "evidence", "next_action"],
+  "properties": {
+    "schema": { "type": "string", "const": "tlaw.agent-handoff/v1" },
+    "task_id": { "type": "string", "minLength": 1 },
+    "status": { "type": "string", "enum": ["ready", "blocked"] },
+    "main_sha": { "type": "string", "minLength": 40, "maxLength": 40 },
+    "human_summary": { "type": "string", "minLength": 1 },
+    "evidence": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["kind", "reference"],
+        "properties": {
+          "kind": { "type": "string", "enum": ["command", "source", "file", "ci"] },
+          "reference": { "type": "string", "minLength": 1 }
+        }
+      }
+    },
+    "next_action": { "type": "string", "minLength": 1 }
+  }
+}

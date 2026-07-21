@@ -1,0 +1,36 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "tlaw.agent-result/v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "task_id", "status", "human_summary", "evidence", "human"],
+  "properties": {
+    "schema": { "type": "string", "const": "tlaw.agent-result/v1" },
+    "task_id": { "type": "string", "minLength": 1 },
+    "status": { "type": "string", "enum": ["success", "blocked", "failed"] },
+    "human_summary": { "type": "string", "minLength": 1 },
+    "evidence": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["kind", "reference"],
+        "properties": {
+          "kind": { "type": "string", "enum": ["command", "source", "file", "ci"] },
+          "reference": { "type": "string", "minLength": 1 }
+        }
+      }
+    },
+    "human": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["required", "question", "safe_options"],
+      "properties": {
+        "required": { "type": "boolean" },
+        "question": { "type": "string", "minLength": 1 },
+        "safe_options": { "type": "array", "items": { "type": "string", "minLength": 1 } }
+      }
+    }
+  }
+}

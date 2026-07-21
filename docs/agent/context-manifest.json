@@ -1,0 +1,29 @@
+{
+  "schema": "tlaw.agent-context-manifest/v1",
+  "startup_order": [
+    "AGENTS.md",
+    "docs/agent/CONTEXT_INDEX.md",
+    "docs/agent/CONTEXT.md",
+    "docs/agent/STATUS.md",
+    "docs/agent/DECISIONS.md",
+    "docs/agent/AGENT_PROTOCOL.md",
+    "docs/agent/AUTOMATION.md"
+  ],
+  "sources": [
+    { "path": "AGENTS.md", "authority": "binding", "stability": "stable" },
+    { "path": "docs/GAME_PILLARS.md", "authority": "frozen-gate", "stability": "frozen" },
+    { "path": "docs/PROTOTYPE_SCOPE.md", "authority": "frozen-gate", "stability": "frozen" },
+    { "path": "docs/LOG_STATE_MACHINE.md", "authority": "frozen-gate", "stability": "frozen" },
+    { "path": "docs/NETWORK_RULES.md", "authority": "frozen-gate", "stability": "frozen" },
+    { "path": "docs/agent/CONTEXT_INDEX.md", "authority": "repository-operational", "stability": "stable" },
+    { "path": "docs/agent/CONTEXT.md", "authority": "repository-operational", "stability": "stable" },
+    { "path": "docs/agent/STATUS.md", "authority": "cache", "stability": "volatile" },
+    { "path": "docs/agent/DECISIONS.md", "authority": "repository-operational", "stability": "append-only" },
+    { "path": "docs/agent/AUTOMATION.md", "authority": "repository-operational", "stability": "stable" },
+    { "path": "docs/agent/AGENT_PROTOCOL.md", "authority": "repository-operational", "stability": "versioned" },
+    { "path": "docs/agent/schemas/task.schema.json", "authority": "protocol", "stability": "versioned" },
+    { "path": "docs/agent/schemas/result.schema.json", "authority": "protocol", "stability": "versioned" },
+    { "path": "docs/agent/schemas/review.schema.json", "authority": "protocol", "stability": "versioned" },
+    { "path": "docs/agent/schemas/handoff.schema.json", "authority": "protocol", "stability": "versioned" }
+  ]
+}
