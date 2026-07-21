@@ -25,6 +25,9 @@ jobs:
         with:
           global-json-file: global.json
 
+      - name: Fetch main for base evidence
+        run: git fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main
+
       - name: Verify repository
         run: dotnet run --configuration Release --project tools/Tlaw.Verify -- --expected-head "${{ github.event.pull_request.head.sha || github.sha }}"
 

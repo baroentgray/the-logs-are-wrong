@@ -49,7 +49,14 @@ public static class Program
         report = report with { Tests = CreateTestEvidence(test, trxPath), Commands = commands.ToArray() };
 
         var diffCheck = await RunAsync("diff-check", "git", ["diff", "--check"], repositoryRoot, logsDirectory, commands);
-        report = report with { DiffCheck = new CheckEvidence(ToStatus(diffCheck.Evidence.ExitCode)), Commands = commands.ToArray() };
+        var diffRangeCheck = string.IsNullOrWhiteSpace(report.ActualBaseSha)
+            ? null
+            : await RunAsync("diff-range-check", "git", ["diff", "--check", $"{report.ActualBaseSha}...HEAD"], repositoryRoot, logsDirectory, commands);
+        report = report with
+        {
+            DiffCheck = new CheckEvidence(ToStatus(diffCheck.Evidence.ExitCode) == EvidenceStatus.PASS && (diffRangeCheck is null || ToStatus(diffRangeCheck.Evidence.ExitCode) == EvidenceStatus.PASS) ? EvidenceStatus.PASS : EvidenceStatus.FAIL),
+            Commands = commands.ToArray()
+        };
 
         report = report with
         {
