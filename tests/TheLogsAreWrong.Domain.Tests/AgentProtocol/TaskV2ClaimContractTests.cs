@@ -83,6 +83,7 @@ public sealed class TaskV2ClaimContractTests
     [InlineData("2026-07-22T11:30:00Z")]
     [InlineData("2026-07-22T11:30:00+00:00")]
     [InlineData("2026-07-22T14:30:00.0000000+03:00")]
+    [InlineData("not-a-timestamp")]
     public void Claimed_timestamp_must_use_the_canonical_utc_format(string timestamp)
     {
         var yaml = ValidClaimedTask.Replace("2026-07-22T11:30:00.0000000Z", timestamp, StringComparison.Ordinal);
@@ -96,6 +97,18 @@ public sealed class TaskV2ClaimContractTests
         var yaml = ValidClaimedTask.Replace("2026-07-22T11:35:00.0000000Z", "2026-07-22T11:30:00.0000000Z", StringComparison.Ordinal);
 
         AssertInvalid(yaml, "TLAW-PKT-034", "claim_expires_at");
+    }
+
+    [Theory]
+    [InlineData("local")]
+    [InlineData("grok")]
+    public void Implementation_claim_cannot_use_local_or_grok(string agent)
+    {
+        var yaml = ValidClaimedTask
+            .Replace("  - claude\nrequired_capabilities:", $"  - claude\n  - {agent}\nrequired_capabilities:", StringComparison.Ordinal)
+            .Replace("claimed_by: codex", $"claimed_by: {agent}", StringComparison.Ordinal);
+
+        AssertInvalid(yaml, "TLAW-PKT-029", "claimed_by");
     }
 
     private static void AssertInvalid(string yaml, string code, string path)
