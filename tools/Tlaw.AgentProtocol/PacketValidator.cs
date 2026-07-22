@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
@@ -363,14 +364,79 @@ public static class PacketValidator
         var claimFields = new[] { "claimed_by", "claim_id", "claim_started_at", "claim_expires_at" }
             .Select(field => OptionalString(root, field))
             .ToArray();
-        if (claimFields.All(value => value is not null))
+        if (claimFields.Any(value => value is null))
         {
-            var unclaimedCount = claimFields.Count(value => string.Equals(value, "unclaimed", StringComparison.Ordinal));
-            if (unclaimedCount is not 0 and not 4)
-            {
-                diagnostics.Add(new PacketDiagnostic("TLAW-PKT-030", "claim", "Claim fields must all be 'unclaimed' or all be supplied by one prepared claim snapshot."));
-            }
+            return;
         }
+
+        var unclaimedCount = claimFields.Count(value => string.Equals(value, "unclaimed", StringComparison.Ordinal));
+        if (unclaimedCount == 4)
+        {
+            return;
+        }
+
+        if (unclaimedCount > 0)
+        {
+            diagnostics.Add(new PacketDiagnostic("TLAW-PKT-030", "claim", "Claim fields must all be 'unclaimed' or all be supplied by one prepared claim snapshot."));
+            return;
+        }
+
+        var claimedBy = claimFields[0]!;
+        var claimId = claimFields[1]!;
+        var claimStartedAt = claimFields[2]!;
+        var claimExpiresAt = claimFields[3]!;
+
+        if (!eligibleAgents.Contains(claimedBy, StringComparer.Ordinal))
+        {
+            diagnostics.Add(new PacketDiagnostic("TLAW-PKT-032", "claimed_by", "A claimed task/v2 packet must identify an eligible agent in claimed_by."));
+        }
+
+        if (string.IsNullOrWhiteSpace(claimId) || string.Equals(claimId, "unclaimed", StringComparison.Ordinal))
+        {
+            diagnostics.Add(new PacketDiagnostic("TLAW-PKT-032", "claim_id", "A claimed task/v2 packet must use a non-sentinel claim_id."));
+        }
+
+        var hasValidStart = TryParseCanonicalUtcTimestamp(claimStartedAt, out var claimStartedAtValue);
+        if (!hasValidStart)
+        {
+            diagnostics.Add(new PacketDiagnostic("TLAW-PKT-033", "claim_started_at", "Claim timestamps must use canonical UTC RFC3339 format yyyy-MM-dd'T'HH:mm:ss.fffffffZ."));
+        }
+
+        var hasValidExpiry = TryParseCanonicalUtcTimestamp(claimExpiresAt, out var claimExpiresAtValue);
+        if (!hasValidExpiry)
+        {
+            diagnostics.Add(new PacketDiagnostic("TLAW-PKT-033", "claim_expires_at", "Claim timestamps must use canonical UTC RFC3339 format yyyy-MM-dd'T'HH:mm:ss.fffffffZ."));
+        }
+
+        if (hasValidStart && hasValidExpiry && claimExpiresAtValue <= claimStartedAtValue)
+        {
+            diagnostics.Add(new PacketDiagnostic("TLAW-PKT-034", "claim_expires_at", "claim_expires_at must be strictly later than claim_started_at."));
+        }
+
+        if (string.Equals(workType, "implementation", StringComparison.Ordinal) &&
+            (string.Equals(claimedBy, "local", StringComparison.Ordinal) || string.Equals(claimedBy, "grok", StringComparison.Ordinal)))
+        {
+            diagnostics.Add(new PacketDiagnostic("TLAW-PKT-029", "claimed_by", "Implementation task/v2 packets must not be claimed by local or grok."));
+        }
+    }
+
+    private static bool TryParseCanonicalUtcTimestamp(string value, out DateTimeOffset timestamp)
+    {
+        const string format = "yyyy-MM-dd'T'HH:mm:ss.fffffff'Z'";
+
+        if (!DateTime.TryParseExact(
+                value,
+                format,
+                CultureInfo.InvariantCulture,
+                DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal,
+                out var parsed))
+        {
+            timestamp = default;
+            return false;
+        }
+
+        timestamp = new DateTimeOffset(parsed, TimeSpan.Zero);
+        return string.Equals(timestamp.ToString(format, CultureInfo.InvariantCulture), value, StringComparison.Ordinal);
     }
 
     private static string? OptionalString(JsonObject root, string name) => root[name] is JsonValue value && value.TryGetValue<string>(out var text)

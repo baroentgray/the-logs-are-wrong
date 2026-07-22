@@ -58,9 +58,9 @@ public static class TaskPacketCommand
         return true;
     }
 
-    private static string ReadUtf8(string path) => new UTF8Encoding(encoderShouldEmitUTF8Identifier: false, throwOnInvalidBytes: true).GetString(File.ReadAllBytes(path));
+    internal static string ReadUtf8(string path) => new UTF8Encoding(encoderShouldEmitUTF8Identifier: false, throwOnInvalidBytes: true).GetString(File.ReadAllBytes(path));
 
-    private static void WriteAtomically(string outputPath, string yaml)
+    internal static void WriteAtomically(string outputPath, string yaml)
     {
         var directory = Path.GetDirectoryName(outputPath);
         if (string.IsNullOrEmpty(directory) || !Directory.Exists(directory))
@@ -83,7 +83,7 @@ public static class TaskPacketCommand
         }
     }
 
-    private static string FindRepositoryRoot()
+    internal static string FindRepositoryRoot()
     {
         for (var directory = new DirectoryInfo(Directory.GetCurrentDirectory()); directory is not null; directory = directory.Parent)
         {
@@ -256,9 +256,84 @@ internal sealed record VerificationRequirement(bool Required, IReadOnlyList<stri
 
 internal sealed record DeliveryContract(bool BranchRequired, bool DraftPrRequired, bool MergeForbidden);
 
+internal sealed record TaskV2Packet(
+    string TaskId,
+    string SourceId,
+    IReadOnlyList<string> Sources,
+    string Objective,
+    string WorkType,
+    string PreferredAgent,
+    IReadOnlyList<string> EligibleAgents,
+    IReadOnlyList<string> RequiredCapabilities,
+    string AutonomyLevel,
+    IReadOnlyList<string> ForbiddenOperations,
+    string ClaimedBy,
+    string ClaimId,
+    string ClaimStartedAt,
+    string ClaimExpiresAt,
+    string BaseSha,
+    bool HandoffRequired,
+    string Worktree,
+    VerificationRequirement Verification,
+    DeliveryContract Delivery)
+{
+    internal static TaskV2Packet From(NormalizedTaskInput input) => new(
+        input.TaskId,
+        input.SourceId,
+        input.Sources,
+        input.Objective,
+        input.WorkType,
+        input.PreferredAgent,
+        input.EligibleAgents,
+        input.RequiredCapabilities,
+        input.AutonomyLevel,
+        input.ForbiddenOperations,
+        input.ClaimedBy,
+        input.ClaimId,
+        input.ClaimStartedAt,
+        input.ClaimExpiresAt,
+        input.BaseSha,
+        input.HandoffRequired,
+        input.Worktree,
+        input.Verification,
+        input.Delivery);
+
+    internal static TaskV2Packet From(ProtocolPacket packet) => new(
+        packet.RequiredString("task_id"),
+        packet.RequiredString("source_id"),
+        packet.RequiredStrings("sources"),
+        packet.RequiredString("objective"),
+        packet.RequiredString("work_type"),
+        packet.RequiredString("preferred_agent"),
+        packet.RequiredStrings("eligible_agents"),
+        packet.RequiredStrings("required_capabilities"),
+        packet.RequiredString("autonomy_level"),
+        packet.RequiredStrings("forbidden_operations"),
+        packet.RequiredString("claimed_by"),
+        packet.RequiredString("claim_id"),
+        packet.RequiredString("claim_started_at"),
+        packet.RequiredString("claim_expires_at"),
+        packet.RequiredString("base_sha"),
+        packet.RequiredBoolean("handoff_required"),
+        packet.RequiredString("worktree"),
+        new VerificationRequirement(packet.RequiredBoolean("verification", "required"), packet.RequiredNestedStrings("verification", "commands")),
+        new DeliveryContract(
+            packet.RequiredBoolean("delivery", "branch_required"),
+            packet.RequiredBoolean("delivery", "draft_pr_required"),
+            packet.RequiredBoolean("delivery", "merge_forbidden")));
+
+    internal bool IsUnclaimed =>
+        string.Equals(ClaimedBy, "unclaimed", StringComparison.Ordinal) &&
+        string.Equals(ClaimId, "unclaimed", StringComparison.Ordinal) &&
+        string.Equals(ClaimStartedAt, "unclaimed", StringComparison.Ordinal) &&
+        string.Equals(ClaimExpiresAt, "unclaimed", StringComparison.Ordinal);
+}
+
 internal static class TaskPacketGenerator
 {
-    internal static string Generate(NormalizedTaskInput input, PacketSchemaRegistry registry)
+    internal static string Generate(NormalizedTaskInput input, PacketSchemaRegistry registry) => Generate(TaskV2Packet.From(input), registry);
+
+    internal static string Generate(TaskV2Packet input, PacketSchemaRegistry registry)
     {
         var output = new StringBuilder();
         AppendString(output, "schema", "tlaw.agent-task/v2");
@@ -279,13 +354,13 @@ internal static class TaskPacketGenerator
         AppendString(output, "base_sha", input.BaseSha);
         AppendBoolean(output, "handoff_required", input.HandoffRequired);
         AppendString(output, "worktree", input.Worktree);
-        output.AppendLine("verification:");
-        AppendBoolean(output, "  required", input.Verification.Required);
-        AppendStringSequence(output, "  commands", input.Verification.Commands);
-        output.AppendLine("delivery:");
-        AppendBoolean(output, "  branch_required", input.Delivery.BranchRequired);
-        AppendBoolean(output, "  draft_pr_required", input.Delivery.DraftPrRequired);
-        AppendBoolean(output, "  merge_forbidden", input.Delivery.MergeForbidden);
+        AppendLine(output, "verification:");
+        AppendBoolean(output, "required", input.Verification.Required, 2);
+        AppendStringSequence(output, "commands", input.Verification.Commands, 2);
+        AppendLine(output, "delivery:");
+        AppendBoolean(output, "branch_required", input.Delivery.BranchRequired, 2);
+        AppendBoolean(output, "draft_pr_required", input.Delivery.DraftPrRequired, 2);
+        AppendBoolean(output, "merge_forbidden", input.Delivery.MergeForbidden, 2);
 
         var yaml = output.ToString();
         var validation = PacketValidator.Validate(yaml, registry);
@@ -300,18 +375,36 @@ internal static class TaskPacketGenerator
         return yaml;
     }
 
-    private static void AppendString(StringBuilder output, string name, string value) => output.Append(name).Append(": ").Append(JsonSerializer.Serialize(value)).AppendLine();
-
-    private static void AppendStringSequence(StringBuilder output, string name, IEnumerable<string> values)
+    private static void AppendString(StringBuilder output, string name, string value, int indentation = 0)
     {
-        output.Append(name).AppendLine(":");
+        AppendIndentation(output, indentation);
+        output.Append(name).Append(": ").Append(JsonSerializer.Serialize(value));
+        AppendLine(output);
+    }
+
+    private static void AppendStringSequence(StringBuilder output, string name, IEnumerable<string> values, int indentation = 0)
+    {
+        AppendIndentation(output, indentation);
+        output.Append(name).Append(':');
+        AppendLine(output);
         foreach (var value in values)
         {
-            output.Append("  - ").Append(JsonSerializer.Serialize(value)).AppendLine();
+            AppendIndentation(output, indentation + 2);
+            output.Append("- ").Append(JsonSerializer.Serialize(value));
+            AppendLine(output);
         }
     }
 
-    private static void AppendBoolean(StringBuilder output, string name, bool value) => output.Append(name).Append(": ").Append(value ? "true" : "false").AppendLine();
+    private static void AppendBoolean(StringBuilder output, string name, bool value, int indentation = 0)
+    {
+        AppendIndentation(output, indentation);
+        output.Append(name).Append(": ").Append(value ? "true" : "false");
+        AppendLine(output);
+    }
+
+    private static void AppendLine(StringBuilder output, string value = "") => output.Append(value).Append('\n');
+
+    private static void AppendIndentation(StringBuilder output, int count) => output.Append(' ', count);
 }
 
 internal sealed class TaskPacketInputException(string message) : Exception(message);

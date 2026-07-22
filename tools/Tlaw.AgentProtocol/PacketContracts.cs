@@ -27,6 +27,10 @@ public sealed class ProtocolPacket
     public string RequiredString(string name) => Root[name]?.GetValue<string>()
         ?? throw new InvalidOperationException($"Required string '{name}' is missing.");
 
+    public bool RequiredBoolean(string name) => Root[name]?.GetValue<bool>() is bool value
+        ? value
+        : throw new InvalidOperationException($"Required boolean '{name}' is missing.");
+
     public bool RequiredBoolean(string objectName, string name) => Root[objectName] is JsonObject nested && nested[name]?.GetValue<bool>() is bool value
         ? value
         : throw new InvalidOperationException($"Required boolean '{objectName}.{name}' is missing.");
@@ -34,6 +38,10 @@ public sealed class ProtocolPacket
     public string RequiredNestedString(string objectName, string name) => Root[objectName] is JsonObject nested && nested[name]?.GetValue<string>() is string value
         ? value
         : throw new InvalidOperationException($"Required string '{objectName}.{name}' is missing.");
+
+    public IReadOnlyList<string> RequiredStrings(string name) => Root[name] is JsonArray values
+        ? values.Select(value => value?.GetValue<string>() ?? throw new InvalidOperationException($"Required string '{name}' is missing.")).ToArray()
+        : throw new InvalidOperationException($"Required array '{name}' is missing.");
 
     public IReadOnlyList<string> RequiredNestedStrings(string objectName, string name) => Root[objectName] is JsonObject nested && nested[name] is JsonArray values
         ? values.Select(value => value?.GetValue<string>() ?? throw new InvalidOperationException($"Required string '{objectName}.{name}' is missing.")).ToArray()

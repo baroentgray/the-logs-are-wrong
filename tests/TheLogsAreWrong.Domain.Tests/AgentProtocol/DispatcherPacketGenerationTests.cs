@@ -20,6 +20,7 @@ public sealed class DispatcherPacketGenerationTests
         var first = File.ReadAllBytes(firstOutput);
         var second = File.ReadAllBytes(secondOutput);
         Assert.Equal(first, second);
+        Assert.False(first.Contains((byte)'\r'), "Task packet output must use LF line endings on every platform.");
 
         var yaml = new UTF8Encoding(encoderShouldEmitUTF8Identifier: false, throwOnInvalidBytes: true).GetString(first);
         Assert.True(PacketValidator.Validate(yaml, PacketSchemaRegistry.Load(SchemaRoot)).IsValid);
@@ -77,6 +78,23 @@ public sealed class DispatcherPacketGenerationTests
         var validation = PacketValidator.Validate(File.ReadAllText(output), PacketSchemaRegistry.Load(SchemaRoot));
         Assert.True(validation.IsValid, string.Join(" | ", validation.Diagnostics.Select(diagnostic => diagnostic.Message)));
         Assert.Equal("tlaw.agent-task/v2", validation.Packet!.Schema);
+    }
+
+    [Fact]
+    public void Valid_generation_replaces_existing_output_and_invalid_generation_preserves_it()
+    {
+        using var workspace = TemporaryWorkspace.Create();
+        var validInput = workspace.Write("task-input.json", ValidNormalizedInput);
+        var invalidInput = workspace.Write("invalid-input.json", ValidNormalizedInput.Replace("c4ad144fac76584faf7948956c172e20df9a5a79", "not-a-sha", StringComparison.Ordinal));
+        var output = Path.Combine(workspace.Path, "task.yaml");
+        File.WriteAllText(output, "previous packet\n", new UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
+
+        Assert.Equal(0, TaskPacketCommand.Run(["packet", "--input", validInput, "--output", output], TextWriter.Null, TextWriter.Null));
+        var generated = File.ReadAllText(output);
+        Assert.NotEqual("previous packet\n", generated);
+
+        Assert.NotEqual(0, TaskPacketCommand.Run(["packet", "--input", invalidInput, "--output", output], TextWriter.Null, TextWriter.Null));
+        Assert.Equal(generated, File.ReadAllText(output));
     }
 
     private static void AssertOrdered(string text, params string[] keys)

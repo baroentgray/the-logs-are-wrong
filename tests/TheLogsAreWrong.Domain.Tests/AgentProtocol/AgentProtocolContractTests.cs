@@ -53,6 +53,9 @@ public sealed class AgentProtocolContractTests
     [InlineData("invalid/task-v2-unknown-field.yaml")]
     [InlineData("invalid/task-v2-local-implementation.yaml")]
     [InlineData("invalid/task-v2-grok-implementation.yaml")]
+    [InlineData("invalid/task-v2-claimed-by-ineligible.yaml")]
+    [InlineData("invalid/task-v2-nonutc-claim-timestamp.yaml")]
+    [InlineData("invalid/task-v2-reversed-claim-timestamps.yaml")]
     public void Invalid_protocol_fixtures_fail_visibly(string fixture)
     {
         var result = PacketValidator.Validate(File.ReadAllText(Path.Combine(ExamplesRoot, fixture)), PacketSchemaRegistry.Load(SchemaRoot));
@@ -97,6 +100,9 @@ public sealed class AgentProtocolContractTests
     [InlineData("invalid/task-v2-unknown-field.yaml", "TLAW-PKT-021")]
     [InlineData("invalid/task-v2-local-implementation.yaml", "TLAW-PKT-029")]
     [InlineData("invalid/task-v2-grok-implementation.yaml", "TLAW-PKT-029")]
+    [InlineData("invalid/task-v2-claimed-by-ineligible.yaml", "TLAW-PKT-032")]
+    [InlineData("invalid/task-v2-nonutc-claim-timestamp.yaml", "TLAW-PKT-033")]
+    [InlineData("invalid/task-v2-reversed-claim-timestamps.yaml", "TLAW-PKT-034")]
     public void Closed_protocol_contracts_reject_the_required_boundary_cases(string fixture, string expectedCode)
     {
         var result = PacketValidator.Validate(File.ReadAllText(Path.Combine(ExamplesRoot, fixture)), PacketSchemaRegistry.Load(SchemaRoot));
@@ -200,7 +206,7 @@ public sealed class AgentProtocolContractTests
         Assert.All(startupOrder.Concat(sources).Where(path => path is not null), path => Assert.True(File.Exists(Path.Combine(RepositoryRoot, path!)), path));
     }
 
-    private static IReadOnlyList<string> PositiveFixturePaths { get; } = ["task.valid.yaml", "task.v2.valid.yaml", "result.valid.yaml", "review.valid.yaml", "handoff.valid.yaml"];
+    private static IReadOnlyList<string> PositiveFixturePaths { get; } = ["task.valid.yaml", "task.v2.valid.yaml", "task.v2.claimed.valid.yaml", "result.valid.yaml", "review.valid.yaml", "handoff.valid.yaml"];
 
     private static string RepositoryRoot => FindRepositoryRoot();
     private static string AgentRoot => Path.Combine(RepositoryRoot, "docs", "agent");
