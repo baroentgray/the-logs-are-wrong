@@ -1,9 +1,8 @@
 schema: tlaw.agent-review/v1
 task_id: BAR-31
-reviewed_head: ef51ab1750164361f69fe3cfb9a32e0a0da9c2e3
+reviewed_head: ef51ab1
 verdict: approve
-human_summary: |
-  Protocol fixture is structurally valid.
+human_summary: Review evidence is complete.
 evidence:
   - kind: file
     reference: docs/agent/schemas/review.schema.json

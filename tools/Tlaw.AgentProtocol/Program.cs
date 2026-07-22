@@ -31,9 +31,11 @@ public static class Program
             Console.WriteLine(args[0] == "validate" ? "PASS" : ResultProjector.Project(result.Packet!));
             return 0;
         }
-        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or InvalidDataException or DirectoryNotFoundException or ArgumentException or DecoderFallbackException)
+        catch (Exception exception)
         {
-            Console.Error.WriteLine($"FAIL: {exception.Message}");
+            Console.Error.WriteLine(exception is IOException or UnauthorizedAccessException or InvalidDataException or DirectoryNotFoundException or ArgumentException or DecoderFallbackException
+                ? $"FAIL: {exception.Message}"
+                : "FAIL: validator failed unexpectedly.");
             return 1;
         }
     }

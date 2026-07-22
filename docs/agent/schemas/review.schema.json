@@ -3,10 +3,11 @@
   "$id": "tlaw.agent-review/v1",
   "type": "object",
   "additionalProperties": false,
-  "required": ["schema", "task_id", "verdict", "human_summary", "evidence", "findings"],
+  "required": ["schema", "task_id", "reviewed_head", "verdict", "human_summary", "evidence", "findings"],
   "properties": {
     "schema": { "type": "string", "const": "tlaw.agent-review/v1" },
     "task_id": { "type": "string", "minLength": 1 },
+    "reviewed_head": { "type": "string", "minLength": 40, "maxLength": 40, "pattern": "^[0-9A-Fa-f]{40}$" },
     "verdict": { "type": "string", "enum": ["approve", "request_changes", "comment"] },
     "human_summary": { "type": "string", "minLength": 1 },
     "evidence": {

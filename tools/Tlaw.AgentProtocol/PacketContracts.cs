@@ -20,6 +20,10 @@ public sealed class ProtocolPacket
 
     public string Schema => RequiredString("schema");
 
+    public string ReviewedHead => Schema == "tlaw.agent-review/v1"
+        ? RequiredString("reviewed_head")
+        : throw new InvalidOperationException("Only review packets contain reviewed-head evidence.");
+
     public string RequiredString(string name) => Root[name]?.GetValue<string>()
         ?? throw new InvalidOperationException($"Required string '{name}' is missing.");
 

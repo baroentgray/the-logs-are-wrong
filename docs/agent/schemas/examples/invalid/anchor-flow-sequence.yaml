@@ -1,0 +1,9 @@
+schema: tlaw.agent-task/v1
+task_id: BAR-31
+main_sha: 5e6271a47d1c373a664a374add3c1bc857559f31
+sources:
+  - docs/agent/CONTEXT_INDEX.md
+objective: Validate collection safety.
+constraints:
+  - Reject unsupported YAML.
+probe: &a [one, two]

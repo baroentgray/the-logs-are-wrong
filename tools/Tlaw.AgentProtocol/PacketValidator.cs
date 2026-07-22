@@ -72,6 +72,11 @@ public static class PacketValidator
             diagnostics.Add(new PacketDiagnostic("TLAW-PKT-006", "(document)", $"YAML could not be parsed at line {exception.Start.Line + 1}, column {exception.Start.Column + 1}."));
             return null;
         }
+        catch (Exception)
+        {
+            diagnostics.Add(new PacketDiagnostic("TLAW-PKT-027", "(document)", "YAML safety scan failed."));
+            return null;
+        }
     }
 
     private static void PreScan(string yaml, ICollection<PacketDiagnostic> diagnostics)
@@ -98,20 +103,23 @@ public static class PacketValidator
                     HandleScalar(scalar, collections, diagnostics);
                     break;
                 case MappingStart:
-                    ConsumeNode(collections);
-                    collections.Push(new CollectionState(true));
+                    StartCollection(isMapping: true, collections);
                     break;
                 case MappingEnd:
-                    collections.Pop();
+                    EndCollection(collections, diagnostics);
                     break;
                 case SequenceStart:
-                    ConsumeNode(collections);
-                    collections.Push(new CollectionState(false));
+                    StartCollection(isMapping: false, collections);
                     break;
                 case SequenceEnd:
-                    collections.Pop();
+                    EndCollection(collections, diagnostics);
                     break;
             }
+        }
+
+        if (collections.Count != 0)
+        {
+            diagnostics.Add(new PacketDiagnostic("TLAW-PKT-028", "(document)", "YAML collection did not terminate."));
         }
     }
 
@@ -123,9 +131,15 @@ public static class PacketValidator
             return;
         }
 
-        if (nodeEvent is MappingStart or SequenceStart)
+        if (nodeEvent is MappingStart)
         {
-            ConsumeNode(collections);
+            StartCollection(isMapping: true, collections);
+            return;
+        }
+
+        if (nodeEvent is SequenceStart)
+        {
+            StartCollection(isMapping: false, collections);
         }
     }
 
@@ -220,6 +234,11 @@ public static class PacketValidator
             if (schema.TryGetProperty("maxLength", out var maxLength) && text.Length > maxLength.GetInt32())
             {
                 diagnostics.Add(new PacketDiagnostic("TLAW-PKT-018", DisplayPath(path), "String is longer than the allowed maximum."));
+            }
+
+            if (schema.TryGetProperty("pattern", out var pattern) && !Regex.IsMatch(text, pattern.GetString()!, RegexOptions.CultureInvariant))
+            {
+                diagnostics.Add(new PacketDiagnostic("TLAW-PKT-026", DisplayPath(path), "String does not match the required pattern."));
             }
         }
 
@@ -333,6 +352,20 @@ public static class PacketValidator
         if (collections.TryPeek(out var mapping) && mapping.IsMapping && !mapping.ExpectsKey)
         {
             mapping.ExpectsKey = true;
+        }
+    }
+
+    private static void StartCollection(bool isMapping, Stack<CollectionState> collections)
+    {
+        ConsumeNode(collections);
+        collections.Push(new CollectionState(isMapping));
+    }
+
+    private static void EndCollection(Stack<CollectionState> collections, ICollection<PacketDiagnostic> diagnostics)
+    {
+        if (!collections.TryPop(out _))
+        {
+            diagnostics.Add(new PacketDiagnostic("TLAW-PKT-028", "(document)", "YAML collection ended without a matching start."));
         }
     }
 

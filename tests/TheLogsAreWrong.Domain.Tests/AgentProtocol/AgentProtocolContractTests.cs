@@ -27,12 +27,79 @@ public sealed class AgentProtocolContractTests
     [InlineData("invalid/duplicate-key.yaml")]
     [InlineData("invalid/missing-evidence.yaml")]
     [InlineData("invalid/human-pause-missing-options.yaml")]
+    [InlineData("invalid/anchor-flow-mapping.yaml")]
+    [InlineData("invalid/anchor-block-mapping.yaml")]
+    [InlineData("invalid/anchor-flow-sequence.yaml")]
+    [InlineData("invalid/tag-flow-mapping.yaml")]
+    [InlineData("invalid/tag-block-sequence.yaml")]
+    [InlineData("invalid/alias-after-anchored-collection.yaml")]
+    [InlineData("invalid/merge-key-anchored-mapping.yaml")]
+    [InlineData("invalid/malformed-nested-after-anchor.yaml")]
+    [InlineData("invalid/review-missing-reviewed-head.yaml")]
+    [InlineData("invalid/review-short-reviewed-head.yaml")]
+    [InlineData("invalid/review-long-reviewed-head.yaml")]
+    [InlineData("invalid/review-nonhex-reviewed-head.yaml")]
+    [InlineData("invalid/review-extra-field.yaml")]
+    [InlineData("invalid/invalid-closed-enum.yaml")]
+    [InlineData("invalid/task-missing-main-sha.yaml")]
+    [InlineData("invalid/task-short-main-sha.yaml")]
+    [InlineData("invalid/handoff-missing-main-sha.yaml")]
+    [InlineData("invalid/handoff-short-main-sha.yaml")]
+    [InlineData("invalid/handoff-missing-next-action.yaml")]
+    [InlineData("invalid/over-limit-human-summary.yaml")]
     public void Invalid_protocol_fixtures_fail_visibly(string fixture)
     {
         var result = PacketValidator.Validate(File.ReadAllText(Path.Combine(ExamplesRoot, fixture)), PacketSchemaRegistry.Load(SchemaRoot));
 
         Assert.False(result.IsValid);
         Assert.NotEmpty(result.Diagnostics);
+    }
+
+    [Theory]
+    [InlineData("invalid/anchor-flow-mapping.yaml", "TLAW-PKT-008")]
+    [InlineData("invalid/anchor-block-mapping.yaml", "TLAW-PKT-008")]
+    [InlineData("invalid/anchor-flow-sequence.yaml", "TLAW-PKT-008")]
+    [InlineData("invalid/tag-flow-mapping.yaml", "TLAW-PKT-009")]
+    [InlineData("invalid/tag-block-sequence.yaml", "TLAW-PKT-009")]
+    [InlineData("invalid/alias-after-anchored-collection.yaml", "TLAW-PKT-007")]
+    [InlineData("invalid/merge-key-anchored-mapping.yaml", "TLAW-PKT-010")]
+    [InlineData("invalid/malformed-nested-after-anchor.yaml", "TLAW-PKT-006")]
+    public void Rejected_collection_constructs_fail_with_a_deterministic_protocol_diagnostic(string fixture, string expectedCode)
+    {
+        var result = PacketValidator.Validate(File.ReadAllText(Path.Combine(ExamplesRoot, fixture)), PacketSchemaRegistry.Load(SchemaRoot));
+
+        Assert.False(result.IsValid);
+        Assert.Contains(result.Diagnostics, diagnostic => diagnostic.Code == expectedCode);
+    }
+
+    [Theory]
+    [InlineData("invalid/review-missing-reviewed-head.yaml", "TLAW-PKT-020")]
+    [InlineData("invalid/review-short-reviewed-head.yaml", "TLAW-PKT-017")]
+    [InlineData("invalid/review-long-reviewed-head.yaml", "TLAW-PKT-018")]
+    [InlineData("invalid/review-nonhex-reviewed-head.yaml", "TLAW-PKT-026")]
+    [InlineData("invalid/review-extra-field.yaml", "TLAW-PKT-021")]
+    [InlineData("invalid/invalid-closed-enum.yaml", "TLAW-PKT-016")]
+    [InlineData("invalid/task-missing-main-sha.yaml", "TLAW-PKT-020")]
+    [InlineData("invalid/task-short-main-sha.yaml", "TLAW-PKT-017")]
+    [InlineData("invalid/handoff-missing-main-sha.yaml", "TLAW-PKT-020")]
+    [InlineData("invalid/handoff-short-main-sha.yaml", "TLAW-PKT-017")]
+    [InlineData("invalid/handoff-missing-next-action.yaml", "TLAW-PKT-020")]
+    [InlineData("invalid/over-limit-human-summary.yaml", "TLAW-PKT-022")]
+    public void Closed_protocol_contracts_reject_the_required_boundary_cases(string fixture, string expectedCode)
+    {
+        var result = PacketValidator.Validate(File.ReadAllText(Path.Combine(ExamplesRoot, fixture)), PacketSchemaRegistry.Load(SchemaRoot));
+
+        Assert.False(result.IsValid);
+        Assert.Contains(result.Diagnostics, diagnostic => diagnostic.Code == expectedCode);
+    }
+
+    [Fact]
+    public void Review_packets_preserve_the_exact_reviewed_head_evidence()
+    {
+        var result = PacketValidator.Validate(File.ReadAllText(Path.Combine(ExamplesRoot, "review.valid.yaml")), PacketSchemaRegistry.Load(SchemaRoot));
+
+        Assert.True(result.IsValid);
+        Assert.Equal("ef51ab1750164361f69fe3cfb9a32e0a0da9c2e3", result.Packet!.ReviewedHead);
     }
 
     [Fact]
