@@ -133,6 +133,47 @@ public sealed class LocalLeaseLifecycleTests
     }
 
     [Fact]
+    public void Duplicate_claim_id_fails_closed_and_neither_token_can_mutate_the_persisted_lease()
+    {
+        using var workspace = LeaseWorkspace.Create();
+        var store = new FileLeaseStore(workspace.StorePath, new TestLeaseClock("2026-07-22T11:30:00.0000000Z"));
+        var legitimateLease = store.Acquire("BAR-26", "codex", TimeSpan.FromMinutes(5));
+        var injectedClaimId = Guid.NewGuid().ToString("N");
+        var leaseFile = Directory.EnumerateFiles(workspace.StorePath, "*.json", SearchOption.AllDirectories).Single();
+        var corruptRecord = AppendDuplicateRootProperty(File.ReadAllText(leaseFile), "claim_id", injectedClaimId);
+        File.WriteAllText(leaseFile, corruptRecord, new UTF8Encoding(false));
+
+        Assert.Throws<LeaseStoreException>(() => store.Inspect("BAR-26"));
+        Assert.Throws<LeaseStoreException>(() => store.Acquire("BAR-26", "claude", TimeSpan.FromMinutes(5)));
+        Assert.Throws<LeaseStoreException>(() => store.Release("BAR-26", legitimateLease.ClaimId, LeaseReleaseReason.Error));
+        Assert.Throws<LeaseStoreException>(() => store.Release("BAR-26", injectedClaimId, LeaseReleaseReason.Error));
+        Assert.True(File.Exists(leaseFile));
+        Assert.Equal(corruptRecord, File.ReadAllText(leaseFile));
+    }
+
+    [Theory]
+    [InlineData("schema")]
+    [InlineData("task_id")]
+    [InlineData("claimed_by")]
+    [InlineData("claim_id")]
+    [InlineData("claim_started_at")]
+    [InlineData("claim_expires_at")]
+    public void Every_duplicate_recognized_lease_root_property_fails_closed_without_rewriting_the_record(string property)
+    {
+        using var workspace = LeaseWorkspace.Create();
+        var store = new FileLeaseStore(workspace.StorePath, new TestLeaseClock("2026-07-22T11:30:00.0000000Z"));
+        store.Acquire("BAR-26", "codex", TimeSpan.FromMinutes(5));
+        var leaseFile = Directory.EnumerateFiles(workspace.StorePath, "*.json", SearchOption.AllDirectories).Single();
+        var corruptRecord = AppendDuplicateRootProperty(File.ReadAllText(leaseFile), property, "injected");
+        File.WriteAllText(leaseFile, corruptRecord, new UTF8Encoding(false));
+
+        Assert.Throws<LeaseStoreException>(() => store.Inspect("BAR-26"));
+        Assert.Throws<LeaseStoreException>(() => store.Acquire("BAR-26", "claude", TimeSpan.FromMinutes(5)));
+        Assert.True(File.Exists(leaseFile));
+        Assert.Equal(corruptRecord, File.ReadAllText(leaseFile));
+    }
+
+    [Fact]
     public void Lease_command_emits_a_claimed_v2_packet_accepted_by_the_protocol_validator()
     {
         using var workspace = LeaseWorkspace.Create();
@@ -245,6 +286,13 @@ public sealed class LocalLeaseLifecycleTests
         }
 
         throw new DirectoryNotFoundException("Repository root was not found.");
+    }
+
+    private static string AppendDuplicateRootProperty(string json, string property, string value)
+    {
+        var closingBrace = json.LastIndexOf('}');
+        Assert.True(closingBrace >= 0, "Expected a root JSON object.");
+        return $"{json[..closingBrace]},\"{property}\":\"{value}\"{json[closingBrace..]}";
     }
 
     private sealed class TestLeaseClock(string timestamp) : ILeaseClock

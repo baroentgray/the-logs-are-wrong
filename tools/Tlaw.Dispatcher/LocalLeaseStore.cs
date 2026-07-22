@@ -193,6 +193,15 @@ public sealed class FileLeaseStore
             {
                 "schema", "task_id", "claimed_by", "claim_id", "claim_started_at", "claim_expires_at"
             };
+            var seen = new HashSet<string>(StringComparer.Ordinal);
+            foreach (var property in root.EnumerateObject())
+            {
+                if (!seen.Add(property.Name))
+                {
+                    throw new LeaseStoreException($"Lease state for task '{taskId}' contains duplicate property '{property.Name}'.");
+                }
+            }
+
             foreach (var property in root.EnumerateObject())
             {
                 if (!allowed.Contains(property.Name))
