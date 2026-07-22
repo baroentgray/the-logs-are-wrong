@@ -1,0 +1,8 @@
+schema: tlaw.agent-result/v1
+task_id: BAR-31
+status: success
+human_summary: A successful result without evidence must fail.
+human:
+  required: false
+  question: No human decision is required.
+  safe_options: []

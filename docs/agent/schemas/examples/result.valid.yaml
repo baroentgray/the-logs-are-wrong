@@ -1,0 +1,15 @@
+schema: tlaw.agent-result/v1
+task_id: BAR-31
+status: success
+human_summary: |
+  Protocol fixture passed.
+  Gate 0 unchanged.
+evidence:
+  - kind: command
+    reference: dotnet test --configuration Release
+  - kind: source
+    reference: docs/agent/schemas/result.schema.json
+human:
+  required: false
+  question: No human decision is required.
+  safe_options: []

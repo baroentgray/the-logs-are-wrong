@@ -1,0 +1,11 @@
+schema: tlaw.agent-result/v1
+task_id: BAR-31
+status: blocked
+human_summary: A human pause without safe options must fail.
+evidence:
+  - kind: source
+    reference: https://linear.app/baronet/issue/BAR-31
+human:
+  required: true
+  question: Which approved source resolves the conflict?
+  safe_options: []

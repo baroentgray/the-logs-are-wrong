@@ -185,11 +185,7 @@ public static class Program
                 }
             }
 
-            var pathspecs = baseline.Files
-                .Select(file => file.Path)
-                .Concat(["docs", "data", "reviews", "scripts", "source"])
-                .Distinct(StringComparer.Ordinal)
-                .ToArray();
+            var pathspecs = Gate0ChangeSetPathspecs.Build(baseline);
             var committed = await ReadGate0ChangeSetAsync("gate0-committed", ["diff", "--name-only", $"{baseline.SourceSha}..HEAD", "--", ..pathspecs], gitExecutable, repositoryRoot, logsDirectory, commands);
             var staged = await ReadGate0ChangeSetAsync("gate0-staged", ["diff", "--cached", "--name-only", "--", ..pathspecs], gitExecutable, repositoryRoot, logsDirectory, commands);
             var unstaged = await ReadGate0ChangeSetAsync("gate0-unstaged", ["diff", "--name-only", "--", ..pathspecs], gitExecutable, repositoryRoot, logsDirectory, commands);
@@ -207,10 +203,8 @@ public static class Program
         var execution = await RunAsync(name, gitExecutable, arguments, repositoryRoot, logsDirectory, commands);
         var paths = OutputValue(execution)
             .Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-            .Select(path => path.Replace('\\', '/'))
-            .OrderBy(path => path, StringComparer.Ordinal)
             .ToArray();
-        return new Gate0ChangeSet(paths, execution.Evidence.ExitCode == 0);
+        return Gate0ChangeSetPathspecs.CreateChangeSet(paths, execution.Evidence.ExitCode == 0);
     }
 
     private static ArchitectureEvidence ExtractArchitecture(TestEvidence? tests)
