@@ -39,9 +39,17 @@ Generate v2 only with the repository-native commands documented in [`tools/Tlaw.
 
 The separately explicit local `route` command consumes a validated unclaimed task v2 packet and an auditable local agent snapshot, then emits an internal `tlaw.dispatcher-selection/v1` JSON record. Selection is deterministic and does not alter any claim field, acquire a lease, launch an agent, or create a new AgentProtocol envelope. A human reviews that record before separately invoking `lease acquire`.
 
+The separately explicit local `ingest-result` command consumes one validated result/v1 packet only when it exactly matches a validated, fully claimed task/v2 packet and its currently active local lease. It writes an internal `tlaw.dispatcher-ingestion/v1` record after all validation and correlation succeeds, then projects the existing concise result content. It does not release or renew the lease, alter either packet, transition Linear, launch an agent, write GitHub, merge, or complete the parent dispatcher MVP.
+
+The separately explicit local `ingest-result` command consumes one validated result/v1 packet only when it exactly matches a validated, fully claimed task/v2 packet and its currently active local lease. It writes an internal `tlaw.dispatcher-ingestion/v1` record after all validation and correlation succeeds, then projects the existing concise result content. It does not release or renew the lease, alter either packet, transition Linear, launch an agent, write GitHub, merge, or complete the parent dispatcher MVP.
+
 ## Human pause
 
 When `human.required: true`, a result must be `blocked`, provide `question`, `evidence`, and non-empty `safe_options`. Projection returns only the summary, question, evidence references, and safe options. It does not append task metadata or free-form trailing prose. Automation pauses for that payload; it does not guess, dispatch, merge, or expand provider permissions.
+
+Result ingestion preserves a valid `failed` or `blocked` status. It is evidence for a later, separately approved workflow decision and never turns an input result into success.
+
+Result ingestion preserves a valid `failed` or `blocked` status. It is evidence for a later, separately approved workflow decision and never turns an input result into success.
 
 ## Evolution
 

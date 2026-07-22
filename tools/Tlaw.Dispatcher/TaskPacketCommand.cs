@@ -327,6 +327,12 @@ internal sealed record TaskV2Packet(
         string.Equals(ClaimId, "unclaimed", StringComparison.Ordinal) &&
         string.Equals(ClaimStartedAt, "unclaimed", StringComparison.Ordinal) &&
         string.Equals(ClaimExpiresAt, "unclaimed", StringComparison.Ordinal);
+
+    internal bool IsClaimed =>
+        !string.Equals(ClaimedBy, "unclaimed", StringComparison.Ordinal) &&
+        !string.Equals(ClaimId, "unclaimed", StringComparison.Ordinal) &&
+        !string.Equals(ClaimStartedAt, "unclaimed", StringComparison.Ordinal) &&
+        !string.Equals(ClaimExpiresAt, "unclaimed", StringComparison.Ordinal);
 }
 
 internal static class TaskPacketGenerator

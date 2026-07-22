@@ -111,6 +111,30 @@ public sealed class FileLeaseStore
         });
     }
 
+    public static LocalLeaseInspection InspectReadOnly(string storePath, string taskId, ILeaseClock clock)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(storePath);
+        ArgumentNullException.ThrowIfNull(clock);
+        if (!Path.IsPathFullyQualified(storePath))
+        {
+            throw new ArgumentException("The lease store path must be absolute.", nameof(storePath));
+        }
+
+        ValidateIdentity(taskId, nameof(taskId));
+        var normalizedStorePath = Path.GetFullPath(storePath);
+        var leasePath = Path.Combine(normalizedStorePath, "leases", $"{TaskHash(taskId)}.json");
+        var lease = ReadLease(leasePath, taskId);
+        if (lease is null)
+        {
+            return new LocalLeaseInspection(LocalLeaseStatus.Missing, null);
+        }
+
+        var status = lease.ClaimExpiresAt > clock.UtcNow.ToUniversalTime()
+            ? LocalLeaseStatus.Active
+            : LocalLeaseStatus.Expired;
+        return new LocalLeaseInspection(status, lease);
+    }
+
     public void Release(string taskId, string claimId, LeaseReleaseReason reason)
     {
         ValidateIdentity(taskId, nameof(taskId));
@@ -172,9 +196,10 @@ public sealed class FileLeaseStore
         }
     }
 
-    private LocalLease? ReadLease(string taskId)
+    private LocalLease? ReadLease(string taskId) => ReadLease(LeasePath(taskId), taskId);
+
+    private static LocalLease? ReadLease(string path, string taskId)
     {
-        var path = LeasePath(taskId);
         if (!File.Exists(path))
         {
             return null;
