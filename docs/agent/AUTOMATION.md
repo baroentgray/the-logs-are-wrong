@@ -1,12 +1,14 @@
 # Automation and routing blueprint
 
-This is a reviewed repository copy of the routing blueprint, not a dispatcher implementation.
+This is a reviewed repository copy of the routing blueprint. BAR-26 Increment 1 implements only deterministic task-packet preparation; it is not a dispatcher implementation.
 
-1. Resolve the authoritative task source and exact main SHA.
-2. Build a compact `tlaw.agent-task/v1` packet with links and paths, not copied Issue bodies.
-3. Validate the restricted YAML before dispatch.
-4. Route a temporary executor from configured availability/quota and role suitability.
-5. Require branch, deterministic evidence, Draft PR, and independent review before a human merge decision.
-6. Validate result/review/handoff packets on ingestion; unknown versions or missing evidence stop visibly.
+1. A human or other approved read-only process prepares a local normalized JSON snapshot from authoritative references and an exact base SHA.
+2. Run `dotnet run --configuration Release --project tools/Tlaw.Dispatcher -- packet --input <normalized-input.json> --output <task.yaml>` from the repository root.
+3. The tool creates a compact `tlaw.agent-task/v2` YAML packet with links and paths, never copied Issue bodies, validates it, and replaces the output atomically only after validation succeeds.
+4. A human reviews the prepared packet before any later, separately approved routing or execution step.
 
-Codex implements; Claude plans/reviews and can be a fallback executor; local tools prepare read-only evidence; Grok console/CLI supports experiments, research, red-team, and alternative review. No entry here launches an agent, locks a provider, changes authority, or grants implementation permission. Future `tlaw packet`, `dispatch`, `review`, and `handoff` workflows may consume the manifest and schemas after separate approval.
+## Current limitations
+
+This increment does not contact or mutate Linear; acquire or release leases; select a live executor from availability; launch Codex, Claude, Grok, or Qwen; ingest result, review, or handoff packets; write GitHub; or merge anything. It has no provider adapters, no fallback execution, and no task-status transition. A future approved increment may consume a validated packet, but cannot infer authority beyond its declared policy.
+
+Codex implements; Claude plans/reviews and can be a fallback executor; local tools prepare read-only evidence; Grok console/CLI supports experiments, research, red-team, and alternative review. No entry here launches an agent, locks a provider, changes authority, or grants implementation permission. `tlaw packet` is preparation only; `dispatch`, `review`, and `handoff` workflows require separate approval.

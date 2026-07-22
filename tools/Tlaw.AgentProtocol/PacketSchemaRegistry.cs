@@ -7,6 +7,7 @@ public sealed class PacketSchemaRegistry
     private static readonly IReadOnlyDictionary<string, string> FileByIdentifier = new Dictionary<string, string>(StringComparer.Ordinal)
     {
         ["tlaw.agent-task/v1"] = "task.schema.json",
+        ["tlaw.agent-task/v2"] = "task.v2.schema.json",
         ["tlaw.agent-result/v1"] = "result.schema.json",
         ["tlaw.agent-review/v1"] = "review.schema.json",
         ["tlaw.agent-handoff/v1"] = "handoff.schema.json"

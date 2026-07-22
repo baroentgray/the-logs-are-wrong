@@ -22,6 +22,7 @@
     { "path": "docs/agent/AUTOMATION.md", "authority": "repository-operational", "stability": "stable" },
     { "path": "docs/agent/AGENT_PROTOCOL.md", "authority": "repository-operational", "stability": "versioned" },
     { "path": "docs/agent/schemas/task.schema.json", "authority": "protocol", "stability": "versioned" },
+    { "path": "docs/agent/schemas/task.v2.schema.json", "authority": "protocol", "stability": "versioned" },
     { "path": "docs/agent/schemas/result.schema.json", "authority": "protocol", "stability": "versioned" },
     { "path": "docs/agent/schemas/review.schema.json", "authority": "protocol", "stability": "versioned" },
     { "path": "docs/agent/schemas/handoff.schema.json", "authority": "protocol", "stability": "versioned" }

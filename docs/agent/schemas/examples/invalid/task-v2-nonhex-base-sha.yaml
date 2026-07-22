@@ -1,0 +1,30 @@
+schema: tlaw.agent-task/v2
+task_id: BAR-26-increment-1
+source_id: BAR-26
+sources:
+  - docs/agent/AGENT_PROTOCOL.md
+objective: Reject non-hex base evidence.
+work_type: implementation
+preferred_agent: codex
+eligible_agents:
+  - codex
+required_capabilities:
+  - dotnet
+autonomy_level: branch_write
+forbidden_operations:
+  - Merge pull requests.
+claimed_by: unclaimed
+claim_id: unclaimed
+claim_started_at: unclaimed
+claim_expires_at: unclaimed
+base_sha: z4ad144fac76584faf7948956c172e20df9a5a79
+handoff_required: true
+worktree: task/BAR-26-dispatcher-packet-generation
+verification:
+  required: true
+  commands:
+    - dotnet test --configuration Release
+delivery:
+  branch_required: true
+  draft_pr_required: true
+  merge_forbidden: true
