@@ -7,6 +7,7 @@
     <ProjectReference Include="..\..\src\TheLogsAreWrong.Config.Yaml\TheLogsAreWrong.Config.Yaml.csproj" />
     <ProjectReference Include="..\..\tools\Tlaw.Verify\Tlaw.Verify.csproj" />
     <ProjectReference Include="..\..\tools\Tlaw.AgentProtocol\Tlaw.AgentProtocol.csproj" />
+    <ProjectReference Include="..\..\tools\Tlaw.Dispatcher\Tlaw.Dispatcher.csproj" />
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="18.8.1" />

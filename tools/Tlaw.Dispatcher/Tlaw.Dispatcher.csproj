@@ -1,0 +1,10 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <AssemblyName>Tlaw.Dispatcher</AssemblyName>
+    <RootNamespace>Tlaw.Dispatcher</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Tlaw.AgentProtocol\Tlaw.AgentProtocol.csproj" />
+  </ItemGroup>
+</Project>

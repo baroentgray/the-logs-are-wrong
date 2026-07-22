@@ -1,0 +1,94 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "tlaw.agent-task/v2",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "task_id",
+    "source_id",
+    "sources",
+    "objective",
+    "work_type",
+    "preferred_agent",
+    "eligible_agents",
+    "required_capabilities",
+    "autonomy_level",
+    "forbidden_operations",
+    "claimed_by",
+    "claim_id",
+    "claim_started_at",
+    "claim_expires_at",
+    "base_sha",
+    "handoff_required",
+    "worktree",
+    "verification",
+    "delivery"
+  ],
+  "properties": {
+    "schema": { "type": "string", "const": "tlaw.agent-task/v2" },
+    "task_id": { "type": "string", "minLength": 1 },
+    "source_id": { "type": "string", "minLength": 1 },
+    "sources": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "pattern": "^(https://[^\\s]+|[A-Za-z0-9][A-Za-z0-9._-]*(?:/[A-Za-z0-9][A-Za-z0-9._-]*)*)$"
+      }
+    },
+    "objective": { "type": "string", "minLength": 1 },
+    "work_type": {
+      "type": "string",
+      "enum": ["implementation", "strict_review", "planning", "read_only_analysis", "asset_generation"]
+    },
+    "preferred_agent": { "type": "string", "enum": ["codex", "claude", "grok", "local"] },
+    "eligible_agents": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "type": "string", "enum": ["codex", "claude", "grok", "local"] }
+    },
+    "required_capabilities": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "type": "string", "minLength": 1, "pattern": "^[a-z][a-z0-9_]*$" }
+    },
+    "autonomy_level": { "type": "string", "enum": ["read_only", "branch_write"] },
+    "forbidden_operations": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "type": "string", "minLength": 1 }
+    },
+    "claimed_by": { "type": "string", "minLength": 1 },
+    "claim_id": { "type": "string", "minLength": 1 },
+    "claim_started_at": { "type": "string", "minLength": 1 },
+    "claim_expires_at": { "type": "string", "minLength": 1 },
+    "base_sha": { "type": "string", "pattern": "^[0-9A-Fa-f]{40}$" },
+    "handoff_required": { "type": "boolean" },
+    "worktree": { "type": "string", "minLength": 1 },
+    "verification": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["required", "commands"],
+      "properties": {
+        "required": { "type": "boolean" },
+        "commands": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "type": "string", "minLength": 1 }
+        }
+      }
+    },
+    "delivery": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["branch_required", "draft_pr_required", "merge_forbidden"],
+      "properties": {
+        "branch_required": { "type": "boolean" },
+        "draft_pr_required": { "type": "boolean" },
+        "merge_forbidden": { "type": "boolean", "const": true }
+      }
+    }
+  }
+}

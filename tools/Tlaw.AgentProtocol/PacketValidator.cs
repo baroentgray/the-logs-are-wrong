@@ -288,6 +288,12 @@ public static class PacketValidator
 
     private static void ValidateSemantics(JsonObject root, string schema, ICollection<PacketDiagnostic> diagnostics)
     {
+        if (schema == "tlaw.agent-task/v2")
+        {
+            ValidateTaskV2Semantics(root, diagnostics);
+            return;
+        }
+
         if (schema is not ("tlaw.agent-result/v1" or "tlaw.agent-review/v1" or "tlaw.agent-handoff/v1"))
         {
             return;
@@ -318,6 +324,62 @@ public static class PacketValidator
             diagnostics.Add(new PacketDiagnostic("TLAW-PKT-025", "human.safe_options", "A required human decision must provide safe options."));
         }
     }
+
+    private static void ValidateTaskV2Semantics(JsonObject root, ICollection<PacketDiagnostic> diagnostics)
+    {
+        var workType = OptionalString(root, "work_type");
+        var preferredAgent = OptionalString(root, "preferred_agent");
+        var eligibleAgents = OptionalStrings(root, "eligible_agents");
+        var autonomyLevel = OptionalString(root, "autonomy_level");
+
+        if (string.Equals(workType, "implementation", StringComparison.Ordinal))
+        {
+            if (preferredAgent is "local" or "grok")
+            {
+                diagnostics.Add(new PacketDiagnostic("TLAW-PKT-029", "preferred_agent", "Implementation cannot automatically prefer the local model or Grok."));
+            }
+
+            foreach (var eligibleAgent in eligibleAgents.Where(agent => agent is "local" or "grok"))
+            {
+                diagnostics.Add(new PacketDiagnostic("TLAW-PKT-029", "eligible_agents", "Implementation cannot automatically authorize the local model or Grok."));
+            }
+        }
+
+        if (preferredAgent is not null && eligibleAgents.Count > 0 && !eligibleAgents.Contains(preferredAgent, StringComparer.Ordinal))
+        {
+            diagnostics.Add(new PacketDiagnostic("TLAW-PKT-029", "eligible_agents", "The preferred agent must be eligible for the task."));
+        }
+
+        if (eligibleAgents.Contains("local", StringComparer.Ordinal) && !string.Equals(workType, "read_only_analysis", StringComparison.Ordinal))
+        {
+            diagnostics.Add(new PacketDiagnostic("TLAW-PKT-031", "eligible_agents", "The local model may only be eligible for read-only analysis."));
+        }
+
+        if (eligibleAgents.Contains("local", StringComparer.Ordinal) && !string.Equals(autonomyLevel, "read_only", StringComparison.Ordinal))
+        {
+            diagnostics.Add(new PacketDiagnostic("TLAW-PKT-031", "autonomy_level", "The local model may only receive read-only autonomy."));
+        }
+
+        var claimFields = new[] { "claimed_by", "claim_id", "claim_started_at", "claim_expires_at" }
+            .Select(field => OptionalString(root, field))
+            .ToArray();
+        if (claimFields.All(value => value is not null))
+        {
+            var unclaimedCount = claimFields.Count(value => string.Equals(value, "unclaimed", StringComparison.Ordinal));
+            if (unclaimedCount is not 0 and not 4)
+            {
+                diagnostics.Add(new PacketDiagnostic("TLAW-PKT-030", "claim", "Claim fields must all be 'unclaimed' or all be supplied by one prepared claim snapshot."));
+            }
+        }
+    }
+
+    private static string? OptionalString(JsonObject root, string name) => root[name] is JsonValue value && value.TryGetValue<string>(out var text)
+        ? text
+        : null;
+
+    private static IReadOnlyList<string> OptionalStrings(JsonObject root, string name) => root[name] is JsonArray values
+        ? values.Select(value => value is JsonValue scalar && scalar.TryGetValue<string>(out var text) ? text : null).Where(text => text is not null).Cast<string>().ToArray()
+        : [];
 
     private static bool MatchesType(JsonNode? value, string? type) => type switch
     {
@@ -375,4 +437,5 @@ public static class PacketValidator
         internal bool ExpectsKey { get; set; } = isMapping;
         internal HashSet<string> Keys { get; } = new(StringComparer.Ordinal);
     }
+
 }

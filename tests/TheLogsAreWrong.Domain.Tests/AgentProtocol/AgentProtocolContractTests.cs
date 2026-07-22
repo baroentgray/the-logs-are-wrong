@@ -6,7 +6,7 @@ namespace TheLogsAreWrong.Domain.Tests.AgentProtocol;
 public sealed class AgentProtocolContractTests
 {
     [Fact]
-    public void Every_v1_schema_validates_its_positive_fixture()
+    public void Every_registered_schema_validates_its_positive_fixture()
     {
         var registry = PacketSchemaRegistry.Load(SchemaRoot);
 
@@ -47,6 +47,12 @@ public sealed class AgentProtocolContractTests
     [InlineData("invalid/handoff-short-main-sha.yaml")]
     [InlineData("invalid/handoff-missing-next-action.yaml")]
     [InlineData("invalid/over-limit-human-summary.yaml")]
+    [InlineData("invalid/task-v2-nonhex-base-sha.yaml")]
+    [InlineData("invalid/task-v2-missing-source.yaml")]
+    [InlineData("invalid/task-v2-missing-policy.yaml")]
+    [InlineData("invalid/task-v2-unknown-field.yaml")]
+    [InlineData("invalid/task-v2-local-implementation.yaml")]
+    [InlineData("invalid/task-v2-grok-implementation.yaml")]
     public void Invalid_protocol_fixtures_fail_visibly(string fixture)
     {
         var result = PacketValidator.Validate(File.ReadAllText(Path.Combine(ExamplesRoot, fixture)), PacketSchemaRegistry.Load(SchemaRoot));
@@ -85,6 +91,12 @@ public sealed class AgentProtocolContractTests
     [InlineData("invalid/handoff-short-main-sha.yaml", "TLAW-PKT-017")]
     [InlineData("invalid/handoff-missing-next-action.yaml", "TLAW-PKT-020")]
     [InlineData("invalid/over-limit-human-summary.yaml", "TLAW-PKT-022")]
+    [InlineData("invalid/task-v2-nonhex-base-sha.yaml", "TLAW-PKT-026")]
+    [InlineData("invalid/task-v2-missing-source.yaml", "TLAW-PKT-020")]
+    [InlineData("invalid/task-v2-missing-policy.yaml", "TLAW-PKT-020")]
+    [InlineData("invalid/task-v2-unknown-field.yaml", "TLAW-PKT-021")]
+    [InlineData("invalid/task-v2-local-implementation.yaml", "TLAW-PKT-029")]
+    [InlineData("invalid/task-v2-grok-implementation.yaml", "TLAW-PKT-029")]
     public void Closed_protocol_contracts_reject_the_required_boundary_cases(string fixture, string expectedCode)
     {
         var result = PacketValidator.Validate(File.ReadAllText(Path.Combine(ExamplesRoot, fixture)), PacketSchemaRegistry.Load(SchemaRoot));
@@ -188,7 +200,7 @@ public sealed class AgentProtocolContractTests
         Assert.All(startupOrder.Concat(sources).Where(path => path is not null), path => Assert.True(File.Exists(Path.Combine(RepositoryRoot, path!)), path));
     }
 
-    private static IReadOnlyList<string> PositiveFixturePaths { get; } = ["task.valid.yaml", "result.valid.yaml", "review.valid.yaml", "handoff.valid.yaml"];
+    private static IReadOnlyList<string> PositiveFixturePaths { get; } = ["task.valid.yaml", "task.v2.valid.yaml", "result.valid.yaml", "review.valid.yaml", "handoff.valid.yaml"];
 
     private static string RepositoryRoot => FindRepositoryRoot();
     private static string AgentRoot => Path.Combine(RepositoryRoot, "docs", "agent");
