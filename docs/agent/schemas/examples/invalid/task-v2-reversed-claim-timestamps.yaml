@@ -1,0 +1,30 @@
+schema: tlaw.agent-task/v2
+task_id: BAR-26-increment-2
+source_id: BAR-26
+sources:
+  - docs/agent/AGENT_PROTOCOL.md
+objective: Reject a non-increasing claim interval.
+work_type: implementation
+preferred_agent: codex
+eligible_agents:
+  - codex
+required_capabilities:
+  - dotnet
+autonomy_level: branch_write
+forbidden_operations:
+  - Merge pull requests.
+claimed_by: codex
+claim_id: 0e221c4b8ed84e6dae7eea27008eb449
+claim_started_at: 2026-07-22T11:35:00.0000000Z
+claim_expires_at: 2026-07-22T11:30:00.0000000Z
+base_sha: 019490a5d1b7b37cfa23cf3599e25f7a61afe334
+handoff_required: true
+worktree: task/BAR-26-dispatcher-leases
+verification:
+  required: true
+  commands:
+    - dotnet test --configuration Release
+delivery:
+  branch_required: true
+  draft_pr_required: true
+  merge_forbidden: true
