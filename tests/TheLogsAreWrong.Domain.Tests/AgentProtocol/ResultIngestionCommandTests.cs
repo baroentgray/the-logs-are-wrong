@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using Tlaw.AgentProtocol;
@@ -45,9 +46,10 @@ public sealed class ResultIngestionCommandTests
         Assert.Equal("codex", root.GetProperty("claimed_by").GetString());
         Assert.Equal(lease.ClaimId, root.GetProperty("claim_id").GetString());
         Assert.Equal("success", root.GetProperty("result_status").GetString());
+        Assert.Equal(Convert.ToHexStringLower(SHA256.HashData(resultBefore)), root.GetProperty("result_sha256").GetString());
         Assert.False(root.GetProperty("human_required").GetBoolean());
         Assert.Equal("SUCCESS\nCompleted local evidence ingestion.", root.GetProperty("projection").GetString());
-        AssertPropertyOrder(first, "schema", "task_id", "claimed_by", "claim_id", "result_status", "human_required", "projection");
+        AssertPropertyOrder(first, "schema", "task_id", "claimed_by", "claim_id", "result_status", "result_sha256", "human_required", "projection");
     }
 
     [Fact]
@@ -286,6 +288,196 @@ public sealed class ResultIngestionCommandTests
         Assert.False(File.Exists(failureOutput));
     }
 
+    [Theory]
+    [InlineData("task")]
+    [InlineData("result")]
+    [InlineData("lease-file")]
+    [InlineData("lease-child")]
+    [InlineData("normalized-task")]
+    public void Authoritative_output_aliases_fail_before_reads_and_preserve_all_bytes(string alias)
+    {
+        using var workspace = IngestionWorkspace.Create();
+        var lease = workspace.Acquire("BAR-35", "codex");
+        var task = workspace.Write("task.yaml", TaskYaml("BAR-35", lease));
+        var result = workspace.Write("result.yaml", ResultYaml("BAR-35", "success"));
+        var output = alias switch
+        {
+            "task" => task,
+            "result" => result,
+            "lease-file" => workspace.LeaseFile(),
+            "lease-child" => Path.Combine(workspace.StorePath, "other-output.json"),
+            _ => Path.Combine(workspace.Path, "nested", "..", "task.yaml")
+        };
+        var taskBefore = File.ReadAllBytes(task);
+        var resultBefore = File.ReadAllBytes(result);
+        var storeBefore = workspace.SnapshotStore();
+        using var standardOutput = new StringWriter(CultureInfo.InvariantCulture);
+
+        Assert.NotEqual(0, IngestResultCommand.Run(["ingest-result", "--task", task, "--result", result, "--lease-store", workspace.StorePath, "--output", output], standardOutput, TextWriter.Null));
+
+        Assert.Equal(string.Empty, standardOutput.ToString());
+        Assert.Equal(taskBefore, File.ReadAllBytes(task));
+        Assert.Equal(resultBefore, File.ReadAllBytes(result));
+        Assert.Equal(storeBefore, workspace.SnapshotStore());
+        Assert.Empty(Directory.EnumerateFiles(workspace.Path, ".*.tmp", SearchOption.AllDirectories));
+    }
+
+    [Fact]
+    public void Windows_case_only_task_alias_is_rejected_when_the_platform_is_case_insensitive()
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        using var workspace = IngestionWorkspace.Create();
+        var lease = workspace.Acquire("BAR-35", "codex");
+        var task = workspace.Write("task.yaml", TaskYaml("BAR-35", lease));
+        var result = workspace.Write("result.yaml", ResultYaml("BAR-35", "success"));
+        var alias = task.ToUpperInvariant();
+        var before = File.ReadAllBytes(task);
+
+        Assert.NotEqual(0, IngestResultCommand.Run(["ingest-result", "--task", task, "--result", result, "--lease-store", workspace.StorePath, "--output", alias], TextWriter.Null, TextWriter.Null));
+        Assert.Equal(before, File.ReadAllBytes(task));
+    }
+
+    [Fact]
+    public void Existing_symlink_alias_to_task_is_rejected_when_symbolic_links_are_supported()
+    {
+        using var workspace = IngestionWorkspace.Create();
+        var lease = workspace.Acquire("BAR-35", "codex");
+        var task = workspace.Write("task.yaml", TaskYaml("BAR-35", lease));
+        var result = workspace.Write("result.yaml", ResultYaml("BAR-35", "success"));
+        var alias = Path.Combine(workspace.Path, "task-alias.yaml");
+        try
+        {
+            File.CreateSymbolicLink(alias, task);
+        }
+        catch (Exception exception) when (exception is UnauthorizedAccessException or PlatformNotSupportedException or IOException)
+        {
+            return; // Symbolic-link creation is unavailable on this test host; no alias path exists to exercise.
+        }
+
+        var before = File.ReadAllBytes(task);
+        Assert.NotEqual(0, IngestResultCommand.Run(["ingest-result", "--task", task, "--result", result, "--lease-store", workspace.StorePath, "--output", alias], TextWriter.Null, TextWriter.Null));
+        Assert.Equal(before, File.ReadAllBytes(task));
+    }
+
+    [Fact]
+    public void Result_identity_hash_binds_exact_validated_result_bytes()
+    {
+        using var workspace = IngestionWorkspace.Create();
+        var lease = workspace.Acquire("BAR-35", "codex");
+        var task = workspace.Write("task.yaml", TaskYaml("BAR-35", lease));
+        var firstResult = workspace.Write("first.yaml", ResultYaml("BAR-35", "success"));
+        var secondResult = workspace.Write("second.yaml", ResultYaml("BAR-35", "success").Replace("dotnet test --configuration Release", "git diff --check", StringComparison.Ordinal));
+        var firstOutput = Path.Combine(workspace.Path, "first.json");
+        var secondOutput = Path.Combine(workspace.Path, "second.json");
+
+        Assert.Equal(0, IngestResultCommand.Run(["ingest-result", "--task", task, "--result", firstResult, "--lease-store", workspace.StorePath, "--output", firstOutput], TextWriter.Null, TextWriter.Null));
+        Assert.Equal(0, IngestResultCommand.Run(["ingest-result", "--task", task, "--result", secondResult, "--lease-store", workspace.StorePath, "--output", secondOutput], TextWriter.Null, TextWriter.Null));
+
+        using var first = JsonDocument.Parse(File.ReadAllText(firstOutput));
+        using var second = JsonDocument.Parse(File.ReadAllText(secondOutput));
+        Assert.Equal(Convert.ToHexStringLower(SHA256.HashData(File.ReadAllBytes(firstResult))), first.RootElement.GetProperty("result_sha256").GetString());
+        Assert.NotEqual(first.RootElement.GetProperty("result_sha256").GetString(), second.RootElement.GetProperty("result_sha256").GetString());
+    }
+
+    [Fact]
+    public void Held_existing_task_lock_prevents_ingestion_from_bypassing_lease_fencing()
+    {
+        using var workspace = IngestionWorkspace.Create();
+        var lease = workspace.Acquire("BAR-35", "codex");
+        var task = workspace.Write("task.yaml", TaskYaml("BAR-35", lease));
+        var result = workspace.Write("result.yaml", ResultYaml("BAR-35", "success"));
+        var output = Path.Combine(workspace.Path, "ingestion.json");
+        using var lockHandle = new FileStream(workspace.LockFile(), FileMode.Open, FileAccess.ReadWrite, FileShare.None);
+
+        Assert.NotEqual(0, IngestResultCommand.Run(["ingest-result", "--task", task, "--result", result, "--lease-store", workspace.StorePath, "--output", output], TextWriter.Null, TextWriter.Null));
+        Assert.False(File.Exists(output));
+    }
+
+    [Fact]
+    public void Missing_existing_task_lock_fails_closed_without_creating_or_publishing()
+    {
+        using var workspace = IngestionWorkspace.Create();
+        var lease = workspace.Acquire("BAR-35", "codex");
+        var task = workspace.Write("task.yaml", TaskYaml("BAR-35", lease));
+        var result = workspace.Write("result.yaml", ResultYaml("BAR-35", "success"));
+        var output = Path.Combine(workspace.Path, "ingestion.json");
+        File.Delete(workspace.LockFile());
+
+        Assert.NotEqual(0, IngestResultCommand.Run(["ingest-result", "--task", task, "--result", result, "--lease-store", workspace.StorePath, "--output", output], TextWriter.Null, TextWriter.Null));
+
+        Assert.False(File.Exists(workspace.LockFile()));
+        Assert.False(File.Exists(output));
+    }
+
+    [Fact]
+    public void Original_claim_cannot_publish_an_ingestion_record_after_replacement_claim_acquires()
+    {
+        using var workspace = IngestionWorkspace.Create();
+        var clock = new MutableLeaseClock("2026-07-22T20:00:00.0000000Z");
+        var original = workspace.Acquire("BAR-35", "codex", clock);
+        var task = workspace.Write("task.yaml", TaskYaml("BAR-35", original));
+        var result = workspace.Write("result.yaml", ResultYaml("BAR-35", "success"));
+        var output = Path.Combine(workspace.Path, "ingestion.json");
+        clock.Advance(TimeSpan.FromHours(1));
+        var replacement = workspace.Acquire("BAR-35", "claude", clock);
+
+        Assert.NotEqual(0, IngestResultCommand.RunForTesting(["ingest-result", "--task", task, "--result", result, "--lease-store", workspace.StorePath, "--output", output], TextWriter.Null, TextWriter.Null, clock, beforePublication: null));
+
+        Assert.False(File.Exists(output));
+        Assert.Equal(replacement.ClaimId, new FileLeaseStore(workspace.StorePath, clock).Inspect("BAR-35").Lease!.ClaimId);
+    }
+
+    [Fact]
+    public async Task Guarded_publication_blocks_takeover_and_rechecks_expiry_at_the_boundary()
+    {
+        using var workspace = IngestionWorkspace.Create();
+        var clock = new MutableLeaseClock("2026-07-22T20:00:00.0000000Z");
+        var lease = workspace.Acquire("BAR-35", "codex", clock);
+        var task = workspace.Write("task.yaml", TaskYaml("BAR-35", lease));
+        var result = workspace.Write("result.yaml", ResultYaml("BAR-35", "success"));
+        var output = Path.Combine(workspace.Path, "ingestion.json");
+        using var entered = new ManualResetEventSlim();
+        using var continuePublication = new ManualResetEventSlim();
+
+        var ingestion = Task.Run(() => IngestResultCommand.RunForTesting(
+            ["ingest-result", "--task", task, "--result", result, "--lease-store", workspace.StorePath, "--output", output],
+            TextWriter.Null,
+            TextWriter.Null,
+            clock,
+            () =>
+            {
+                clock.Advance(TimeSpan.FromHours(1));
+                entered.Set();
+                continuePublication.Wait(TestContext.Current.CancellationToken);
+            }));
+
+        Assert.True(entered.Wait(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken));
+        Assert.Throws<LeaseConflictException>(() => new FileLeaseStore(workspace.StorePath, clock).Acquire("BAR-35", "claude", TimeSpan.FromHours(1)));
+        continuePublication.Set();
+
+        Assert.NotEqual(0, await ingestion);
+        Assert.False(File.Exists(output));
+        var replacement = new FileLeaseStore(workspace.StorePath, clock).Acquire("BAR-35", "claude", TimeSpan.FromHours(1));
+        Assert.NotEqual(lease.ClaimId, replacement.ClaimId);
+    }
+
+    [Fact]
+    public void Stdout_failure_after_durable_publication_is_reported_as_a_disclosed_non_transactional_low()
+    {
+        using var workspace = IngestionWorkspace.Create();
+        var lease = workspace.Acquire("BAR-35", "codex");
+        var task = workspace.Write("task.yaml", TaskYaml("BAR-35", lease));
+        var result = workspace.Write("result.yaml", ResultYaml("BAR-35", "success"));
+        var output = Path.Combine(workspace.Path, "ingestion.json");
+
+        Assert.NotEqual(0, IngestResultCommand.Run(["ingest-result", "--task", task, "--result", result, "--lease-store", workspace.StorePath, "--output", output], new ThrowingTextWriter(), TextWriter.Null));
+        Assert.True(File.Exists(output));
+    }
+
     private static string TaskYaml(string taskId, LocalLease lease, string? claimedBy = null, string? claimId = null) => $$"""
         schema: tlaw.agent-task/v2
         task_id: {{taskId}}
@@ -411,6 +603,22 @@ public sealed class ResultIngestionCommandTests
         public DateTimeOffset UtcNow { get; } = DateTimeOffset.ParseExact(timestamp, "yyyy-MM-dd'T'HH:mm:ss.fffffff'Z'", CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal);
     }
 
+    private sealed class MutableLeaseClock(string timestamp) : ILeaseClock
+    {
+        private DateTimeOffset _utcNow = DateTimeOffset.ParseExact(timestamp, "yyyy-MM-dd'T'HH:mm:ss.fffffff'Z'", CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal);
+
+        public DateTimeOffset UtcNow => _utcNow;
+
+        internal void Advance(TimeSpan duration) => _utcNow = _utcNow.Add(duration);
+    }
+
+    private sealed class ThrowingTextWriter : TextWriter
+    {
+        public override Encoding Encoding => Encoding.UTF8;
+
+        public override void WriteLine(string? value) => throw new IOException("stdout intentionally failed");
+    }
+
     private sealed class IngestionWorkspace : IDisposable
     {
         private IngestionWorkspace(string path)
@@ -440,6 +648,8 @@ public sealed class ResultIngestionCommandTests
         }
 
         internal string LeaseFile() => Directory.EnumerateFiles(StorePath, "*.json", SearchOption.AllDirectories).Single();
+
+        internal string LockFile() => System.IO.Path.ChangeExtension(LeaseFile(), ".lock").Replace($"{System.IO.Path.DirectorySeparatorChar}leases{System.IO.Path.DirectorySeparatorChar}", $"{System.IO.Path.DirectorySeparatorChar}locks{System.IO.Path.DirectorySeparatorChar}", StringComparison.Ordinal);
 
         internal IReadOnlyDictionary<string, byte[]> SnapshotStore() => Directory.Exists(StorePath)
             ? Directory.EnumerateFiles(StorePath, "*", SearchOption.AllDirectories)

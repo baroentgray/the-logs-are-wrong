@@ -1,3 +1,4 @@
+using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using Tlaw.AgentProtocol;
@@ -7,27 +8,45 @@ namespace Tlaw.Dispatcher;
 public static class IngestResultCommand
 {
     public static int Run(string[] args, TextWriter standardOutput, TextWriter standardError)
+        => Run(args, standardOutput, standardError, new SystemLeaseClock(), beforePublication: null);
+
+    internal static int RunForTesting(string[] args, TextWriter standardOutput, TextWriter standardError, ILeaseClock clock, Action? beforePublication)
+        => Run(args, standardOutput, standardError, clock, beforePublication);
+
+    private static int Run(string[] args, TextWriter standardOutput, TextWriter standardError, ILeaseClock clock, Action? beforePublication)
     {
         ArgumentNullException.ThrowIfNull(args);
         ArgumentNullException.ThrowIfNull(standardOutput);
         ArgumentNullException.ThrowIfNull(standardError);
+        ArgumentNullException.ThrowIfNull(clock);
 
         try
         {
             var options = IngestionOptions.Parse(args);
+            IngestionPathGuard.Validate(options);
             var registry = PacketSchemaRegistry.Load(Path.Combine(TaskPacketCommand.FindRepositoryRoot(), "docs", "agent", "schemas"));
             var task = ReadClaimedTask(options.TaskPath, registry);
             var result = ReadResult(options.ResultPath, registry);
-            if (!string.Equals(result.RequiredString("task_id"), task.TaskId, StringComparison.Ordinal))
+            if (!string.Equals(result.Packet.RequiredString("task_id"), task.TaskId, StringComparison.Ordinal))
             {
                 throw new IngestResultCommandException("Result task_id does not exactly match the claimed task packet.");
             }
 
-            var inspection = FileLeaseStore.InspectReadOnly(options.LeaseStorePath, task.TaskId, new SystemLeaseClock());
-            RequireMatchingActiveLease(task, inspection);
-
-            var projection = ResultProjector.Project(result);
-            TaskPacketCommand.WriteAtomically(options.OutputPath, IngestionJson.Write(task, result, projection));
+            var resultHash = Convert.ToHexStringLower(SHA256.HashData(result.Bytes));
+            var projection = FileLeaseStore.WithActiveLeaseGuard(
+                options.LeaseStorePath,
+                task.TaskId,
+                task.ClaimedBy,
+                task.ClaimId,
+                clock,
+                recheck =>
+                {
+                    var rendered = ResultProjector.Project(result.Packet);
+                    beforePublication?.Invoke();
+                    recheck();
+                    TaskPacketCommand.WriteAtomically(options.OutputPath, IngestionJson.Write(task, result.Packet, resultHash, rendered));
+                    return rendered;
+                });
             standardOutput.WriteLine(projection);
             return 0;
         }
@@ -71,9 +90,11 @@ public static class IngestResultCommand
         return task;
     }
 
-    private static ProtocolPacket ReadResult(string resultPath, PacketSchemaRegistry registry)
+    private static ValidatedResult ReadResult(string resultPath, PacketSchemaRegistry registry)
     {
-        var validation = PacketValidator.Validate(TaskPacketCommand.ReadUtf8(resultPath), registry);
+        var bytes = File.ReadAllBytes(resultPath);
+        var yaml = new UTF8Encoding(encoderShouldEmitUTF8Identifier: false, throwOnInvalidBytes: true).GetString(bytes);
+        var validation = PacketValidator.Validate(yaml, registry);
         if (!validation.IsValid)
         {
             throw new IngestResultCommandException(DescribeValidationFailure("Input result packet", validation));
@@ -85,36 +106,7 @@ public static class IngestResultCommand
             throw new IngestResultCommandException("Input result packet must use schema tlaw.agent-result/v1.");
         }
 
-        return packet;
-    }
-
-    private static void RequireMatchingActiveLease(TaskV2Packet task, LocalLeaseInspection inspection)
-    {
-        if (inspection.Status == LocalLeaseStatus.Missing || inspection.Lease is null)
-        {
-            throw new IngestResultCommandException($"No lease exists for claimed task '{task.TaskId}'.");
-        }
-
-        if (inspection.Status == LocalLeaseStatus.Expired)
-        {
-            throw new IngestResultCommandException($"Lease for claimed task '{task.TaskId}' has expired.");
-        }
-
-        var lease = inspection.Lease;
-        if (!string.Equals(lease.TaskId, task.TaskId, StringComparison.Ordinal))
-        {
-            throw new IngestResultCommandException("Active lease task identity does not match the claimed task packet.");
-        }
-
-        if (!string.Equals(lease.ClaimedBy, task.ClaimedBy, StringComparison.Ordinal))
-        {
-            throw new IngestResultCommandException("Active lease claimed_by does not match the claimed task packet.");
-        }
-
-        if (!string.Equals(lease.ClaimId, task.ClaimId, StringComparison.Ordinal))
-        {
-            throw new IngestResultCommandException("Active lease claim_id does not match the claimed task packet.");
-        }
+        return new ValidatedResult(packet, bytes);
     }
 
     private static string DescribeValidationFailure(string subject, PacketValidationResult validation)
@@ -124,6 +116,8 @@ public static class IngestResultCommand
             ? $"{subject} was rejected by the protocol validator."
             : $"{subject} was rejected: {diagnostic.Code} {diagnostic.Path}: {diagnostic.Message}";
     }
+
+    private sealed record ValidatedResult(ProtocolPacket Packet, byte[] Bytes);
 }
 
 public sealed class IngestResultCommandException(string message) : Exception(message);
@@ -176,9 +170,128 @@ internal sealed record IngestionOptions(string TaskPath, string ResultPath, stri
     }
 }
 
+internal static class IngestionPathGuard
+{
+    private static readonly StringComparison PathComparison = OperatingSystem.IsWindows()
+        ? StringComparison.OrdinalIgnoreCase
+        : StringComparison.Ordinal;
+
+    internal static void Validate(IngestionOptions options)
+    {
+        var task = Resolve(options.TaskPath);
+        var result = Resolve(options.ResultPath);
+        var leaseStore = Resolve(options.LeaseStorePath);
+        var output = Resolve(options.OutputPath);
+
+        if (SamePath(output, task))
+        {
+            throw new IngestResultCommandException("Result ingestion output must not alias the task packet.");
+        }
+
+        if (SamePath(output, result))
+        {
+            throw new IngestResultCommandException("Result ingestion output must not alias the result packet.");
+        }
+
+        if (IsAtOrWithin(output, leaseStore))
+        {
+            throw new IngestResultCommandException("Result ingestion output must not be inside the lease store.");
+        }
+    }
+
+    private static string Resolve(string path)
+    {
+        var fullPath = Path.GetFullPath(path);
+        var root = Path.GetPathRoot(fullPath) ?? throw new IngestResultCommandException("Result ingestion path has no filesystem root.");
+        var segments = fullPath[root.Length..].Split([Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar], StringSplitOptions.RemoveEmptyEntries);
+        var current = root;
+        for (var index = 0; index < segments.Length; index++)
+        {
+            var candidate = Path.Combine(current, segments[index]);
+            if (!TryGetAttributes(candidate, out var attributes))
+            {
+                current = candidate;
+                for (var remaining = index + 1; remaining < segments.Length; remaining++)
+                {
+                    current = Path.Combine(current, segments[remaining]);
+                }
+
+                break;
+            }
+
+            if ((attributes & FileAttributes.ReparsePoint) == 0)
+            {
+                current = candidate;
+                continue;
+            }
+
+            try
+            {
+                FileSystemInfo link = (attributes & FileAttributes.Directory) != 0
+                    ? new DirectoryInfo(candidate)
+                    : new FileInfo(candidate);
+                var target = link.ResolveLinkTarget(returnFinalTarget: true)
+                    ?? throw new IngestResultCommandException("Result ingestion path contains an unresolved symbolic link or junction.");
+                current = target.FullName;
+            }
+            catch (IngestResultCommandException)
+            {
+                throw;
+            }
+            catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or PlatformNotSupportedException)
+            {
+                throw new IngestResultCommandException("Result ingestion path cannot be resolved safely.");
+            }
+        }
+
+        return TrimTrailingSeparators(Path.GetFullPath(current));
+    }
+
+    private static bool TryGetAttributes(string path, out FileAttributes attributes)
+    {
+        try
+        {
+            attributes = File.GetAttributes(path);
+            return true;
+        }
+        catch (Exception exception) when (exception is FileNotFoundException or DirectoryNotFoundException)
+        {
+            attributes = default;
+            return false;
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+        {
+            throw new IngestResultCommandException("Result ingestion path cannot be inspected safely.");
+        }
+    }
+
+    private static bool SamePath(string left, string right) => string.Equals(left, right, PathComparison);
+
+    private static bool IsAtOrWithin(string path, string root)
+    {
+        if (SamePath(path, root))
+        {
+            return true;
+        }
+
+        var rootedPrefix = root.EndsWith(Path.DirectorySeparatorChar) || root.EndsWith(Path.AltDirectorySeparatorChar)
+            ? root
+            : root + Path.DirectorySeparatorChar;
+        return path.StartsWith(rootedPrefix, PathComparison);
+    }
+
+    private static string TrimTrailingSeparators(string path)
+    {
+        var root = Path.GetPathRoot(path) ?? string.Empty;
+        return path.Length > root.Length
+            ? path.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)
+            : path;
+    }
+}
+
 internal static class IngestionJson
 {
-    internal static string Write(TaskV2Packet task, ProtocolPacket result, string projection)
+    internal static string Write(TaskV2Packet task, ProtocolPacket result, string resultSha256, string projection)
     {
         var output = new StringBuilder();
         AppendLine(output, "{");
@@ -187,6 +300,7 @@ internal static class IngestionJson
         AppendString(output, "claimed_by", task.ClaimedBy, trailingComma: true);
         AppendString(output, "claim_id", task.ClaimId, trailingComma: true);
         AppendString(output, "result_status", result.RequiredString("status"), trailingComma: true);
+        AppendString(output, "result_sha256", resultSha256, trailingComma: true);
         output.Append("  \"human_required\": ").Append(result.RequiredBoolean("human", "required") ? "true" : "false");
         AppendLine(output, ",");
         AppendString(output, "projection", projection);
