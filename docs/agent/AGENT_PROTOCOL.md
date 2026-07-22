@@ -37,6 +37,8 @@ The contract contains one autonomy level shared by every eligible agent, so a fa
 
 Generate v2 only with the repository-native commands documented in [`tools/Tlaw.Dispatcher/README.md`](../../tools/Tlaw.Dispatcher/README.md). Packet generation accepts a closed local normalized JSON snapshot, emits UTF-8/no-BOM YAML with LF line endings in schema order, validates it through this implementation before atomically replacing the output, and never copies an Issue body into a packet. The separately explicit local `lease acquire` command can convert only an unclaimed valid v2 packet into a validated claimed packet; it does not dynamically select, contact, or launch its named executor.
 
+The separately explicit local `route` command consumes a validated unclaimed task v2 packet and an auditable local agent snapshot, then emits an internal `tlaw.dispatcher-selection/v1` JSON record. Selection is deterministic and does not alter any claim field, acquire a lease, launch an agent, or create a new AgentProtocol envelope. A human reviews that record before separately invoking `lease acquire`.
+
 ## Human pause
 
 When `human.required: true`, a result must be `blocked`, provide `question`, `evidence`, and non-empty `safe_options`. Projection returns only the summary, question, evidence references, and safe options. It does not append task metadata or free-form trailing prose. Automation pauses for that payload; it does not guess, dispatch, merge, or expand provider permissions.

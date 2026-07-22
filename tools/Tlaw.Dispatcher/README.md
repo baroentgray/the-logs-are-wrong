@@ -72,6 +72,39 @@ dotnet run --configuration Release --project tools/Tlaw.Dispatcher -- lease rele
 
 An active lease rejects a second acquisition. A lease that is expired may be atomically taken over, but its old fencing token can no longer release or affect the replacement. Release requires the exact active token and one closed reason; completion release does not mark any task Done. The store is runtime state outside the repository and must never be committed.
 
+## Deterministic local routing
+
+BAR-34 adds a local selection step. It is not dispatch: it does not contact or launch an agent, read or write a lease, alter a task packet claim, probe a provider, or change Linear/GitHub/task state.
+
+```powershell
+dotnet run --configuration Release --project tools/Tlaw.Dispatcher -- route --task <unclaimed-task-v2.yaml> --agents <agent-snapshot.json> --output <selection.json> [--executor-override <agent>] [--availability-override <agent>=<STATE>]...
+```
+
+`--task`, `--agents`, and `--output` are required exactly once. `--executor-override` is optional and may appear once. Only `--availability-override` may repeat, and each agent may be overridden at most once. Invalid, unknown, duplicate, malformed, or empty options fail with a concise non-zero `FAIL:` diagnostic. Successful routing prints only `SELECTED: <agent> (<STATE>)`.
+
+The closed local agent snapshot is strict UTF-8 JSON:
+
+```json
+{
+  "schema": "tlaw.dispatcher-agent-snapshot/v1",
+  "agents": [
+    {
+      "agent": "codex",
+      "capabilities": ["dotnet", "yaml_protocol"],
+      "availability": "AVAILABLE"
+    }
+  ]
+}
+```
+
+Agent names are exactly `codex`, `claude`, `grok`, or `local`; availability is exactly `AVAILABLE`, `DEGRADED`, `QUOTA_EXHAUSTED`, `OFFLINE`, or `UNKNOWN`. The root and agent objects are closed, duplicate JSON properties/agent records/capabilities fail closed, and every task-eligible agent requires one snapshot record. No capability or availability is inferred.
+
+Only `AVAILABLE` and `DEGRADED` candidates can be selected. `AVAILABLE` ranks above `DEGRADED`; within one rank, the still-selectable `preferred_agent` wins, then the task's declared `eligible_agents` order breaks ties. A candidate must be eligible, capable, and policy-permitted. An executor override must meet the same checks and cannot bypass an excluded availability state; a separate valid availability override is required. Overrides alter only effective availability and are recorded in the output.
+
+The output is an internal `tlaw.dispatcher-selection/v1` JSON record, not an AgentProtocol envelope. It has stable property order: `schema`, `task_id`, `selected_agent`, `effective_availability`, `executor_override_applied`, and ordered `availability_overrides`. It is UTF-8 without BOM, LF-terminated, deterministic for identical effective input, and atomically replaces the requested output only after validation and selection succeed.
+
+The reviewed human flow is: validate an unclaimed task, run and inspect `selection.json`, then explicitly invoke `lease acquire` with its `selected_agent`. Routing never calls `FileLeaseStore`.
+
 ## Deliberate limitations
 
-This tool does not contact or mutate Linear, dynamically choose a live executor, probe availability or quota, launch Codex/Claude/Grok/Qwen, ingest result/review/handoff packets, write GitHub, merge, or update task state. It performs no network write. Packet preparation and local lease acquisition are not dispatch; any routing, provider adapter, agent launch, result ingestion, review routing, or merge behavior needs a separately approved increment. BAR-26 is not complete after this increment.
+This tool does not contact or mutate Linear, probe live availability or quota, launch Codex/Claude/Grok/Qwen, ingest result/review/handoff packets, write GitHub, merge, or update task state. It performs no network write. Packet preparation, local routing, and local lease acquisition are not dispatch; provider adapters, agent launch, result ingestion, review routing, and merge behavior need separately approved increments. BAR-34 is only Increment 3 and does not complete BAR-26.

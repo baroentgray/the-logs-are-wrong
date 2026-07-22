@@ -25,3 +25,9 @@ Sources: [Issue #2](https://github.com/baroentgray/the-logs-are-wrong/issues/2),
 The user performs normal merges while present. Automation may prepare evidence and a Draft PR but does not silently merge or launch another agent.
 
 Source: `AGENTS.md` and [BAR-31](https://linear.app/baronet/issue/BAR-31/tlaw-auto-006-agent-knowledge-pack-and-context-manifest).
+
+## D-005 — Local routing uses availability-first deterministic selection
+
+BAR-34 selects only from a supplied local snapshot. `AVAILABLE` ranks above `DEGRADED`; within one rank, a selectable preferred agent wins, then declared eligible-agent order breaks ties. `QUOTA_EXHAUSTED`, `OFFLINE`, and `UNKNOWN` are not selectable. Explicit overrides remain constrained by eligibility, capability, autonomy, and availability; selection is not a lease or dispatch.
+
+Source: [BAR-34](https://linear.app/baronet/issue/BAR-34/bar-26-increment-3-deterministic-availability-and-executor-selection).
