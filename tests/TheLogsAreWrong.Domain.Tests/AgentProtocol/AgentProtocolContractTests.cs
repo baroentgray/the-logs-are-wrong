@@ -206,7 +206,7 @@ public sealed class AgentProtocolContractTests
         Assert.All(startupOrder.Concat(sources).Where(path => path is not null), path => Assert.True(File.Exists(Path.Combine(RepositoryRoot, path!)), path));
     }
 
-    private static IReadOnlyList<string> PositiveFixturePaths { get; } = ["task.valid.yaml", "task.v2.valid.yaml", "task.v2.claimed.valid.yaml", "result.valid.yaml", "review.valid.yaml", "handoff.valid.yaml"];
+    private static IReadOnlyList<string> PositiveFixturePaths { get; } = ["task.valid.yaml", "task.v2.valid.yaml", "task.v2.claimed.valid.yaml", "result.valid.yaml", "review.valid.yaml", "handoff.valid.yaml", "handoff.v2.valid.yaml"];
 
     private static string RepositoryRoot => FindRepositoryRoot();
     private static string AgentRoot => Path.Combine(RepositoryRoot, "docs", "agent");

@@ -1,0 +1,27 @@
+schema: tlaw.agent-handoff/v2
+task_id: BAR-38
+source_id: BAR-38
+status: ready
+claimed_by: codex
+claim_id: 0123456789abcdef0123456789abcdef
+base_sha: 33f8466cac487d5bd335f6bce7d33bd3814db64c
+head_sha: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+branch: task/BAR-38-handoff-v2
+commits:
+  - aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+completed_work:
+  - Added the handoff v2 schema.
+remaining_work:
+  - Run independent review.
+files_changed:
+  - docs/agent/schemas/handoff.v2.schema.json
+commands_run:
+  - command: dotnet test --configuration Release
+    exit_code: 0
+evidence:
+  - kind: command
+    reference: dotnet test --configuration Release
+known_failures: []
+open_questions: []
+human_summary: Handoff v2 preparation is complete.
+next_action: Review the Draft PR without merging it.

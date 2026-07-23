@@ -1,4 +1,4 @@
-# Agent protocol v1 and task v2
+# Agent protocol v1, task v2, and handoff v2
 
 Agent packets are UTF-8 YAML interchange/audit records. A human speaks ordinary language; an agent serializes a compact, validated packet only when a task, result, review, or handoff needs transfer.
 
@@ -11,6 +11,7 @@ Agent packets are UTF-8 YAML interchange/audit records. A human speaks ordinary 
 | Result | `tlaw.agent-result/v1` | `success`, `blocked`, `failed` |
 | Review | `tlaw.agent-review/v1` | `approve`, `request_changes`, `comment` |
 | Handoff | `tlaw.agent-handoff/v1` | `ready`, `blocked` |
+| Prepared handoff | `tlaw.agent-handoff/v2` | `ready`, `blocked` |
 
 The JSON schemas and positive/negative examples live under `schemas/`. Validate before dispatch and after ingestion with:
 
@@ -26,6 +27,12 @@ Only one mapping-root document is accepted. Anchors, aliases, custom tags, merge
 Every result, review, and handoff has `human_summary` with at most five non-empty lines. A result needs at least one evidence item (`command`, `source`, `file`, or `ci`); a `success` claim without it is invalid.
 
 Every review has `reviewed_head`: exactly 40 hexadecimal characters naming the reviewed Git commit. v1 validates this recorded evidence structurally; a later merge policy may compare it with a live pull-request head.
+
+## Handoff v2 preparation
+
+`tlaw.agent-handoff/v1` is immutable. `tlaw.agent-handoff/v2` is an explicitly required compatible envelope for complete reassignment/continuation evidence; there is no v1/v2 conversion. It records task-derived `task_id`, `source_id`, claim identity, `base_sha`, and branch, plus snapshot-derived status, head/ordered commits, work, normalized changed paths, commands, evidence, failures/questions, summary, and next action.
+
+`head_sha` and every commit are lowercase non-sentinel 40-character SHAs. An empty commit list requires `head_sha == base_sha`; otherwise its final entry equals `head_sha`. Changed paths are unique repository-relative forward-slash paths. A blocked handoff requires a known failure or open question. Preparation validates and atomically publishes LF/no-BOM YAML, but never inspects Git, leases, a successor, providers, Linear, or GitHub. BAR-38 is Increment 7 only: Increment 8 separately ingests and correlates handoff evidence; BAR-26 remains incomplete.
 
 ## Task v2 preparation
 

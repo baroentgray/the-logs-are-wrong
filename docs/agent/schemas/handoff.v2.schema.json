@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "tlaw.agent-handoff/v2",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "task_id", "source_id", "status", "claimed_by", "claim_id", "base_sha", "head_sha", "branch", "commits", "completed_work", "remaining_work", "files_changed", "commands_run", "evidence", "known_failures", "open_questions", "human_summary", "next_action"],
+  "properties": {
+    "schema": { "type": "string", "const": "tlaw.agent-handoff/v2" },
+    "task_id": { "type": "string", "minLength": 1 }, "source_id": { "type": "string", "minLength": 1 },
+    "status": { "type": "string", "enum": ["ready", "blocked"] }, "claimed_by": { "type": "string", "minLength": 1 }, "claim_id": { "type": "string", "minLength": 1 },
+    "base_sha": { "type": "string", "pattern": "^[0-9a-f]{40}$" }, "head_sha": { "type": "string", "pattern": "^[0-9a-f]{40}$" }, "branch": { "type": "string", "minLength": 1 },
+    "commits": { "type": "array", "items": { "type": "string", "pattern": "^[0-9a-f]{40}$" } },
+    "completed_work": { "type": "array", "items": { "type": "string", "minLength": 1 } }, "remaining_work": { "type": "array", "minItems": 1, "items": { "type": "string", "minLength": 1 } },
+    "files_changed": { "type": "array", "items": { "type": "string", "minLength": 1 } },
+    "commands_run": { "type": "array", "items": { "type": "object", "additionalProperties": false, "required": ["command", "exit_code"], "properties": { "command": { "type": "string", "minLength": 1 }, "exit_code": { "type": "integer" } } } },
+    "evidence": { "type": "array", "minItems": 1, "items": { "type": "object", "additionalProperties": false, "required": ["kind", "reference"], "properties": { "kind": { "type": "string", "enum": ["command", "source", "file", "ci"] }, "reference": { "type": "string", "minLength": 1 } } } },
+    "known_failures": { "type": "array", "items": { "type": "string", "minLength": 1 } }, "open_questions": { "type": "array", "items": { "type": "string", "minLength": 1 } },
+    "human_summary": { "type": "string", "minLength": 1 }, "next_action": { "type": "string", "minLength": 1 }
+  }
+}

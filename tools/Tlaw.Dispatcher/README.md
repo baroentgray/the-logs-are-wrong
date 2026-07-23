@@ -143,6 +143,10 @@ All five options are required exactly once. The command validates a fully claime
 
 The internal LF/no-BOM `tlaw.dispatcher-review-decision/v1` record orders `schema`, `task_id`, `reviewed_head`, `review_sha256`, `verdict`, `highest_severity`, `blocking_findings`, `decision`, and `next_state`. `approve` without blocker/high/medium findings emits `merge`/`in_review`; `request_changes` with one or more blocker/high/medium findings emits `correction`/`todo`; `comment` always emits `human`/`in_review`. Contradictory verdict/severity evidence fails closed. It atomically publishes the decision before printing only `REVIEW: <decision>`; a stdout failure after publication remains non-zero and explicitly says the record was already published. The record is evidence for a future human or adapter action, never an actual status transition or merge.
 
+## Deterministic handoff preparation
+
+BAR-38 adds `prepare-handoff --task <claimed-task-v2.yaml> --snapshot <handoff-input.json> --output <handoff-v2.yaml>`. It validates a fully claimed task/v2 and a closed UTF-8 `tlaw.dispatcher-handoff-input/v1` snapshot, derives task identity/base/branch only from the task, and atomically writes validated `tlaw.agent-handoff/v2` YAML. Snapshot evidence supplies only status, head/commits, ordered work and paths, commands, evidence, failures/questions, summary, and next action. It does not inspect live Git, use a lease, select a successor, launch anything, mutate Linear/GitHub, ingest a handoff, or merge. BAR-38 is Increment 7 only; BAR-26 remains incomplete.
+
 ## Deliberate limitations
 
 This tool does not contact or mutate Linear, probe live availability or quota, launch Codex/Claude/Grok/Qwen, ingest handoff packets, write GitHub, merge, or update task state. It performs no network write. Packet preparation, local routing, local lease acquisition, result ingestion, result finalization, and review ingestion are not dispatch; provider adapters, agent launch, review routing, and merge behavior need separately approved increments. BAR-37 does not complete BAR-26.
