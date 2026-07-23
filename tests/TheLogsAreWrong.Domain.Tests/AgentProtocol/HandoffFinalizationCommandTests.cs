@@ -36,7 +36,7 @@ public sealed class HandoffFinalizationCommandTests
         Assert.True(continuationValidation.IsValid);
         Assert.True(TaskV2Packet.From(continuationValidation.Packet!).IsUnclaimed);
         Assert.DoesNotContain((byte)'\r', File.ReadAllBytes(output));
-        var agents = workspace.Write("agents.json", "{\"schema\":\"tlaw.dispatcher-agent-snapshot/v1\",\"agents\":[{\"agent\":\"codex\",\"capabilities\":[\"dotnet\"],\"availability\":\"AVAILABLE\"}]}");
+        var agents = workspace.Write("agents.json", "{\"schema\":\"tlaw.dispatcher-agent-snapshot/v1\",\"agents\":[{\"agent\":\"codex\",\"capabilities\":[\"dotnet\",\"yaml_protocol\"],\"availability\":\"AVAILABLE\"},{\"agent\":\"claude\",\"capabilities\":[\"dotnet\",\"yaml_protocol\"],\"availability\":\"AVAILABLE\"}]}");
         Assert.Equal(0, RouteCommand.Run(["route", "--task", output, "--agents", agents, "--output", Path.Combine(workspace.Path, "selection.json")], TextWriter.Null, TextWriter.Null));
     }
 
@@ -159,9 +159,9 @@ public sealed class HandoffFinalizationCommandTests
     }
 
     [Theory]
-    [InlineData("claimed_by: codex", "claimed_by: unclaimed")]
+    [InlineData("claimed_by: \"codex\"", "claimed_by: \"unclaimed\"")]
     [InlineData("claim_started_at:", "claim_started_at: unclaimed #")]
-    [InlineData("schema: tlaw.agent-task/v2", "schema: tlaw.agent-task/v1")]
+    [InlineData("schema: \"tlaw.agent-task/v2\"", "schema: \"tlaw.agent-task/v1\"")]
     public void Unclaimed_partial_or_v1_task_cannot_finalize_a_handoff(string find, string replace)
     {
         using var workspace = HandoffWorkspace.Create();
