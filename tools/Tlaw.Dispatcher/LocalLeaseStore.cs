@@ -54,6 +54,11 @@ public sealed class FileLeaseStore
     private readonly ILeaseClock _clock;
 
     public FileLeaseStore(string storePath, ILeaseClock clock)
+        : this(storePath, clock, createDirectories: true)
+    {
+    }
+
+    private FileLeaseStore(string storePath, ILeaseClock clock, bool createDirectories)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(storePath);
         ArgumentNullException.ThrowIfNull(clock);
@@ -64,8 +69,11 @@ public sealed class FileLeaseStore
 
         _storePath = Path.GetFullPath(storePath);
         _clock = clock;
-        Directory.CreateDirectory(LeasesDirectory);
-        Directory.CreateDirectory(LocksDirectory);
+        if (createDirectories)
+        {
+            Directory.CreateDirectory(LeasesDirectory);
+            Directory.CreateDirectory(LocksDirectory);
+        }
     }
 
     public LocalLease Acquire(string taskId, string executor, TimeSpan ttl)
@@ -108,6 +116,58 @@ public sealed class FileLeaseStore
                 ? LocalLeaseStatus.Active
                 : LocalLeaseStatus.Expired;
             return new LocalLeaseInspection(status, lease);
+        });
+    }
+
+    public static LocalLeaseInspection InspectReadOnly(string storePath, string taskId, ILeaseClock clock)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(storePath);
+        ArgumentNullException.ThrowIfNull(clock);
+        if (!Path.IsPathFullyQualified(storePath))
+        {
+            throw new ArgumentException("The lease store path must be absolute.", nameof(storePath));
+        }
+
+        ValidateIdentity(taskId, nameof(taskId));
+        var normalizedStorePath = Path.GetFullPath(storePath);
+        var leasePath = Path.Combine(normalizedStorePath, "leases", $"{TaskHash(taskId)}.json");
+        var lease = ReadLease(leasePath, taskId);
+        if (lease is null)
+        {
+            return new LocalLeaseInspection(LocalLeaseStatus.Missing, null);
+        }
+
+        var status = lease.ClaimExpiresAt > clock.UtcNow.ToUniversalTime()
+            ? LocalLeaseStatus.Active
+            : LocalLeaseStatus.Expired;
+        return new LocalLeaseInspection(status, lease);
+    }
+
+    internal static T WithActiveLeaseGuard<T>(
+        string storePath,
+        string taskId,
+        string claimedBy,
+        string claimId,
+        ILeaseClock clock,
+        Func<Action, T> action)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(storePath);
+        ArgumentNullException.ThrowIfNull(clock);
+        ArgumentNullException.ThrowIfNull(action);
+        if (!Path.IsPathFullyQualified(storePath))
+        {
+            throw new ArgumentException("The lease store path must be absolute.", nameof(storePath));
+        }
+
+        ValidateIdentity(taskId, nameof(taskId));
+        ValidateIdentity(claimedBy, nameof(claimedBy));
+        ValidateIdentity(claimId, nameof(claimId));
+        var store = new FileLeaseStore(storePath, clock, createDirectories: false);
+        return store.WithExistingTaskLock(taskId, () =>
+        {
+            Action recheck = () => store.RequireMatchingActiveLease(taskId, claimedBy, claimId);
+            recheck();
+            return action(recheck);
         });
     }
 
@@ -172,9 +232,55 @@ public sealed class FileLeaseStore
         }
     }
 
-    private LocalLease? ReadLease(string taskId)
+    private T WithExistingTaskLock<T>(string taskId, Func<T> action)
     {
-        var path = LeasePath(taskId);
+        var lockPath = Path.Combine(LocksDirectory, $"{TaskHash(taskId)}.lock");
+        FileStream lockHandle;
+        try
+        {
+            lockHandle = new FileStream(lockPath, FileMode.Open, FileAccess.ReadWrite, FileShare.None);
+        }
+        catch (Exception exception) when (exception is FileNotFoundException or DirectoryNotFoundException)
+        {
+            throw new LeaseGuardException($"The active lease lock for task '{taskId}' is missing.");
+        }
+        catch (IOException exception)
+        {
+            throw new LeaseConflictException($"A lease operation for task '{taskId}' is already in progress.", exception);
+        }
+        catch (UnauthorizedAccessException exception)
+        {
+            throw new LeaseStoreException($"The lease lock for task '{taskId}' cannot be opened.", exception);
+        }
+
+        using (lockHandle)
+        {
+            return action();
+        }
+    }
+
+    private LocalLease RequireMatchingActiveLease(string taskId, string claimedBy, string claimId)
+    {
+        var lease = ReadLease(taskId) ?? throw new LeaseGuardException($"Task '{taskId}' has no active lease.");
+        if (lease.ClaimExpiresAt <= _clock.UtcNow.ToUniversalTime())
+        {
+            throw new LeaseGuardException($"Lease for task '{taskId}' has expired.");
+        }
+
+        if (!string.Equals(lease.TaskId, taskId, StringComparison.Ordinal) ||
+            !string.Equals(lease.ClaimedBy, claimedBy, StringComparison.Ordinal) ||
+            !string.Equals(lease.ClaimId, claimId, StringComparison.Ordinal))
+        {
+            throw new LeaseGuardException($"Active lease identity does not match the claimed task packet for task '{taskId}'.");
+        }
+
+        return lease;
+    }
+
+    private LocalLease? ReadLease(string taskId) => ReadLease(LeasePath(taskId), taskId);
+
+    private static LocalLease? ReadLease(string path, string taskId)
+    {
         if (!File.Exists(path))
         {
             return null;

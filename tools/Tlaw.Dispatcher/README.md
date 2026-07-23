@@ -105,6 +105,20 @@ The output is an internal `tlaw.dispatcher-selection/v1` JSON record, not an Age
 
 The reviewed human flow is: validate an unclaimed task, run and inspect `selection.json`, then explicitly invoke `lease acquire` with its `selected_agent`. Routing never calls `FileLeaseStore`.
 
+## Correlated local result ingestion
+
+BAR-35 adds a local evidence-ingestion step. It is not lease finalization, execution, launch, dispatch, a Linear transition, a GitHub write, or a merge.
+
+```powershell
+dotnet run --configuration Release --project tools/Tlaw.Dispatcher -- ingest-result --task <claimed-task-v2.yaml> --result <result-v1.yaml> --lease-store <absolute-lease-store> --output <ingestion.json>
+```
+
+Every option is required exactly once. Before it reads either packet, the command rejects an output path that aliases the task, result, or any lease-store path after full-path normalization and available symbolic-link/junction resolution. It validates the strict UTF-8 task and result packets through the repository-native protocol validator; requires task/v2 to be fully claimed and result/v1 to have exactly the same `task_id`; and reads the existing lease record without changing it. The task id, `claimed_by`, and fencing `claim_id` must match one active, unexpired lease. The existing per-task lease lock is held while that evidence is checked and rechecked immediately before publication. Missing, held, expired, corrupt, duplicate-property, or contradictory lease evidence fails closed.
+
+Only after those checks succeed does the command atomically replace `ingestion.json`. The UTF-8/no-BOM, LF-terminated internal `tlaw.dispatcher-ingestion/v1` record has stable fields in this order: `schema`, `task_id`, `claimed_by`, `claim_id`, `result_status`, `result_sha256`, `human_required`, `projection`. `result_sha256` is the lowercase SHA-256 of the exact validated result bytes. It preserves task, result, lease-store, and any prior output bytes on failure.
+
+Stdout is only the existing concise `ResultProjector` output. A required human pause exposes only summary, question, evidence references, and safe options; a non-human result exposes only status and summary. If stdout fails after the durable record is published, the command reports a non-zero result and does not roll back that record. Ingestion never changes a failed or blocked result to success, releases/renews/replaces a lease, chooses another executor, or moves a task status. BAR-35 is Increment 4 only; BAR-26 remains incomplete.
+
 ## Deliberate limitations
 
-This tool does not contact or mutate Linear, probe live availability or quota, launch Codex/Claude/Grok/Qwen, ingest result/review/handoff packets, write GitHub, merge, or update task state. It performs no network write. Packet preparation, local routing, and local lease acquisition are not dispatch; provider adapters, agent launch, result ingestion, review routing, and merge behavior need separately approved increments. BAR-34 is only Increment 3 and does not complete BAR-26.
+This tool does not contact or mutate Linear, probe live availability or quota, launch Codex/Claude/Grok/Qwen, ingest review/handoff packets, write GitHub, merge, or update task state. It performs no network write. Packet preparation, local routing, local lease acquisition, and result ingestion are not dispatch; provider adapters, agent launch, lease finalization, review routing, and merge behavior need separately approved increments. BAR-35 is only Increment 4 and does not complete BAR-26.
