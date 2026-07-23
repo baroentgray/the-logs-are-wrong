@@ -10,7 +10,8 @@ This is a reviewed repository copy of the routing blueprint. BAR-34 implements d
 6. A human may explicitly run `ingest-result` with one claimed task/v2 packet, one result/v1 packet, and the existing local lease store. It accepts evidence only when task id, claimed agent, fencing token, and current lease state match exactly; it emits an internal record and the existing concise result projection without releasing the lease or changing any status.
 7. A human may explicitly run `finalize-result` for a non-human `success` or `failed` result after ingestion. It releases only the matching active local lease and writes a deterministic record for a future adapter; it does not move Linear or complete a task.
 8. A human may explicitly run `ingest-review` with a claimed task/v2, successful finalization record, review/v1 evidence, and an explicit reviewed head. It emits a deterministic future decision (`merge`, `correction`, or `human`) without contacting GitHub, moving Linear, or merging anything.
-9. A human reviews the selected, prepared, claimed, ingested, finalized, or review-decision record before any later, separately approved workflow step.
+9. A human may explicitly run `ingest-handoff` with a claimed task/v2, correlated handoff/v2, an existing read-only local lease guard, and an approved reason. It records only a future `reassign` or `human` decision; it does not release a lease or select a successor.
+10. A human reviews the selected, prepared, claimed, ingested, finalized, review-decision, or handoff-ingestion record before any later, separately approved workflow step.
 
 ## Current limitations
 

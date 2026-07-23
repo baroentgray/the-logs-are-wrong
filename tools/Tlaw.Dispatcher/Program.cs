@@ -14,5 +14,7 @@ public static class Program
                 ? IngestReviewCommand.Run(args, Console.Out, Console.Error)
             : args.Length > 0 && string.Equals(args[0], "prepare-handoff", StringComparison.Ordinal)
                 ? PrepareHandoffCommand.Run(args, Console.Out, Console.Error)
+            : args.Length > 0 && string.Equals(args[0], "ingest-handoff", StringComparison.Ordinal)
+                ? IngestHandoffCommand.Run(args, Console.Out, Console.Error)
             : TaskPacketCommand.Run(args, Console.Out, Console.Error);
 }

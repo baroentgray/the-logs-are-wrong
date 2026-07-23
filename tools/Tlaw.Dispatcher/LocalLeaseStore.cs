@@ -171,6 +171,18 @@ public sealed class FileLeaseStore
         });
     }
 
+    internal static T WithMatchingLeaseStateGuard<T>(string storePath, string taskId, string claimedBy, string claimId, LocalLeaseStatus expectedStatus, ILeaseClock clock, Func<Action, T> action)
+    {
+        if (expectedStatus is not (LocalLeaseStatus.Active or LocalLeaseStatus.Expired)) throw new ArgumentOutOfRangeException(nameof(expectedStatus));
+        var store = new FileLeaseStore(storePath, clock, createDirectories: false);
+        return store.WithExistingTaskLock(taskId, () =>
+        {
+            Action recheck = () => store.RequireMatchingLeaseState(taskId, claimedBy, claimId, expectedStatus);
+            recheck();
+            return action(recheck);
+        });
+    }
+
     internal static T WithActiveLeaseGuard<T>(
         string storePath,
         string taskId,
@@ -292,6 +304,17 @@ public sealed class FileLeaseStore
             throw new LeaseGuardException($"Active lease identity does not match the claimed task packet for task '{taskId}'.");
         }
 
+        return lease;
+    }
+
+    private LocalLease RequireMatchingLeaseState(string taskId, string claimedBy, string claimId, LocalLeaseStatus expectedStatus)
+    {
+        var lease = ReadLease(taskId) ?? throw new LeaseGuardException($"Task '{taskId}' has no lease.");
+        var status = lease.ClaimExpiresAt > _clock.UtcNow.ToUniversalTime() ? LocalLeaseStatus.Active : LocalLeaseStatus.Expired;
+        if (status != expectedStatus || !string.Equals(lease.TaskId, taskId, StringComparison.Ordinal) || !string.Equals(lease.ClaimedBy, claimedBy, StringComparison.Ordinal) || !string.Equals(lease.ClaimId, claimId, StringComparison.Ordinal))
+        {
+            throw new LeaseGuardException($"Lease identity or state does not match the claimed task packet for task '{taskId}'.");
+        }
         return lease;
     }
 
