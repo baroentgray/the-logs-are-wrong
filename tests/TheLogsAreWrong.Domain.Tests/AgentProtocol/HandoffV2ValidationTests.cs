@@ -27,6 +27,7 @@ public sealed class HandoffV2ValidationTests
     public void Invalid_v2_boundaries_fail_visibly(string find, string replace) { var yaml = File.ReadAllText(Path.Combine(Examples, "handoff.v2.valid.yaml")).Replace(find, replace, StringComparison.Ordinal); Assert.False(PacketValidator.Validate(yaml, Registry).IsValid); }
     [Theory]
     [InlineData("files_changed: []")]
+    [InlineData("files_changed:\n  - simple.txt")]
     [InlineData("files_changed:\n  - docs/agent/file.txt\n  - nested/path/file.txt")]
     [InlineData("human_summary: |\n  one\n  two\n  three\n  four\n  five")]
     public void Valid_v2_variants_are_accepted(string replacement) { var yaml = File.ReadAllText(Path.Combine(Examples, "handoff.v2.valid.yaml")); if (replacement.StartsWith("human_summary", StringComparison.Ordinal)) yaml = yaml.Replace("human_summary: Handoff v2 preparation is complete.", replacement, StringComparison.Ordinal); else yaml = yaml.Replace("files_changed:\n  - docs/agent/schemas/handoff.v2.schema.json", replacement, StringComparison.Ordinal); Assert.True(PacketValidator.Validate(yaml, Registry).IsValid); }
