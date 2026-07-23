@@ -94,7 +94,19 @@ internal sealed record HandoffSnapshot(string Status, string HeadSha, IReadOnlyL
         if (!root.TryGetProperty("evidence", out var value) || value.ValueKind != JsonValueKind.Array || value.GetArrayLength() == 0) throw new HandoffPreparationException("Handoff snapshot evidence must be a non-empty array.");
         return value.EnumerateArray().Select(item => { Closed(item, ["kind", "reference"], "evidence"); var kind = Text(item, "kind"); if (kind is not ("command" or "source" or "file" or "ci")) throw new HandoffPreparationException("Handoff snapshot evidence kind is invalid."); return new HandoffEvidence(kind, Text(item, "reference")); }).ToArray();
     }
-    private static void Closed(JsonElement item, string[] names, string path) { if (item.ValueKind != JsonValueKind.Object || item.EnumerateObject().Select(property => property.Name).Distinct(StringComparer.Ordinal).Count() != names.Length || item.EnumerateObject().Any(property => !names.Contains(property.Name, StringComparer.Ordinal)) || names.Any(name => !item.TryGetProperty(name, out _))) throw new HandoffPreparationException($"Handoff snapshot {path} object is invalid."); }
+    private static void Closed(JsonElement item, string[] names, string path)
+    {
+        if (item.ValueKind != JsonValueKind.Object) throw new HandoffPreparationException($"Handoff snapshot {path} object is invalid.");
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+        var count = 0;
+        foreach (var property in item.EnumerateObject())
+        {
+            count++;
+            if (!names.Contains(property.Name, StringComparer.Ordinal) || !seen.Add(property.Name)) throw new HandoffPreparationException($"Handoff snapshot {path} object is invalid.");
+        }
+
+        if (count != names.Length || seen.Count != names.Length || names.Any(name => !seen.Contains(name))) throw new HandoffPreparationException($"Handoff snapshot {path} object is invalid.");
+    }
     private static string Sha(string value, string name) { if (value.Length != 40 || value == new string('0', 40) || value.Any(character => !(character is >= '0' and <= '9' or >= 'a' and <= 'f'))) throw new HandoffPreparationException($"Handoff snapshot {name} must be a lowercase non-sentinel SHA."); return value; }
     private static bool RepositoryPath(string value) => !value.Contains('\\') && !value.Contains('\0') && !value.StartsWith("/", StringComparison.Ordinal) && !value.StartsWith("//", StringComparison.Ordinal) && !System.Text.RegularExpressions.Regex.IsMatch(value, "^[A-Za-z]:", System.Text.RegularExpressions.RegexOptions.CultureInvariant) && !value.EndsWith("/", StringComparison.Ordinal) && value.Split('/').All(segment => segment.Length > 0 && segment is not "." and not "..");
 }

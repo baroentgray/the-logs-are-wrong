@@ -29,6 +29,17 @@ public sealed class HandoffPreparationCommandTests
         Assert.NotEqual(0, PrepareHandoffCommand.Run(Args(task, snapshot, output), TextWriter.Null, TextWriter.Null)); Assert.Equal("previous\n", File.ReadAllText(output));
     }
 
+    [Theory]
+    [InlineData("\"command\":\"dotnet test\"", "\"command\":\"first\",\"command\":\"second\"")]
+    [InlineData("\"exit_code\":0", "\"exit_code\":0,\"exit_code\":1")]
+    [InlineData("\"kind\":\"command\"", "\"kind\":\"command\",\"kind\":\"ci\"")]
+    [InlineData("\"reference\":\"dotnet test\"", "\"reference\":\"first\",\"reference\":\"second\"")]
+    public void Duplicate_nested_snapshot_properties_fail_without_publication(string find, string replace)
+    {
+        using var w = Workspace.Create(); var task = w.Write("task.yaml", Task); var snapshot = w.Write("snapshot.json", Snapshot().Replace(find, replace, StringComparison.Ordinal)); var output = w.Write("out.yaml", "previous\n"); var taskBefore = File.ReadAllBytes(task); var snapshotBefore = File.ReadAllBytes(snapshot); using var stdout = new StringWriter();
+        Assert.NotEqual(0, PrepareHandoffCommand.Run(Args(task, snapshot, output), stdout, TextWriter.Null)); Assert.Equal("previous\n", File.ReadAllText(output)); Assert.Equal(taskBefore, File.ReadAllBytes(task)); Assert.Equal(snapshotBefore, File.ReadAllBytes(snapshot)); Assert.Empty(Directory.EnumerateFiles(w.Path, ".out.yaml.*.tmp")); Assert.Equal(string.Empty, stdout.ToString());
+    }
+
     [Fact]
     public void Options_aliases_determinism_and_stdout_failure_are_covered()
     {
