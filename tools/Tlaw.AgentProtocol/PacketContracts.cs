@@ -47,6 +47,10 @@ public sealed class ProtocolPacket
         ? values.Select(value => value?.GetValue<string>() ?? throw new InvalidOperationException($"Required string '{objectName}.{name}' is missing.")).ToArray()
         : throw new InvalidOperationException($"Required array '{objectName}.{name}' is missing.");
 
+    public IReadOnlyList<string> RequiredObjectStrings(string arrayName, string propertyName) => Root[arrayName] is JsonArray values
+        ? values.Select(value => value is JsonObject item && item[propertyName]?.GetValue<string>() is string text ? text : throw new InvalidOperationException($"Required string '{arrayName}.{propertyName}' is missing.")).ToArray()
+        : throw new InvalidOperationException($"Required object array '{arrayName}' is missing.");
+
     public IReadOnlyList<(string Kind, string Reference)> Evidence() => Root["evidence"] is JsonArray values
         ? values.Select(value => value as JsonObject ?? throw new InvalidOperationException("Evidence entry is not an object."))
             .Select(value => (value["kind"]?.GetValue<string>() ?? throw new InvalidOperationException("Evidence kind is missing."), value["reference"]?.GetValue<string>() ?? throw new InvalidOperationException("Evidence reference is missing.")))

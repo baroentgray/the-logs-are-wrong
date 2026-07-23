@@ -196,6 +196,15 @@ internal static class IngestionPathGuard
         }
     }
 
+    internal static void ValidateOutputWithoutLease(string outputPath, params string[] protectedInputs)
+    {
+        var output = Resolve(outputPath);
+        if (protectedInputs.Any(path => SamePath(output, Resolve(path))))
+        {
+            throw new IngestResultCommandException("Command output must not alias a protected input.");
+        }
+    }
+
     private static string Resolve(string path)
     {
         var fullPath = Path.GetFullPath(path);
