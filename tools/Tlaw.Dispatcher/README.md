@@ -165,6 +165,25 @@ Finalization takes the existing task lock, removes only the exact matching lease
 
 The full deliberate sequence is `prepare-handoff -> ingest-handoff -> finalize-handoff -> route -> lease acquire`. Finalization emits only `HANDOFF FINALIZED: reassign` or `HANDOFF FINALIZED: human`; it does not route, acquire a lease, select a successor, launch an agent, contact a provider, or mutate GitHub or Linear. Routing and any later lease acquisition remain explicit human-invoked commands. BAR-40 is Increment 9 only; BAR-26 remains incomplete.
 
+## Guarded Linear adapter and readiness doctor
+
+BAR-41 adds an explicit adapter boundary, not a task launcher. `linear snapshot` reads minimal live Linear fields (never its description) and combines them only with a repository-controlled closed profile. The key is accepted only by name, never as a CLI value:
+
+```powershell
+dotnet run --configuration Release --project tools/Tlaw.Dispatcher -- linear snapshot --issue <BAR-ID> --profile <profile.json> --api-key-env <ENV_NAME> --output <normalized-input.json> --snapshot-output <linear-snapshot.json>
+dotnet run --configuration Release --project tools/Tlaw.Dispatcher -- packet --input <normalized-input.json> --output <task.yaml>
+```
+
+The adapter rejects HTTP, GraphQL, null-field and malformed-response failures, including HTTP 200 responses with GraphQL errors. Its normalized output is UTF-8/no-BOM, LF-only, atomically published, deterministic, and accepted unchanged by `packet`. It has no authority to infer capabilities, autonomy, delivery, or routing from Linear prose.
+
+`linear transition` re-fetches the exact supplied snapshot before a minimal state mutation and fails closed on changed state, labels, blockers, or `updatedAt`. It emits a durable receipt only after post-mutation verification. `queue`, `claim`, `result`, `review`, and `handoff` are restricted to their documented state edges; generic merge evidence is rejected. The command never merges GitHub.
+
+```powershell
+dotnet run --configuration Release --project tools/Tlaw.Dispatcher -- doctor --config <adapter-config.json> --output <doctor.json> --agents-output <agent-snapshot.json> [--live]
+```
+
+`doctor` accepts only the closed `codex`, `claude`, `grok`, `local` adapter set and writes a route-compatible agent snapshot. It uses direct processes with no shell or configured arguments. Static mode makes no provider request. In live mode Grok uses the fixed headless `grok -p <read-only probe> --output-format streaming-json` shape in an isolated temporary directory with a bounded timeout; no project context, task launch, session data, or API key is logged. The local adapter accepts only `localhost`, `127.0.0.1`, or `::1` endpoints and is readiness-only.
+
 ## Deliberate limitations
 
 This tool does not contact or mutate Linear, probe live availability or quota, launch Codex/Claude/Grok/Qwen, write GitHub, merge, or update task state. It performs no network write. Packet preparation, local routing, local lease acquisition, result ingestion, result finalization, review ingestion, handoff preparation, handoff ingestion, and handoff finalization are not dispatch; provider adapters, agent launch, successor routing, and merge behavior need separately approved increments. BAR-40 does not complete BAR-26.
