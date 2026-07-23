@@ -4,6 +4,7 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
+using Tlaw.AgentProtocol;
 
 namespace Tlaw.Dispatcher;
 
@@ -12,10 +13,10 @@ public static class LinearCommand
 {
     internal const string Endpoint = "https://api.linear.app/graphql";
 
-    public static int Run(string[] args, TextWriter standardOutput, TextWriter standardError) => Run(args, standardOutput, standardError, new HttpLinearTransport());
-    internal static int RunForTesting(string[] args, TextWriter standardOutput, TextWriter standardError, ILinearTransport transport) => Run(args, standardOutput, standardError, transport);
+    public static int Run(string[] args, TextWriter standardOutput, TextWriter standardError) => Run(args, standardOutput, standardError, new HttpLinearTransport(), new SystemLeaseClock(), new SystemGitProofRunner());
+    internal static int RunForTesting(string[] args, TextWriter standardOutput, TextWriter standardError, ILinearTransport transport, ILeaseClock? clock = null, IGitProofRunner? git = null) => Run(args, standardOutput, standardError, transport, clock ?? new SystemLeaseClock(), git ?? new SystemGitProofRunner());
 
-    private static int Run(string[] args, TextWriter standardOutput, TextWriter standardError, ILinearTransport transport)
+    private static int Run(string[] args, TextWriter standardOutput, TextWriter standardError, ILinearTransport transport, ILeaseClock clock, IGitProofRunner git)
     {
         try
         {
@@ -23,12 +24,12 @@ public static class LinearCommand
             return args[1] switch
             {
                 "snapshot" => Snapshot(LinearSnapshotOptions.Parse(args), transport, standardOutput),
-                "transition" => Transition(LinearTransitionOptions.Parse(args), transport, standardOutput),
+                "transition" => Transition(LinearTransitionOptions.Parse(args), transport, standardOutput, clock, git),
                 _ => throw new LinearCommandException("Linear command must use the exact subcommand 'snapshot' or 'transition'.")
             };
         }
         catch (LinearCommandException exception) { standardError.WriteLine($"FAIL: {exception.Message}"); return 1; }
-        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or DirectoryNotFoundException or ArgumentException or DecoderFallbackException or InvalidDataException or JsonException or HttpRequestException) { standardError.WriteLine($"FAIL: {exception.Message}"); return 1; }
+        catch (Exception exception) when (exception is LeaseStoreException or IOException or UnauthorizedAccessException or DirectoryNotFoundException or ArgumentException or DecoderFallbackException or InvalidDataException or JsonException or HttpRequestException) { standardError.WriteLine($"FAIL: {exception.Message}"); return 1; }
         catch (Exception) { standardError.WriteLine("FAIL: Linear adapter operation failed unexpectedly."); return 1; }
     }
 
@@ -44,41 +45,46 @@ public static class LinearCommand
         return 0;
     }
 
-    private static int Transition(LinearTransitionOptions options, ILinearTransport transport, TextWriter output)
+    private static int Transition(LinearTransitionOptions options, ILinearTransport transport, TextWriter output, ILeaseClock clock, IGitProofRunner git)
     {
         var apiKey = RequireApiKey(options.ApiKeyEnvironment);
         var snapshot = LinearIssueSnapshot.Parse(TaskPacketCommand.ReadUtf8(options.SnapshotPath));
         if (snapshot.Identifier != options.IssueIdentifier) throw new LinearCommandException("Transition issue identifier must exactly match the supplied snapshot.");
+
+        // Authorize entirely from typed, repository-native evidence BEFORE any GraphQL call is made:
+        // a rejected transition performs zero Linear queries and zero mutations.
+        var registry = PacketSchemaRegistry.Load(Path.Combine(TaskPacketCommand.FindRepositoryRoot(), "docs", "agent", "schemas"));
+        var (task, taskBytes) = LinearTransitionAuthorizer.LoadTask(options.TaskPath, registry);
+        LinearTransitionAuthorizer.RequireIssueIdentity(task, snapshot);
+        var authorized = LinearTransitionAuthorizer.Authorize(options, task, taskBytes, registry, snapshot, clock, git);
+
         var live = LinearIssueSnapshot.From(FetchIssue(transport, options.IssueIdentifier, apiKey));
         snapshot.RequireSameConcurrencyFacts(live);
-        var evidence = TransitionEvidence.Parse(File.ReadAllBytes(options.EvidencePath));
-        if (options.Event == "handoff") return HandoffTransition(options, transport, output, apiKey, snapshot, live, evidence);
-        var plan = options.Event == "merge"
-            ? MergeTransitionProof.Validate(snapshot, evidence, options, new SystemGitProofRunner())
-            : LinearTransitionPlanner.Plan(options.Event, snapshot, evidence);
+        if (options.Event == "handoff") return HandoffTransition(options, transport, output, apiKey, snapshot, live, authorized.Handoff!, authorized.EvidenceHash);
+
+        var plan = new LinearTransitionPlan(authorized.TargetState, null, authorized.IsNoOp);
         if (plan.IsNoOp)
         {
-            TaskPacketCommand.WriteAtomically(options.OutputPath, LinearReceiptJson.Write(snapshot, options.Event, plan, evidence.Hash, snapshot.UpdatedAt));
+            TaskPacketCommand.WriteAtomically(options.OutputPath, LinearReceiptJson.Write(snapshot, options.Event, plan with { TargetStateId = live.StateId }, authorized.EvidenceHash, live.UpdatedAt));
             output.WriteLine($"TRANSITION: {options.Event} (no-op)");
             return 0;
         }
 
-        var target = snapshot.States.SingleOrDefault(state => state.Name == plan.TargetState) ?? throw new LinearCommandException($"Live Linear team has no required target state '{plan.TargetState}'.");
-        LinearGraphQl.RequireSuccessfulMutation(transport.Send("IssueUpdate", "mutation IssueUpdate($id:String!,$stateId:String!){issueUpdate(id:$id,input:{stateId:$stateId}){success}}", new { id = snapshot.Id, stateId = target.Id }, apiKey), "issueUpdate");
+        var target = live.States.SingleOrDefault(state => state.Name == plan.TargetState) ?? throw new LinearCommandException($"Live Linear team has no required target state '{plan.TargetState}'.");
+        LinearGraphQl.RequireSuccessfulMutation(transport.Send("IssueUpdate", "mutation IssueUpdate($id:String!,$stateId:String!){issueUpdate(id:$id,input:{stateId:$stateId}){success}}", new { id = live.Id, stateId = target.Id }, apiKey), "issueUpdate");
         var after = LinearIssueSnapshot.From(FetchIssue(transport, options.IssueIdentifier, apiKey));
         if (after.StateId != target.Id) throw new LinearCommandException("Linear may already have changed: post-mutation state verification failed.");
-        try { TaskPacketCommand.WriteAtomically(options.OutputPath, LinearReceiptJson.Write(snapshot, options.Event, plan with { TargetStateId = target.Id }, evidence.Hash, after.UpdatedAt)); }
+        try { TaskPacketCommand.WriteAtomically(options.OutputPath, LinearReceiptJson.Write(snapshot, options.Event, plan with { TargetStateId = target.Id }, authorized.EvidenceHash, after.UpdatedAt)); }
         catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or DirectoryNotFoundException) { throw new LinearCommandException("Linear may already have changed: transition receipt was not published."); }
         output.WriteLine($"TRANSITION: {options.Event} -> {plan.TargetState}");
         return 0;
     }
 
-    private static int HandoffTransition(LinearTransitionOptions options, ILinearTransport transport, TextWriter output, string apiKey, LinearIssueSnapshot snapshot, LinearIssueSnapshot live, TransitionEvidence evidence)
+    private static int HandoffTransition(LinearTransitionOptions options, ILinearTransport transport, TextWriter output, string apiKey, LinearIssueSnapshot snapshot, LinearIssueSnapshot live, HandoffAuthorization handoff, string evidenceHash)
     {
-        if (snapshot.StateName != "In Progress" || evidence.Schema != "tlaw.dispatcher-handoff-finalization/v1" || evidence.Decision is not ("human" or "reassign")) throw new LinearCommandException("Handoff requires In Progress and correlated finalized human or reassign evidence.");
-        if (evidence.Decision == "human" && string.IsNullOrWhiteSpace(options.BlockerIdentifier)) throw new LinearCommandException("Human handoff requires --blocker.");
-        if (evidence.Decision == "human" && options.ResolvedBlockerIdentifier is not null) throw new LinearCommandException("Human handoff adds a blocker; it does not resolve one.");
-        if (evidence.Decision == "reassign" && options.BlockerIdentifier is not null) throw new LinearCommandException("Reassign handoff must not invent a blocker.");
+        if (handoff.Decision == "human" && string.IsNullOrWhiteSpace(options.BlockerIdentifier)) throw new LinearCommandException("Human handoff requires --blocker.");
+        if (handoff.Decision == "human" && options.ResolvedBlockerIdentifier is not null) throw new LinearCommandException("Human handoff adds a blocker; it does not resolve one.");
+        if (handoff.Decision == "reassign" && options.BlockerIdentifier is not null) throw new LinearCommandException("Reassign handoff must not invent a blocker.");
 
         var journal = new LinearMutationJournal();
         var labelsAdded = new List<string>();
@@ -90,14 +96,16 @@ public static class LinearCommand
             // `live` is the pre-mutation refetch taken immediately before dispatch and already concurrency-checked against the snapshot.
             var labels = live.Labels.ToList();
             var relations = live.BlockedBy.ToList();
+            var todo = live.States.SingleOrDefault(x => string.Equals(x.Name, "Todo", StringComparison.Ordinal)) ?? throw new LinearCommandException("Live Linear team has no Todo state.");
 
-            // Validate a requested removal before any state mutation so an impossible removal has no side effects.
+            // Validate a requested removal before any mutation so an impossible removal has no side effects.
             (LinearRelation? removalTarget, bool idempotentMissing) = options.ResolvedBlockerIdentifier is null
                 ? (null, false)
-                : BlockerRelationOps.ValidateRemovable(options, live, snapshot, evidence);
+                : BlockerRelationOps.ValidateRemovable(options, live, snapshot, evidenceHash);
 
-            if (evidence.Decision == "human")
+            if (handoff.Decision == "human")
             {
+                // Human add path retains add-before-state ordering.
                 var blockedLabelId = BlockedLabelResolution.ResolveOrCreate(transport, live.TeamId, apiKey, journal); // (1) blocked_label_created
                 BlockerRelationOps.AddBlocker(transport, live, options.BlockerIdentifier!, apiKey, journal, relations, blockersAdded); // (2) blocker_relation_added
                 if (!labels.Any(l => string.Equals(l.Id, blockedLabelId, StringComparison.Ordinal)))                 // (3) blocked_label_added
@@ -108,6 +116,11 @@ public static class LinearCommand
                     journal.Complete("blocked_label_added");
                 }
             }
+
+            // The state change is durable before any resolved-blocker deletion: a later relation or label
+            // failure is reported as an already-changed state, never silently rolled back.
+            UpdateState(transport, live.Id, todo.Id, apiKey);                                                        // (4) state_changed
+            journal.Complete("state_changed");
 
             if (options.ResolvedBlockerIdentifier is not null)
             {
@@ -126,17 +139,13 @@ public static class LinearCommand
                 }
             }
 
-            var todo = live.States.SingleOrDefault(x => string.Equals(x.Name, "Todo", StringComparison.Ordinal)) ?? throw new LinearCommandException("Live Linear team has no Todo state.");
-            UpdateState(transport, live.Id, todo.Id, apiKey);                                                        // (4) state_changed
-            journal.Complete("state_changed");
-
             var after = LinearIssueSnapshot.From(FetchIssue(transport, options.IssueIdentifier, apiKey));            // (7) post_mutation_verified
             if (!string.Equals(after.StateName, "Todo", StringComparison.Ordinal)) throw new LinearCommandException("post-mutation state is not Todo");
             if (!SameLabelSet(after.Labels, labels)) throw new LinearCommandException("post-mutation labels do not exactly match the required set");
             if (!SameRelationSet(after.BlockedBy, relations)) throw new LinearCommandException("post-mutation blocker relations do not exactly match the required set");
             journal.Complete("post_mutation_verified");
 
-            var receipt = LinearReceiptJson.WriteHandoff(live, todo, evidence.Hash, after.UpdatedAt, labelsAdded, labelsRemoved, blockersAdded, blockersRemoved, after.BlockedBy, after.Labels);
+            var receipt = LinearReceiptJson.WriteHandoff(live, todo, evidenceHash, after.UpdatedAt, labelsAdded, labelsRemoved, blockersAdded, blockersRemoved, after.BlockedBy, after.Labels);
             try { TaskPacketCommand.WriteAtomically(options.OutputPath, receipt); }
             catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or DirectoryNotFoundException) { throw new LinearCommandException("the durable transition receipt was not published"); }
             journal.Complete("receipt_published");                                                                   // (8) receipt_published
@@ -212,20 +221,51 @@ internal sealed record LinearSnapshotOptions(string IssueIdentifier, string Prof
         return new(values["--issue"], Path.GetFullPath(values["--profile"]), values["--api-key-env"], Path.GetFullPath(values["--output"]), Path.GetFullPath(values["--snapshot-output"]));
     }
 }
-internal sealed record LinearTransitionOptions(string IssueIdentifier, string Event, string SnapshotPath, string EvidencePath, string ApiKeyEnvironment, string OutputPath, string? VerificationPath, string? MergeSha, string? RepositoryPath, string? BlockerIdentifier, string? ResolvedBlockerIdentifier)
+internal sealed record LinearTransitionOptions(
+    string IssueIdentifier, string Event, string SnapshotPath, string TaskPath, string ApiKeyEnvironment, string OutputPath,
+    string? LeaseStorePath, string? FinalizationPath, string? ReviewDecisionPath, string? HandoffIngestionPath,
+    string? VerificationPath, string? MergeSha, string? RepositoryPath, string? BlockerIdentifier, string? ResolvedBlockerIdentifier)
 {
     internal static LinearTransitionOptions Parse(IReadOnlyList<string> args)
     {
         if (args.Count < 14 || args[0] != "linear" || args[1] != "transition" || (args.Count % 2) != 0) throw new LinearCommandException("Linear transition command requires complete named options.");
-        var values = new Dictionary<string,string>(StringComparer.Ordinal);
-        var allowed = new HashSet<string>(["--issue","--event","--snapshot","--evidence","--api-key-env","--output","--verification","--merge-sha","--repository","--blocker","--resolve-blocker"], StringComparer.Ordinal);
+        var values = new Dictionary<string, string>(StringComparer.Ordinal);
+        var allowed = new HashSet<string>(["--issue", "--event", "--snapshot", "--task", "--api-key-env", "--output", "--lease-store", "--finalization", "--review-decision", "--handoff-ingestion", "--verification", "--merge-sha", "--repository", "--blocker", "--resolve-blocker"], StringComparer.Ordinal);
         for (var index = 2; index < args.Count; index += 2) if (!allowed.Contains(args[index]) || string.IsNullOrWhiteSpace(args[index + 1]) || !values.TryAdd(args[index], args[index + 1])) throw new LinearCommandException("Linear transition command received an unknown, duplicate, or empty option.");
-        foreach (var required in new[] { "--issue", "--event", "--snapshot", "--evidence", "--api-key-env", "--output" }) if (!values.ContainsKey(required)) throw new LinearCommandException("Linear transition command is missing a required option.");
-        if (values["--event"] is not ("queue" or "claim" or "result" or "review" or "handoff" or "merge")) throw new LinearCommandException("Transition event is not supported.");
-        var merge = values["--event"] == "merge";
-        if (merge != (values.ContainsKey("--verification") && values.ContainsKey("--merge-sha") && values.ContainsKey("--repository"))) throw new LinearCommandException("Merge transition requires --verification, --merge-sha, and --repository; other events forbid them.");
-        if (values["--event"] != "handoff" && (values.ContainsKey("--blocker") || values.ContainsKey("--resolve-blocker"))) throw new LinearCommandException("Blocker options are valid only for handoff.");
-        return new(values["--issue"], values["--event"], Path.GetFullPath(values["--snapshot"]), Path.GetFullPath(values["--evidence"]), values["--api-key-env"], Path.GetFullPath(values["--output"]), values.GetValueOrDefault("--verification") is { } verification ? Path.GetFullPath(verification) : null, values.GetValueOrDefault("--merge-sha"), values.GetValueOrDefault("--repository") is { } repository ? Path.GetFullPath(repository) : null, values.GetValueOrDefault("--blocker"), values.GetValueOrDefault("--resolve-blocker"));
+        foreach (var required in new[] { "--issue", "--event", "--snapshot", "--task", "--api-key-env", "--output" }) if (!values.ContainsKey(required)) throw new LinearCommandException("Linear transition command is missing a required option.");
+        var evt = values["--event"];
+        if (evt is not ("queue" or "claim" or "result" or "review" or "handoff" or "merge")) throw new LinearCommandException("Transition event is not supported.");
+
+        // Each event names its own explicit, typed evidence; there is no single ambiguous evidence option.
+        var eventOptions = evt switch
+        {
+            "queue" => new HashSet<string>(StringComparer.Ordinal),
+            "claim" => ["--lease-store"],
+            "result" => ["--finalization"],
+            "review" => ["--review-decision"],
+            "handoff" => new HashSet<string>(["--handoff-ingestion", "--lease-store", "--blocker", "--resolve-blocker"], StringComparer.Ordinal),
+            "merge" => ["--review-decision", "--verification", "--merge-sha", "--repository"],
+            _ => new HashSet<string>(StringComparer.Ordinal)
+        };
+        var baseOptions = new HashSet<string>(["--issue", "--event", "--snapshot", "--task", "--api-key-env", "--output"], StringComparer.Ordinal);
+        foreach (var provided in values.Keys) if (!baseOptions.Contains(provided) && !eventOptions.Contains(provided)) throw new LinearCommandException($"Option '{provided}' is not valid for the '{evt}' transition.");
+        var requiredEvent = evt switch
+        {
+            "claim" => new[] { "--lease-store" },
+            "result" => ["--finalization"],
+            "review" => ["--review-decision"],
+            "handoff" => ["--handoff-ingestion", "--lease-store"],
+            "merge" => ["--review-decision", "--verification", "--merge-sha", "--repository"],
+            _ => []
+        };
+        foreach (var required in requiredEvent) if (!values.ContainsKey(required)) throw new LinearCommandException($"The '{evt}' transition requires option '{required}'.");
+        if (evt == "handoff" && values.ContainsKey("--blocker") && values.ContainsKey("--resolve-blocker")) throw new LinearCommandException("Handoff accepts at most one of --blocker or --resolve-blocker.");
+
+        string? Full(string key) => values.GetValueOrDefault(key) is { } value ? Path.GetFullPath(value) : null;
+        return new LinearTransitionOptions(
+            values["--issue"], evt, Path.GetFullPath(values["--snapshot"]), Path.GetFullPath(values["--task"]), values["--api-key-env"], Path.GetFullPath(values["--output"]),
+            Full("--lease-store"), Full("--finalization"), Full("--review-decision"), Full("--handoff-ingestion"),
+            Full("--verification"), values.GetValueOrDefault("--merge-sha"), Full("--repository"), values.GetValueOrDefault("--blocker"), values.GetValueOrDefault("--resolve-blocker"));
     }
 }
 internal static class LinearOptions
@@ -384,35 +424,7 @@ internal static class LinearInputJson
     }
 }
 
-internal sealed record TransitionEvidence(string Schema, string TaskId, string? NextState, string? Decision, string Hash)
-{
-    internal static TransitionEvidence Parse(byte[] bytes)
-    {
-        using var document = JsonDocument.Parse(bytes); var root = document.RootElement;
-        static string? Value(JsonElement e, string n) => e.TryGetProperty(n, out var p) && p.ValueKind == JsonValueKind.String ? p.GetString() : null;
-        return new(Value(root,"schema") ?? throw new LinearCommandException("Transition evidence schema is required."), Value(root,"task_id") ?? throw new LinearCommandException("Transition evidence task_id is required."), Value(root,"next_state"), Value(root,"decision"), Convert.ToHexStringLower(SHA256.HashData(bytes)));
-    }
-}
 internal sealed record LinearTransitionPlan(string TargetState, string? TargetStateId, bool IsNoOp = false);
-internal static class LinearTransitionPlanner
-{
-    internal static LinearTransitionPlan Plan(string evt, LinearIssueSnapshot snapshot, TransitionEvidence evidence)
-    {
-        if (snapshot.Identifier != evidence.TaskId) throw new LinearCommandException("Transition evidence task identity does not match Linear issue.");
-        return evt switch
-        {
-            "queue" when snapshot.StateName == "Backlog" && evidence.Schema == "tlaw.agent-task/v2" => new("Todo", null),
-            "claim" when snapshot.StateName == "Todo" && evidence.Schema == "tlaw.agent-task/v2" => new("In Progress", null),
-            "result" when snapshot.StateName == "In Progress" && evidence.Schema == "tlaw.dispatcher-finalization/v1" && evidence.NextState == "in_review" => new("In Review", null),
-            "result" when snapshot.StateName == "In Progress" && evidence.Schema == "tlaw.dispatcher-finalization/v1" && evidence.NextState == "todo" => new("Todo", null),
-            "review" when snapshot.StateName == "In Review" && evidence.Schema == "tlaw.dispatcher-review-decision/v1" && evidence.Decision == "correction" && evidence.NextState == "todo" => new("Todo", null),
-            "review" when snapshot.StateName == "In Review" && evidence.Schema == "tlaw.dispatcher-review-decision/v1" && (evidence.Decision is "human" or "merge") && evidence.NextState == "in_review" => new("In Review", snapshot.StateId, true),
-            "handoff" when snapshot.StateName == "In Progress" && evidence.Schema == "tlaw.dispatcher-handoff-finalization/v1" => new("Todo", null),
-            "merge" => throw new LinearCommandException("Merge transition requires repository-native verifier and Git ancestry evidence; the supplied generic evidence is insufficient."),
-            _ => throw new LinearCommandException("Transition event, current Linear state, and deterministic evidence do not form an allowed edge.")
-        };
-    }
-}
 /// <summary>Resolves the exact ordinal <c>blocked</c> label against live team then workspace catalogs, creating it fail-closed when absent.</summary>
 internal static class BlockedLabelResolution
 {
@@ -481,13 +493,13 @@ internal static class BlockerRelationOps
         blockersAdded.Add(created);
     }
 
-    internal static (LinearRelation? Target, bool IdempotentMissing) ValidateRemovable(LinearTransitionOptions options, LinearIssueSnapshot live, LinearIssueSnapshot snapshot, TransitionEvidence evidence)
+    internal static (LinearRelation? Target, bool IdempotentMissing) ValidateRemovable(LinearTransitionOptions options, LinearIssueSnapshot live, LinearIssueSnapshot snapshot, string evidenceHash)
     {
         var resolved = options.ResolvedBlockerIdentifier!;
         var snapshotMatches = snapshot.BlockedBy.Where(r => IsBlockedByRelationFor(r, resolved, snapshot.Id, snapshot.Identifier)).ToList();
         if (snapshotMatches.Count > 1) throw new LinearCommandException("the supplied snapshot has duplicate blocker relations for the resolved blocker");
         if (snapshotMatches.Count == 0)
-            return TryIdempotentMissing(options, live, snapshot, evidence, resolved)
+            return TryIdempotentMissing(options, live, snapshot, evidenceHash, resolved)
                 ? (null, true)
                 : throw new LinearCommandException("the resolved blocker relation is absent and no matching durable receipt proves prior removal");
 
@@ -522,7 +534,7 @@ internal static class BlockerRelationOps
         && string.Equals(r.BlockedIssueId, blockedId, StringComparison.Ordinal)
         && string.Equals(r.BlockedIssueIdentifier, blockedIdentifier, StringComparison.Ordinal);
 
-    private static bool TryIdempotentMissing(LinearTransitionOptions options, LinearIssueSnapshot live, LinearIssueSnapshot snapshot, TransitionEvidence evidence, string resolved)
+    private static bool TryIdempotentMissing(LinearTransitionOptions options, LinearIssueSnapshot live, LinearIssueSnapshot snapshot, string evidenceHash, string resolved)
     {
         if (!File.Exists(options.OutputPath)) return false;
         LinearReceiptRecord receipt;
@@ -533,7 +545,7 @@ internal static class BlockerRelationOps
         if (removed.Count != 1) return false;
         var entry = removed[0];
         if (!string.Equals(entry.BlockedIssueId, snapshot.Id, StringComparison.Ordinal)) return false;
-        if (!receipt.EvidenceHashes.Contains(evidence.Hash, StringComparer.Ordinal)) return false;
+        if (!receipt.EvidenceHashes.Contains(evidenceHash, StringComparer.Ordinal)) return false;
         // The removed relation must be genuinely absent live, and remaining labels/relations must match the receipt exactly.
         if (live.BlockedBy.Any(r => string.Equals(r.Id, entry.Id, StringComparison.Ordinal))) return false;
         if (live.BlockedBy.Any(r => IsBlockedByRelationFor(r, resolved, live.Id, live.Identifier))) return false;
@@ -579,46 +591,5 @@ internal sealed class SystemGitProofRunner : IGitProofRunner
         if (process is null) throw new LinearCommandException("Git proof process did not start.");
         if (!process.WaitForExit(5000)) { process.Kill(true); return new GitProofResult(-1, string.Empty, true); }
         return new GitProofResult(process.ExitCode, process.StandardOutput.ReadToEnd(), false);
-    }
-}
-internal static class MergeTransitionProof
-{
-    internal static LinearTransitionPlan Validate(LinearIssueSnapshot snapshot, TransitionEvidence review, LinearTransitionOptions options, IGitProofRunner git)
-    {
-        if (snapshot.StateName != "In Review") throw new LinearCommandException("Only an In Review Linear issue may transition to Done.");
-        if (review.Schema != "tlaw.dispatcher-review-decision/v1" || review.Decision != "merge" || review.NextState != "in_review") throw new LinearCommandException("Merge requires an approved BAR-37 merge review decision.");
-        if (options.VerificationPath is null || options.MergeSha is null || options.RepositoryPath is null || !Regex.IsMatch(options.MergeSha, "^[0-9a-f]{40}$", RegexOptions.CultureInvariant) || !Directory.Exists(options.RepositoryPath)) throw new LinearCommandException("Merge proof paths or merge SHA are invalid.");
-        var reviewedHead = MergeEvidence.ReadReviewedHead(File.ReadAllBytes(options.EvidencePath));
-        VerificationArtifact.Validate(File.ReadAllBytes(options.VerificationPath), options.MergeSha);
-        RequireGit(git.Run(options.RepositoryPath, "cat-file", "-e", reviewedHead + "^{commit}"));
-        RequireGit(git.Run(options.RepositoryPath, "cat-file", "-e", options.MergeSha + "^{commit}"));
-        RequireGit(git.Run(options.RepositoryPath, "merge-base", "--is-ancestor", reviewedHead, options.MergeSha));
-        RequireGit(git.Run(options.RepositoryPath, "merge-base", "--is-ancestor", options.MergeSha, "origin/main"));
-        var origin = git.Run(options.RepositoryPath, "rev-parse", "origin/main");
-        RequireGit(origin);
-        if (origin.StandardOutput.Trim() != options.MergeSha) throw new LinearCommandException("Git origin/main is not exactly the supplied merge SHA.");
-        return new LinearTransitionPlan("Done", null);
-    }
-    private static void RequireGit(GitProofResult result) { if (result.TimedOut) throw new LinearCommandException("Git merge proof timed out."); if (result.ExitCode != 0) throw new LinearCommandException("Git merge proof failed."); }
-}
-internal static class MergeEvidence
-{
-    internal static string ReadReviewedHead(byte[] bytes)
-    {
-        using var document = JsonDocument.Parse(bytes); var root = document.RootElement;
-        static string S(JsonElement e, string n) => e.TryGetProperty(n, out var p) && p.ValueKind == JsonValueKind.String ? p.GetString()! : throw new LinearCommandException($"Review decision missing '{n}'.");
-        if (S(root,"schema") != "tlaw.dispatcher-review-decision/v1" || S(root,"verdict") != "approve" || S(root,"decision") != "merge" || S(root,"next_state") != "in_review" || !root.TryGetProperty("blocking_findings",out var b) || b.ValueKind != JsonValueKind.Number || b.GetInt32() != 0) throw new LinearCommandException("Review decision does not prove an approved merge.");
-        var head=S(root,"reviewed_head"); return Regex.IsMatch(head,"^[0-9a-f]{40}$",RegexOptions.CultureInvariant) ? head : throw new LinearCommandException("Review decision reviewed_head is invalid.");
-    }
-}
-internal static class VerificationArtifact
-{
-    internal static void Validate(byte[] bytes, string mergeSha)
-    {
-        using var document=JsonDocument.Parse(bytes);var root=document.RootElement;
-        static string S(JsonElement e,string n)=>e.TryGetProperty(n,out var p)&&p.ValueKind==JsonValueKind.String?p.GetString()!:throw new LinearCommandException($"Verification artifact missing '{n}'.");
-        if(S(root,"schema")!="tlaw.verification/v1" || S(root,"verdict")!="PASS")throw new LinearCommandException("Verification artifact is not PASS.");
-        if(S(root,"expected_head")!=mergeSha||S(root,"actual_head")!=mergeSha)throw new LinearCommandException("Verification artifact head does not match merge SHA.");
-        foreach(var gate in new[]{"build","tests","diff_check","gate0","canonical_objects","architecture","domain_dependencies","clean_tree"})if(!root.TryGetProperty(gate,out var v)||(v.ValueKind!=JsonValueKind.True&&!(v.ValueKind==JsonValueKind.String&&v.GetString()=="PASS")))throw new LinearCommandException($"Verification artifact gate '{gate}' is missing or failed.");
     }
 }

@@ -6,5 +6,6 @@
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\Tlaw.AgentProtocol\Tlaw.AgentProtocol.csproj" />
+    <ProjectReference Include="..\Tlaw.Verify\Tlaw.Verify.csproj" />
   </ItemGroup>
 </Project>
