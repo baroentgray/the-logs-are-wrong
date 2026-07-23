@@ -131,6 +131,18 @@ The command strictly validates all three evidence files and requires exact task 
 
 The UTF-8/no-BOM, LF-terminated `tlaw.dispatcher-finalization/v1` JSON record orders `schema`, `task_id`, `claimed_by`, `claim_id`, `result_status`, `result_sha256`, `release_reason`, and `next_state`. It is rendered before release, then the exact lease is released before atomic publication. This is not transactional: if publication fails after release, the command returns non-zero, states that the lease was already released and the record was not published, and never recreates the lease. BAR-36 is Increment 5 only; BAR-26 remains incomplete.
 
+## Deterministic review ingestion
+
+BAR-37 adds a local review-evidence step. It is not a lease operation, a live GitHub or pull-request lookup, a merge, a launch, a Linear transition, or a dispatcher.
+
+```powershell
+dotnet run --configuration Release --project tools/Tlaw.Dispatcher -- ingest-review --task <claimed-task-v2.yaml> --finalization <finalization.json> --review <review-v1.yaml> --expected-head <40-lowercase-hex> --output <decision.json>
+```
+
+All five options are required exactly once. The command validates a fully claimed task/v2, a closed successful `tlaw.dispatcher-finalization/v1` completion record, and a strict UTF-8 review/v1 packet. Task id, claimed agent, and fencing token must agree across the task and finalization; the review task id and its 40-character lowercase `reviewed_head` must agree with the explicit `--expected-head`. The command reads the review bytes once and records their lowercase SHA-256. It rejects output aliases to task, finalization, or review after normalizing available symbolic links and junctions.
+
+The internal LF/no-BOM `tlaw.dispatcher-review-decision/v1` record orders `schema`, `task_id`, `reviewed_head`, `review_sha256`, `verdict`, `highest_severity`, `blocking_findings`, `decision`, and `next_state`. `approve` without blocker/high/medium findings emits `merge`/`in_review`; `request_changes` with one or more blocker/high/medium findings emits `correction`/`todo`; `comment` always emits `human`/`in_review`. Contradictory verdict/severity evidence fails closed. It atomically publishes the decision before printing only `REVIEW: <decision>`; a stdout failure after publication remains non-zero and explicitly says the record was already published. The record is evidence for a future human or adapter action, never an actual status transition or merge.
+
 ## Deliberate limitations
 
-This tool does not contact or mutate Linear, probe live availability or quota, launch Codex/Claude/Grok/Qwen, ingest review/handoff packets, write GitHub, merge, or update task state. It performs no network write. Packet preparation, local routing, local lease acquisition, and result ingestion are not dispatch; provider adapters, agent launch, lease finalization, review routing, and merge behavior need separately approved increments. BAR-35 is only Increment 4 and does not complete BAR-26.
+This tool does not contact or mutate Linear, probe live availability or quota, launch Codex/Claude/Grok/Qwen, ingest handoff packets, write GitHub, merge, or update task state. It performs no network write. Packet preparation, local routing, local lease acquisition, result ingestion, result finalization, and review ingestion are not dispatch; provider adapters, agent launch, review routing, and merge behavior need separately approved increments. BAR-37 does not complete BAR-26.
