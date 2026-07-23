@@ -22,7 +22,6 @@ public sealed class HandoffV2ValidationTests
     [InlineData("commits:\n  - aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "commits: []")]
     [InlineData("evidence:\n  - kind: command\n    reference: dotnet test --configuration Release", "evidence:\n  - kind: network\n    reference: x")]
     [InlineData("next_action: Review the Draft PR without merging it.", "next_action: \"\"")]
-    [InlineData("next_action: Review the Draft PR without merging it.", "next_action: \"\"")]
     [InlineData("evidence:\n  - kind: command\n    reference: dotnet test --configuration Release", "evidence: []")]
     [InlineData("status: ready", "status: blocked")]
     public void Invalid_v2_boundaries_fail_visibly(string find, string replace) { var yaml = File.ReadAllText(Path.Combine(Examples, "handoff.v2.valid.yaml")).Replace(find, replace, StringComparison.Ordinal); Assert.False(PacketValidator.Validate(yaml, Registry).IsValid); }
