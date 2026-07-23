@@ -183,6 +183,34 @@ public sealed class FileLeaseStore
         });
     }
 
+    internal static T WithMatchingLeaseStateRelease<T>(string storePath, string taskId, string claimedBy, string claimId, LocalLeaseStatus expectedStatus, ILeaseClock clock, Func<T> afterRelease)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(storePath);
+        ArgumentNullException.ThrowIfNull(clock);
+        ArgumentNullException.ThrowIfNull(afterRelease);
+        if (!Path.IsPathFullyQualified(storePath))
+        {
+            throw new ArgumentException("The lease store path must be absolute.", nameof(storePath));
+        }
+
+        ValidateIdentity(taskId, nameof(taskId));
+        ValidateIdentity(claimedBy, nameof(claimedBy));
+        ValidateIdentity(claimId, nameof(claimId));
+        if (expectedStatus is not (LocalLeaseStatus.Active or LocalLeaseStatus.Expired))
+        {
+            throw new ArgumentOutOfRangeException(nameof(expectedStatus));
+        }
+
+        var store = new FileLeaseStore(storePath, clock, createDirectories: false);
+        return store.WithExistingTaskLock(taskId, () =>
+        {
+            store.RequireMatchingLeaseState(taskId, claimedBy, claimId, expectedStatus);
+            store.RequireMatchingLeaseState(taskId, claimedBy, claimId, expectedStatus);
+            store.DeleteLease(taskId);
+            return afterRelease();
+        });
+    }
+
     internal static T WithActiveLeaseGuard<T>(
         string storePath,
         string taskId,

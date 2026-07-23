@@ -151,10 +151,20 @@ BAR-38 adds `prepare-handoff --task <claimed-task-v2.yaml> --snapshot <handoff-i
 
 BAR-39 adds `ingest-handoff --task <claimed-task-v2.yaml> --handoff <handoff-v2.yaml> --lease-store <absolute-path> --reason <timeout|quota_exhaustion|manual_cancel> --output <handoff-ingestion.json>`. It validates exact task/claim/base/worktree correlation, hashes the exact original handoff bytes, and holds the pre-existing task lock while it rechecks the matching lease immediately before publication. `timeout` requires an expired lease (expiry equality is expired); quota exhaustion and manual cancel require an active lease. The deterministic `tlaw.dispatcher-handoff-ingestion/v1` record maps ready to `reassign` and blocked to `human`, always with `lease_action: release_required`: it does not release, acquire, requeue, route, select a successor, launch anything, inspect Git/GitHub, or mutate Linear/GitHub. BAR-39 is Increment 8 only; a later orchestration increment applies release, routing, and successor claim.
 
-## Correlated handoff ingestion
+## Correlated handoff finalization
 
-BAR-39 adds `ingest-handoff --task <claimed-task-v2.yaml> --handoff <handoff-v2.yaml> --lease-store <absolute-path> --reason <timeout|quota_exhaustion|manual_cancel> --output <handoff-ingestion.json>`. It validates exact task/claim/base/worktree correlation, hashes the exact original handoff bytes, and holds the pre-existing task lock while it rechecks the matching lease immediately before publication. `timeout` requires an expired lease (expiry equality is expired); quota exhaustion and manual cancel require an active lease. The deterministic `tlaw.dispatcher-handoff-ingestion/v1` record maps ready to `reassign` and blocked to `human`, always with `lease_action: release_required`: it does not release, acquire, requeue, route, select a successor, launch anything, inspect Git/GitHub, or mutate Linear/GitHub. BAR-39 is Increment 8 only; a later orchestration increment applies release, routing, and successor claim.
+BAR-40 adds the explicit local release-and-continuation step:
+
+```powershell
+dotnet run --configuration Release --project tools/Tlaw.Dispatcher -- finalize-handoff --task <claimed-task-v2.yaml> --handoff <handoff-v2.yaml> --ingestion <handoff-ingestion.json> --lease-store <absolute-path> --output <unclaimed-task-v2.yaml>
+```
+
+It strictly parses and correlates the claimed task, exact original handoff bytes, and the closed BAR-39 ingestion record. The handoff SHA-256, identity, base SHA, branch, head, status, decision, and release evidence must agree exactly. The continuation packet preserves every task field and array order except the four claim fields, which become `unclaimed`; it is validated before the lease is touched and atomically written as UTF-8/no-BOM, LF-only YAML.
+
+Finalization takes the existing task lock, removes only the exact matching lease, then publishes the continuation task. `manual_cancel` and `quota_exhaustion` require an active lease; `timeout` may retire that exact expired lease, including expiry equality. The lock file is retained. Publication after deletion is deliberately non-transactional: a publication failure reports that the lease was already released and does not recreate it.
+
+The full deliberate sequence is `prepare-handoff -> ingest-handoff -> finalize-handoff -> route -> lease acquire`. Finalization emits only `HANDOFF FINALIZED: reassign` or `HANDOFF FINALIZED: human`; it does not route, acquire a lease, select a successor, launch an agent, contact a provider, or mutate GitHub or Linear. Routing and any later lease acquisition remain explicit human-invoked commands. BAR-40 is Increment 9 only; BAR-26 remains incomplete.
 
 ## Deliberate limitations
 
-This tool does not contact or mutate Linear, probe live availability or quota, launch Codex/Claude/Grok/Qwen, ingest handoff packets, write GitHub, merge, or update task state. It performs no network write. Packet preparation, local routing, local lease acquisition, result ingestion, result finalization, and review ingestion are not dispatch; provider adapters, agent launch, review routing, and merge behavior need separately approved increments. BAR-37 does not complete BAR-26.
+This tool does not contact or mutate Linear, probe live availability or quota, launch Codex/Claude/Grok/Qwen, write GitHub, merge, or update task state. It performs no network write. Packet preparation, local routing, local lease acquisition, result ingestion, result finalization, review ingestion, handoff preparation, handoff ingestion, and handoff finalization are not dispatch; provider adapters, agent launch, successor routing, and merge behavior need separately approved increments. BAR-40 does not complete BAR-26.
