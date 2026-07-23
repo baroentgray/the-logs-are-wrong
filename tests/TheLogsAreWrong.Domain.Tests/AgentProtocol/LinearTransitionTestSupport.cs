@@ -216,13 +216,15 @@ internal static class LinearTransitionTestSupport
     {
         var snapshotPath = workspace.Write("snapshot.json", snapshot.ToJson());
         var output = outputOverride ?? workspace.OutputPath;
-        var args = new List<string> { "linear", "transition", "--issue", "BAR-41", "--event", evt, "--snapshot", snapshotPath, "--task", taskPath, "--api-key-env", ApiKeyEnv, "--output", output };
+        // A per-call environment variable name avoids any cross-test race on a shared process-global variable.
+        var envName = "TLAW_TEST_KEY_" + Guid.NewGuid().ToString("N").ToUpperInvariant();
+        var args = new List<string> { "linear", "transition", "--issue", "BAR-41", "--event", evt, "--snapshot", snapshotPath, "--task", taskPath, "--api-key-env", envName, "--output", output };
         foreach (var (key, value) in extra) { args.Add(key); args.Add(value); }
         var standardOutput = new StringWriter();
         var standardError = new StringWriter();
-        Environment.SetEnvironmentVariable(ApiKeyEnv, Secret);
+        Environment.SetEnvironmentVariable(envName, Secret);
         try { var exit = LinearCommand.RunForTesting([.. args], standardOutput, standardError, transport, clock, git); return (exit, standardOutput.ToString(), standardError.ToString()); }
-        finally { Environment.SetEnvironmentVariable(ApiKeyEnv, null); }
+        finally { Environment.SetEnvironmentVariable(envName, null); }
     }
 
     internal sealed class Workspace : IDisposable
