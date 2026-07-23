@@ -448,12 +448,16 @@ public sealed class LinearHandoffMutationTests
 
     private static (int Exit, string Out, string Err) RunHandoff(Workspace workspace, LinearIssueSnapshot snapshot, string decision, ILinearTransport transport, string? blocker = null, string? resolve = null)
     {
+        var clock = new FakeClock(DateTimeOffset.Parse("2026-07-23T00:00:00Z"));
+        var store = new FileLeaseStore(workspace.LeaseStore, clock);
+        var lease = store.Acquire("BAR-41", "codex", TimeSpan.FromMinutes(30));
+        store.Release("BAR-41", lease.ClaimId, LeaseReleaseReason.ManualCancel);
         var taskPath = WriteTask(workspace, UnclaimedTask());
         var ingestionPath = WriteIngestion(workspace, decision);
         var extra = new List<(string, string)> { ("--handoff-ingestion", ingestionPath), ("--lease-store", workspace.LeaseStore) };
         if (blocker is not null) extra.Add(("--blocker", blocker));
         if (resolve is not null) extra.Add(("--resolve-blocker", resolve));
-        return RunTransition(workspace, snapshot, taskPath, "handoff", transport, extra, clock: new FakeClock(DateTimeOffset.Parse("2026-07-23T00:00:00Z")));
+        return RunTransition(workspace, snapshot, taskPath, "handoff", transport, extra, clock: clock);
     }
 
     private static LinearTransitionOptions Options(string? resolve = null, string output = "")

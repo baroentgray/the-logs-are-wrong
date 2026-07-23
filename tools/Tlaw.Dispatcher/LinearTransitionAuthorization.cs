@@ -47,13 +47,13 @@ internal static class LinearTransitionAuthorizer
         }
     }
 
-    internal static AuthorizedTransition Authorize(LinearTransitionOptions options, TaskV2Packet task, byte[] taskBytes, PacketSchemaRegistry registry, LinearIssueSnapshot snapshot, ILeaseClock clock, IGitProofRunner git) => options.Event switch
+    internal static AuthorizedTransition Authorize(LinearTransitionOptions options, TaskV2Packet task, byte[] taskBytes, PacketSchemaRegistry registry, LinearIssueSnapshot snapshot, IGitProofRunner git) => options.Event switch
     {
         "queue" => Queue(task, taskBytes, snapshot),
-        "claim" => Claim(options, task, taskBytes, snapshot, clock),
+        "claim" => Claim(task, taskBytes, snapshot),
         "result" => Result(options, task, snapshot),
         "review" => Review(options, task, snapshot),
-        "handoff" => Handoff(options, task, snapshot, clock),
+        "handoff" => Handoff(options, task, snapshot),
         "merge" => Merge(options, task, snapshot, git),
         _ => throw new LinearCommandException("Transition event is not supported.")
     };
@@ -65,7 +65,7 @@ internal static class LinearTransitionAuthorizer
         return new AuthorizedTransition("queue", "Todo", false, Sha(taskBytes));
     }
 
-    private static AuthorizedTransition Claim(LinearTransitionOptions options, TaskV2Packet task, byte[] taskBytes, LinearIssueSnapshot snapshot, ILeaseClock clock)
+    private static AuthorizedTransition Claim(TaskV2Packet task, byte[] taskBytes, LinearIssueSnapshot snapshot)
     {
         if (!string.Equals(snapshot.StateName, "Todo", StringComparison.Ordinal)) throw new LinearCommandException("Claim transition requires a Todo issue.");
         if (!task.IsClaimed) throw new LinearCommandException("Claim transition requires a fully claimed task.");
@@ -73,17 +73,6 @@ internal static class LinearTransitionAuthorizer
         if (string.Equals(task.ClaimId, "unclaimed", StringComparison.Ordinal) || string.IsNullOrWhiteSpace(task.ClaimId)) throw new LinearCommandException("Claim transition requires an exact non-sentinel fencing token.");
         RequireCanonicalTimestamp(task.ClaimStartedAt);
         RequireCanonicalTimestamp(task.ClaimExpiresAt);
-
-        var inspection = FileLeaseStore.InspectReadOnly(options.LeaseStorePath!, task.TaskId, clock);
-        if (inspection.Status != LocalLeaseStatus.Active || inspection.Lease is null) throw new LinearCommandException("Claim transition requires a matching active, unexpired lease.");
-        var lease = inspection.Lease;
-        if (!string.Equals(lease.ClaimedBy, task.ClaimedBy, StringComparison.Ordinal) ||
-            !string.Equals(lease.ClaimId, task.ClaimId, StringComparison.Ordinal) ||
-            !string.Equals(FileLeaseStore.FormatCanonicalTimestamp(lease.ClaimStartedAt), task.ClaimStartedAt, StringComparison.Ordinal) ||
-            !string.Equals(FileLeaseStore.FormatCanonicalTimestamp(lease.ClaimExpiresAt), task.ClaimExpiresAt, StringComparison.Ordinal))
-        {
-            throw new LinearCommandException("Claim transition lease does not exactly match the task's agent, token, and canonical timestamps.");
-        }
 
         return new AuthorizedTransition("claim", "In Progress", false, Sha(taskBytes));
     }
@@ -126,7 +115,7 @@ internal static class LinearTransitionAuthorizer
         };
     }
 
-    private static AuthorizedTransition Handoff(LinearTransitionOptions options, TaskV2Packet task, LinearIssueSnapshot snapshot, ILeaseClock clock)
+    private static AuthorizedTransition Handoff(LinearTransitionOptions options, TaskV2Packet task, LinearIssueSnapshot snapshot)
     {
         if (!string.Equals(snapshot.StateName, "In Progress", StringComparison.Ordinal)) throw new LinearCommandException("Handoff transition requires an In Progress issue.");
         if (!task.IsUnclaimed) throw new LinearCommandException("Handoff transition requires a fully unclaimed BAR-40 continuation task.");
@@ -139,8 +128,6 @@ internal static class LinearTransitionAuthorizer
             throw new LinearCommandException("Handoff continuation identity, source, and worktree must agree with the ingestion evidence.");
         }
 
-        var inspection = FileLeaseStore.InspectReadOnly(options.LeaseStorePath!, task.TaskId, clock);
-        if (inspection.Status != LocalLeaseStatus.Missing) throw new LinearCommandException("Handoff transition requires the retired lease file to be absent for the exact task.");
         return new AuthorizedTransition("handoff", "Todo", false, Sha(bytes), Handoff: new HandoffAuthorization(ingestion.Decision));
     }
 
@@ -281,8 +268,10 @@ internal static class RepositoryVerificationArtifact
 
         if (!string.Equals(report.Schema, "tlaw.verification/v1", StringComparison.Ordinal)) throw new LinearCommandException("Verification artifact schema is not tlaw.verification/v1.");
 
-        var outcome = VerificationVerdictEvaluator.Evaluate(report, allowDetachedHead: false);
+        var outcome = VerificationVerdictEvaluator.Evaluate(report, allowDetachedHead: true);
         if (outcome.Verdict != VerificationVerdict.PASS) throw new LinearCommandException($"Verification artifact does not pass every required stage: {string.Join("; ", outcome.FailureReasons)}.");
+        if (report.IsDetachedHead && !string.IsNullOrEmpty(report.Branch)) throw new LinearCommandException("Detached verification artifacts must not name a branch.");
+        if (!report.IsDetachedHead && string.IsNullOrWhiteSpace(report.Branch)) throw new LinearCommandException("Non-detached verification artifacts must name a branch.");
         if (report.Verdict != VerificationVerdict.PASS) throw new LinearCommandException("Verification artifact verdict is not PASS.");
         if (report.FailureReasons.Count != 0) throw new LinearCommandException("Verification artifact reports non-empty failure reasons.");
         if (!report.CleanTree) throw new LinearCommandException("Verification artifact working tree is not clean.");

@@ -291,6 +291,21 @@ public sealed class LinearTransitionAuthorityTests
     }
 
     [Fact]
+    public void Detached_ci_artifact_cannot_bypass_git_ancestry_proof()
+    {
+        using var ws = Workspace.Create();
+        var task = WriteTask(ws, ClaimedTask("codex", "0e221c4b8ed84e6dae7eea27008eb449", "2026-07-23T11:30:00.0000000Z", "2026-07-23T11:35:00.0000000Z"));
+        var decision = WriteReviewDecision(ws, "approve", "low", 0, "merge", "in_review");
+        var detached = PassReport(MergeSha) with { Branch = null, IsDetachedHead = true };
+        var verification = ws.Write("verification.json", System.Text.Encoding.UTF8.GetString(SerializeReport(detached)));
+        var extra = new[] { ("--review-decision", decision), ("--verification", verification), ("--merge-sha", MergeSha), ("--repository", ws.Path) };
+
+        var (exit, _, _) = RunTransition(ws, SnapshotFor("uuid41", "BAR-41", "In Review", "started", [], []), task, "merge", new NoCallLinear(), extra, git: new FakeGit(new string('d', 40)));
+
+        Assert.Equal(1, exit);
+    }
+
+    [Fact]
     public void Merge_review_decision_that_is_not_merge_is_rejected()
     {
         using var ws = Workspace.Create();

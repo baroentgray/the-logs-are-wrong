@@ -67,6 +67,7 @@ internal static class LinearTransitionTestSupport
     {
         private readonly Dictionary<string, Queue<LinearTransportResponse>> _responses = new(StringComparer.Ordinal);
         internal List<(string Op, string Vars)> Calls { get; } = [];
+        internal Action<string>? BeforeSend { get; set; }
         internal bool AnyMutation => Calls.Any(c => c.Op is "IssueUpdate" or "IssueRelationCreate" or "IssueRelationDelete" or "IssueLabelCreate");
 
         internal QueueLinear On(string key, params LinearTransportResponse[] responses)
@@ -82,6 +83,7 @@ internal static class LinearTransitionTestSupport
             var vars = JsonSerializer.Serialize(variables);
             Assert.DoesNotContain(apiKey, vars, StringComparison.Ordinal);
             Calls.Add((operationName, vars));
+            BeforeSend?.Invoke(operationName);
             var key = operationName == "Issue" ? "Issue:" + JsonDocument.Parse(vars).RootElement.GetProperty("identifier").GetString() : operationName;
             if (!_responses.TryGetValue(key, out var queue) || queue.Count == 0) throw new InvalidOperationException($"No scripted response for '{key}'.");
             return queue.Dequeue();

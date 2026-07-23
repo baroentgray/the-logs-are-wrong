@@ -20,6 +20,12 @@ public sealed class LinearVerificationArtifactTests
     }
 
     [Fact]
+    public void Genuine_detached_ci_style_pass_artifact_reaches_the_git_proof_stage()
+    {
+        RepositoryVerificationArtifact.Validate(SerializeReport(DetachedPassReport()), MergeSha);
+    }
+
+    [Fact]
     public void Real_serializer_round_trip_is_accepted()
     {
         // Build through the repository's actual serializer, exactly as Tlaw.Verify writes verification.json.
@@ -30,14 +36,14 @@ public sealed class LinearVerificationArtifactTests
     [Fact]
     public void Expected_head_mismatch_is_rejected()
     {
-        var report = PassReport(MergeSha) with { ExpectedHeadSha = new string('0', 39) + "1" };
+        var report = DetachedPassReport() with { ExpectedHeadSha = new string('0', 39) + "1" };
         Assert.Throws<LinearCommandException>(() => RepositoryVerificationArtifact.Validate(SerializeReport(report), MergeSha));
     }
 
     [Fact]
     public void Actual_head_mismatch_is_rejected()
     {
-        var report = PassReport(MergeSha) with { ActualHeadSha = new string('0', 39) + "1" };
+        var report = DetachedPassReport() with { ActualHeadSha = new string('0', 39) + "1" };
         Assert.Throws<LinearCommandException>(() => RepositoryVerificationArtifact.Validate(SerializeReport(report), MergeSha));
     }
 
@@ -58,14 +64,28 @@ public sealed class LinearVerificationArtifactTests
     [Fact]
     public void Non_empty_failure_reasons_are_rejected()
     {
-        var report = PassReport(MergeSha) with { FailureReasons = ["something failed"] };
+        var report = DetachedPassReport() with { FailureReasons = ["something failed"] };
         Assert.Throws<LinearCommandException>(() => RepositoryVerificationArtifact.Validate(SerializeReport(report), MergeSha));
     }
 
     [Fact]
     public void Failed_nested_build_is_rejected()
     {
-        var report = PassReport(MergeSha) with { Build = new BuildEvidence(EvidenceStatus.FAIL, 0, 3) };
+        var report = DetachedPassReport() with { Build = new BuildEvidence(EvidenceStatus.FAIL, 0, 3) };
+        Assert.Throws<LinearCommandException>(() => RepositoryVerificationArtifact.Validate(SerializeReport(report), MergeSha));
+    }
+
+    [Fact]
+    public void Non_detached_artifact_with_missing_branch_is_rejected()
+    {
+        var report = PassReport(MergeSha) with { Branch = null, IsDetachedHead = false };
+        Assert.Throws<LinearCommandException>(() => RepositoryVerificationArtifact.Validate(SerializeReport(report), MergeSha));
+    }
+
+    [Fact]
+    public void Detached_artifact_with_a_branch_is_rejected_as_a_contradictory_shape()
+    {
+        var report = DetachedPassReport() with { Branch = "task/BAR-41-linear-doctor" };
         Assert.Throws<LinearCommandException>(() => RepositoryVerificationArtifact.Validate(SerializeReport(report), MergeSha));
     }
 
@@ -140,4 +160,6 @@ public sealed class LinearVerificationArtifactTests
         var report = PassReport(MergeSha) with { Schema = "tlaw.verification/v2" };
         Assert.Throws<LinearCommandException>(() => RepositoryVerificationArtifact.Validate(SerializeReport(report), MergeSha));
     }
+
+    private static VerificationReport DetachedPassReport() => PassReport(MergeSha) with { Branch = null, IsDetachedHead = true };
 }

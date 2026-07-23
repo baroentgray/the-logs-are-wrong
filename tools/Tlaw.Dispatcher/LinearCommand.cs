@@ -56,31 +56,84 @@ public static class LinearCommand
         var registry = PacketSchemaRegistry.Load(Path.Combine(TaskPacketCommand.FindRepositoryRoot(), "docs", "agent", "schemas"));
         var (task, taskBytes) = LinearTransitionAuthorizer.LoadTask(options.TaskPath, registry);
         LinearTransitionAuthorizer.RequireIssueIdentity(task, snapshot);
-        var authorized = LinearTransitionAuthorizer.Authorize(options, task, taskBytes, registry, snapshot, clock, git);
+        var authorized = LinearTransitionAuthorizer.Authorize(options, task, taskBytes, registry, snapshot, git);
+
+        if (options.Event == "claim")
+        {
+            return ClaimTransition(options, transport, output, apiKey, snapshot, task, authorized, clock);
+        }
+
+        if (options.Event == "handoff")
+        {
+            return GuardedHandoffTransition(options, transport, output, apiKey, snapshot, task, authorized.Handoff!, authorized.EvidenceHash, clock);
+        }
 
         var live = LinearIssueSnapshot.From(FetchIssue(transport, options.IssueIdentifier, apiKey));
         snapshot.RequireSameConcurrencyFacts(live);
-        if (options.Event == "handoff") return HandoffTransition(options, transport, output, apiKey, snapshot, live, authorized.Handoff!, authorized.EvidenceHash);
+        output.WriteLine(StateTransition(options, transport, apiKey, snapshot, live, authorized, null, null));
+        return 0;
+    }
 
+    private static int ClaimTransition(LinearTransitionOptions options, ILinearTransport transport, TextWriter output, string apiKey, LinearIssueSnapshot snapshot, TaskV2Packet task, AuthorizedTransition authorized, ILeaseClock clock)
+    {
+        var mutationCompleted = false;
+        try
+        {
+            var message = FileLeaseStore.WithExactActiveLeaseGuard(
+                options.LeaseStorePath!, task.TaskId, task.ClaimedBy, task.ClaimId, task.ClaimStartedAt, task.ClaimExpiresAt, clock,
+                recheck =>
+                {
+                    var live = LinearIssueSnapshot.From(FetchIssue(transport, options.IssueIdentifier, apiKey));
+                    snapshot.RequireSameConcurrencyFacts(live);
+                    return StateTransition(options, transport, apiKey, snapshot, live, authorized, recheck, recheck, () => mutationCompleted = true);
+                });
+            output.WriteLine(message);
+            return 0;
+        }
+        catch (Exception exception) when (mutationCompleted)
+        {
+            throw new LinearCommandException($"Linear may already have changed: {exception.Message}");
+        }
+    }
+
+    private static int GuardedHandoffTransition(LinearTransitionOptions options, ILinearTransport transport, TextWriter output, string apiKey, LinearIssueSnapshot snapshot, TaskV2Packet task, HandoffAuthorization handoff, string evidenceHash, ILeaseClock clock)
+    {
+        var message = FileLeaseStore.WithMissingLeaseGuard(
+            options.LeaseStorePath!, task.TaskId, clock,
+            recheck =>
+            {
+                var live = LinearIssueSnapshot.From(FetchIssue(transport, options.IssueIdentifier, apiKey));
+                snapshot.RequireSameConcurrencyFacts(live);
+                recheck();
+                HandoffTransition(options, transport, apiKey, snapshot, live, handoff, evidenceHash, recheck);
+                return "TRANSITION: handoff -> Todo";
+            });
+        output.WriteLine(message);
+        return 0;
+    }
+
+    private static string StateTransition(LinearTransitionOptions options, ILinearTransport transport, string apiKey, LinearIssueSnapshot snapshot, LinearIssueSnapshot live, AuthorizedTransition authorized, Action? beforeMutation, Action? beforeReceipt, Action? mutationCompleted = null)
+    {
         var plan = new LinearTransitionPlan(authorized.TargetState, null, authorized.IsNoOp);
         if (plan.IsNoOp)
         {
             TaskPacketCommand.WriteAtomically(options.OutputPath, LinearReceiptJson.Write(snapshot, options.Event, plan with { TargetStateId = live.StateId }, authorized.EvidenceHash, live.UpdatedAt));
-            output.WriteLine($"TRANSITION: {options.Event} (no-op)");
-            return 0;
+            return $"TRANSITION: {options.Event} (no-op)";
         }
 
         var target = live.States.SingleOrDefault(state => state.Name == plan.TargetState) ?? throw new LinearCommandException($"Live Linear team has no required target state '{plan.TargetState}'.");
+        beforeMutation?.Invoke();
         LinearGraphQl.RequireSuccessfulMutation(transport.Send("IssueUpdate", "mutation IssueUpdate($id:String!,$stateId:String!){issueUpdate(id:$id,input:{stateId:$stateId}){success}}", new { id = live.Id, stateId = target.Id }, apiKey), "issueUpdate");
+        mutationCompleted?.Invoke();
         var after = LinearIssueSnapshot.From(FetchIssue(transport, options.IssueIdentifier, apiKey));
         if (after.StateId != target.Id) throw new LinearCommandException("Linear may already have changed: post-mutation state verification failed.");
+        beforeReceipt?.Invoke();
         try { TaskPacketCommand.WriteAtomically(options.OutputPath, LinearReceiptJson.Write(snapshot, options.Event, plan with { TargetStateId = target.Id }, authorized.EvidenceHash, after.UpdatedAt)); }
         catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or DirectoryNotFoundException) { throw new LinearCommandException("Linear may already have changed: transition receipt was not published."); }
-        output.WriteLine($"TRANSITION: {options.Event} -> {plan.TargetState}");
-        return 0;
+        return $"TRANSITION: {options.Event} -> {plan.TargetState}";
     }
 
-    private static int HandoffTransition(LinearTransitionOptions options, ILinearTransport transport, TextWriter output, string apiKey, LinearIssueSnapshot snapshot, LinearIssueSnapshot live, HandoffAuthorization handoff, string evidenceHash)
+    private static void HandoffTransition(LinearTransitionOptions options, ILinearTransport transport, string apiKey, LinearIssueSnapshot snapshot, LinearIssueSnapshot live, HandoffAuthorization handoff, string evidenceHash, Action recheck)
     {
         if (handoff.Decision == "human" && string.IsNullOrWhiteSpace(options.BlockerIdentifier)) throw new LinearCommandException("Human handoff requires --blocker.");
         if (handoff.Decision == "human" && options.ResolvedBlockerIdentifier is not null) throw new LinearCommandException("Human handoff adds a blocker; it does not resolve one.");
@@ -145,14 +198,13 @@ public static class LinearCommand
             if (!SameRelationSet(after.BlockedBy, relations)) throw new LinearCommandException("post-mutation blocker relations do not exactly match the required set");
             journal.Complete("post_mutation_verified");
 
+            recheck();
             var receipt = LinearReceiptJson.WriteHandoff(live, todo, evidenceHash, after.UpdatedAt, labelsAdded, labelsRemoved, blockersAdded, blockersRemoved, after.BlockedBy, after.Labels);
             try { TaskPacketCommand.WriteAtomically(options.OutputPath, receipt); }
             catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or DirectoryNotFoundException) { throw new LinearCommandException("the durable transition receipt was not published"); }
             journal.Complete("receipt_published");                                                                   // (8) receipt_published
-            output.WriteLine("TRANSITION: handoff -> Todo");
-            return 0;
         }
-        catch (LinearCommandException exception) when (journal.AnyCompleted) { throw new LinearCommandException($"Linear may already have changed. Completed remote operations: {journal.Describe()}. Failed operation: {exception.Message}"); }
+        catch (Exception exception) when (journal.AnyCompleted && exception is (LinearCommandException or LeaseStoreException)) { throw new LinearCommandException($"Linear may already have changed. Completed remote operations: {journal.Describe()}. Failed operation: {exception.Message}"); }
     }
 
     internal static void UpdateLabels(ILinearTransport transport, string issueId, IEnumerable<string> labelIds, string apiKey) =>
