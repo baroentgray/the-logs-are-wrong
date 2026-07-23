@@ -198,6 +198,11 @@ public static class PacketValidator
             return JsonValue.Create(boolean);
         }
 
+        if (scalar.Style == ScalarStyle.Plain && int.TryParse(scalar.Value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var integer))
+        {
+            return JsonValue.Create(integer);
+        }
+
         return JsonValue.Create(scalar.Value ?? string.Empty);
     }
 
@@ -295,7 +300,7 @@ public static class PacketValidator
             return;
         }
 
-        if (schema is not ("tlaw.agent-result/v1" or "tlaw.agent-review/v1" or "tlaw.agent-handoff/v1"))
+        if (schema is not ("tlaw.agent-result/v1" or "tlaw.agent-review/v1" or "tlaw.agent-handoff/v1" or "tlaw.agent-handoff/v2"))
         {
             return;
         }
@@ -303,6 +308,12 @@ public static class PacketValidator
         if (root["human_summary"]?.GetValue<string>() is string summary && NonEmptyLineCount(summary) > 5)
         {
             diagnostics.Add(new PacketDiagnostic("TLAW-PKT-022", "human_summary", "Human summary may contain at most five non-empty lines."));
+        }
+
+        if (schema == "tlaw.agent-handoff/v2")
+        {
+            ValidateHandoffV2Semantics(root, diagnostics);
+            return;
         }
 
         if (schema != "tlaw.agent-result/v1" || root["human"] is not JsonObject human || human["required"]?.GetValue<bool>() is not true)
@@ -325,6 +336,27 @@ public static class PacketValidator
             diagnostics.Add(new PacketDiagnostic("TLAW-PKT-025", "human.safe_options", "A required human decision must provide safe options."));
         }
     }
+
+    private static void ValidateHandoffV2Semantics(JsonObject root, ICollection<PacketDiagnostic> diagnostics)
+    {
+        var head = OptionalString(root, "head_sha");
+        var baseSha = OptionalString(root, "base_sha");
+        var commits = OptionalStrings(root, "commits");
+        if (head == new string('0', 40)) diagnostics.Add(new PacketDiagnostic("TLAW-PKT-035", "head_sha", "Head SHA cannot be the all-zero sentinel."));
+        if (commits.Any(value => value == new string('0', 40)) || commits.Distinct(StringComparer.Ordinal).Count() != commits.Count) diagnostics.Add(new PacketDiagnostic("TLAW-PKT-035", "commits", "Commit SHA values must be unique and non-sentinel."));
+        if (commits.Count == 0 && !string.Equals(head, baseSha, StringComparison.Ordinal)) diagnostics.Add(new PacketDiagnostic("TLAW-PKT-036", "head_sha", "An empty commit list must use base_sha as head_sha."));
+        if (commits.Count > 0 && !string.Equals(commits[^1], head, StringComparison.Ordinal)) diagnostics.Add(new PacketDiagnostic("TLAW-PKT-036", "commits", "The final commit must equal head_sha."));
+        foreach (var name in new[] { "completed_work", "remaining_work", "known_failures", "open_questions", "files_changed" })
+        {
+            var values = OptionalStrings(root, name);
+            if (values.Any(string.IsNullOrWhiteSpace) || values.Distinct(StringComparer.Ordinal).Count() != values.Count) diagnostics.Add(new PacketDiagnostic("TLAW-PKT-037", name, "Entries must be non-empty and unique."));
+        }
+        foreach (var path in OptionalStrings(root, "files_changed")) if (!IsRepositoryRelativePath(path)) diagnostics.Add(new PacketDiagnostic("TLAW-PKT-038", "files_changed", "Changed file path is not normalized repository-relative."));
+        if (OptionalString(root, "status") == "blocked" && OptionalStrings(root, "known_failures").Count == 0 && OptionalStrings(root, "open_questions").Count == 0) diagnostics.Add(new PacketDiagnostic("TLAW-PKT-039", "status", "Blocked handoff requires a failure or open question."));
+        if (OptionalString(root, "human_summary") is string summary && (summary.Contains('\0') || summary.Contains('\r'))) diagnostics.Add(new PacketDiagnostic("TLAW-PKT-040", "human_summary", "Human summary has invalid characters or line endings."));
+    }
+
+    private static bool IsRepositoryRelativePath(string value) => !string.IsNullOrWhiteSpace(value) && !value.Contains('\\') && !value.Contains('\0') && !value.StartsWith("/", StringComparison.Ordinal) && !value.StartsWith("//", StringComparison.Ordinal) && !Regex.IsMatch(value, "^[A-Za-z]:", RegexOptions.CultureInvariant) && !value.EndsWith("/", StringComparison.Ordinal) && value.Split('/').All(segment => segment.Length > 0 && segment is not "." and not "..");
 
     private static void ValidateTaskV2Semantics(JsonObject root, ICollection<PacketDiagnostic> diagnostics)
     {
@@ -453,6 +485,7 @@ public static class PacketValidator
         "array" => value is JsonArray,
         "string" => value is JsonValue scalar && scalar.TryGetValue<string>(out _),
         "boolean" => value is JsonValue scalar && scalar.TryGetValue<bool>(out _),
+        "integer" => value is JsonValue scalar && scalar.TryGetValue<int>(out _),
         _ => false
     };
 
