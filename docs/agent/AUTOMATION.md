@@ -8,7 +8,8 @@ This is a reviewed repository copy of the routing blueprint. BAR-34 implements d
 4. A human may explicitly run `route` with a closed local agent snapshot. It validates an unclaimed task v2 packet, selects one eligible/capable/policy-permitted agent by availability-first ordering, and emits an internal `selection.json`; it does not create a claim or launch an agent.
 5. A human inspects `selection.json`, then may explicitly invoke `lease acquire` with its `selected_agent` and an absolute local store path. The tool atomically prepares a validated claimed packet with a fencing token; it does not contact or launch that executor.
 6. A human may explicitly run `ingest-result` with one claimed task/v2 packet, one result/v1 packet, and the existing local lease store. It accepts evidence only when task id, claimed agent, fencing token, and current lease state match exactly; it emits an internal record and the existing concise result projection without releasing the lease or changing any status.
-7. A human reviews the selected, prepared, claimed, or ingested record before any later, separately approved workflow step.
+7. A human may explicitly run `finalize-result` for a non-human `success` or `failed` result after ingestion. It releases only the matching active local lease and writes a deterministic record for a future adapter; it does not move Linear or complete a task.
+8. A human reviews the selected, prepared, claimed, ingested, or finalized record before any later, separately approved workflow step.
 
 ## Current limitations
 

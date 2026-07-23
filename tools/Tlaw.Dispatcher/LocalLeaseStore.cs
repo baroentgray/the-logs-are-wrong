@@ -171,6 +171,31 @@ public sealed class FileLeaseStore
         });
     }
 
+    internal static T WithActiveLeaseGuard<T>(
+        string storePath,
+        string taskId,
+        string claimedBy,
+        string claimId,
+        ILeaseClock clock,
+        Func<Action, Action<LeaseReleaseReason>, T> action)
+    {
+        return WithActiveLeaseGuard(storePath, taskId, claimedBy, claimId, clock, recheck =>
+        {
+            Action<LeaseReleaseReason> release = reason =>
+            {
+                if (!Enum.IsDefined(reason))
+                {
+                    throw new ArgumentOutOfRangeException(nameof(reason), "Lease release reason is not supported.");
+                }
+
+                recheck();
+                var store = new FileLeaseStore(storePath, clock, createDirectories: false);
+                store.DeleteLease(taskId);
+            };
+            return action(recheck, release);
+        });
+    }
+
     public void Release(string taskId, string claimId, LeaseReleaseReason reason)
     {
         ValidateIdentity(taskId, nameof(taskId));
@@ -193,14 +218,7 @@ public sealed class FileLeaseStore
                 throw new LeaseGuardException($"Claim ID does not match the active lease for task '{taskId}'.");
             }
 
-            try
-            {
-                File.Delete(LeasePath(taskId));
-            }
-            catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
-            {
-                throw new LeaseStoreException($"Could not release the active lease for task '{taskId}'.", exception);
-            }
+            DeleteLease(taskId);
 
             return 0;
         });
@@ -275,6 +293,18 @@ public sealed class FileLeaseStore
         }
 
         return lease;
+    }
+
+    private void DeleteLease(string taskId)
+    {
+        try
+        {
+            File.Delete(LeasePath(taskId));
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+        {
+            throw new LeaseStoreException($"Could not release the active lease for task '{taskId}'.", exception);
+        }
     }
 
     private LocalLease? ReadLease(string taskId) => ReadLease(LeasePath(taskId), taskId);

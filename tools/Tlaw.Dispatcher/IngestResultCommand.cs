@@ -178,24 +178,21 @@ internal static class IngestionPathGuard
 
     internal static void Validate(IngestionOptions options)
     {
-        var task = Resolve(options.TaskPath);
-        var result = Resolve(options.ResultPath);
-        var leaseStore = Resolve(options.LeaseStorePath);
-        var output = Resolve(options.OutputPath);
+        ValidateOutput(options.OutputPath, options.LeaseStorePath, options.TaskPath, options.ResultPath);
+    }
 
-        if (SamePath(output, task))
+    internal static void ValidateOutput(string outputPath, string leaseStorePath, params string[] protectedInputs)
+    {
+        var leaseStore = Resolve(leaseStorePath);
+        var output = Resolve(outputPath);
+        if (protectedInputs.Any(path => SamePath(output, Resolve(path))))
         {
-            throw new IngestResultCommandException("Result ingestion output must not alias the task packet.");
-        }
-
-        if (SamePath(output, result))
-        {
-            throw new IngestResultCommandException("Result ingestion output must not alias the result packet.");
+            throw new IngestResultCommandException("Command output must not alias a protected input.");
         }
 
         if (IsAtOrWithin(output, leaseStore))
         {
-            throw new IngestResultCommandException("Result ingestion output must not be inside the lease store.");
+            throw new IngestResultCommandException("Command output must not be inside the lease store.");
         }
     }
 
