@@ -18,5 +18,9 @@ public static class Program
                 ? IngestHandoffCommand.Run(args, Console.Out, Console.Error)
             : args.Length > 0 && string.Equals(args[0], "finalize-handoff", StringComparison.Ordinal)
                 ? FinalizeHandoffCommand.Run(args, Console.Out, Console.Error)
+            : args.Length > 1 && string.Equals(args[0], "linear", StringComparison.Ordinal)
+                ? LinearCommand.Run(args, Console.Out, Console.Error)
+            : args.Length > 0 && string.Equals(args[0], "doctor", StringComparison.Ordinal)
+                ? DoctorCommand.Run(args, Console.Out, Console.Error)
             : TaskPacketCommand.Run(args, Console.Out, Console.Error);
 }
