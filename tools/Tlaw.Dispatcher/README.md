@@ -119,6 +119,18 @@ Only after those checks succeed does the command atomically replace `ingestion.j
 
 Stdout is only the existing concise `ResultProjector` output. A required human pause exposes only summary, question, evidence references, and safe options; a non-human result exposes only status and summary. If stdout fails after the durable record is published, the command reports a non-zero result and does not roll back that record. Ingestion never changes a failed or blocked result to success, releases/renews/replaces a lease, chooses another executor, or moves a task status. BAR-35 is Increment 4 only; BAR-26 remains incomplete.
 
+## Deterministic local result finalization
+
+BAR-36 adds the explicit local closeout step; it is not a Linear transition, provider action, launch, GitHub write, merge, or dispatch.
+
+```powershell
+dotnet run --configuration Release --project tools/Tlaw.Dispatcher -- finalize-result --task <claimed-task-v2.yaml> --result <result-v1.yaml> --ingestion <ingestion.json> --lease-store <absolute-lease-store> --output <finalization.json>
+```
+
+The command strictly validates all three evidence files and requires exact task id, claimed agent, fencing token, result status, human flag, and result-byte SHA-256 agreement with the active unexpired lease. It rejects output aliases to every input and any lease-store path before release. `success` with no human pause releases with `completion` and records `in_review`; `failed` with no human pause releases with `error` and records `todo`. `blocked` or human-required results leave the lease and output unchanged.
+
+The UTF-8/no-BOM, LF-terminated `tlaw.dispatcher-finalization/v1` JSON record orders `schema`, `task_id`, `claimed_by`, `claim_id`, `result_status`, `result_sha256`, `release_reason`, and `next_state`. It is rendered before release, then the exact lease is released before atomic publication. This is not transactional: if publication fails after release, the command returns non-zero, states that the lease was already released and the record was not published, and never recreates the lease. BAR-36 is Increment 5 only; BAR-26 remains incomplete.
+
 ## Deliberate limitations
 
 This tool does not contact or mutate Linear, probe live availability or quota, launch Codex/Claude/Grok/Qwen, ingest review/handoff packets, write GitHub, merge, or update task state. It performs no network write. Packet preparation, local routing, local lease acquisition, and result ingestion are not dispatch; provider adapters, agent launch, lease finalization, review routing, and merge behavior need separately approved increments. BAR-35 is only Increment 4 and does not complete BAR-26.
