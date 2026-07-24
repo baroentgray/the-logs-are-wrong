@@ -52,6 +52,10 @@ The separately explicit local `finalize-result` command verifies a fully claimed
 
 The separately explicit local `ingest-review` command consumes a fully claimed task/v2, a closed successful `tlaw.dispatcher-finalization/v1` completion record, and review/v1 evidence. It requires exact task, agent, fencing-token, and explicit lowercase expected-head agreement, hashes the exact review bytes, and writes a deterministic internal `tlaw.dispatcher-review-decision/v1` record. `approve` without blocker/high/medium findings produces the future decision `merge`/`in_review`; `request_changes` with such findings produces `correction`/`todo`; and `comment` produces `human`/`in_review`. It checks packet aliases before input reads, performs no lease operation or live PR lookup, and records no actual merge or task-state transition.
 
+## Local LM Studio read-only worker
+
+BAR-27 Increment 1 is a closed local read-only analysis boundary, not an AgentProtocol result producer. `local-worker run` accepts only a claimed local `read_only_analysis` task/v2, its exact active lease, closed `tlaw.local-worker-config/v1`, and closed `tlaw.local-worker-input/v1` material manifest. It sends only a bounded loopback LM Studio model-list probe and a no-tools/no-MCP chat completion request. The output is a stable internal `tlaw.local-worker-artifact/v1` JSON record with untrusted analysis, exact identity and hashes, and explicit non-authoritative/no-command flags. It cannot acquire, renew, release, ingest, finalize, transition, merge, or otherwise change task state.
+
 ## Human pause
 
 When `human.required: true`, a result must be `blocked`, provide `question`, `evidence`, and non-empty `safe_options`. Projection returns only the summary, question, evidence references, and safe options. It does not append task metadata or free-form trailing prose. Automation pauses for that payload; it does not guess, dispatch, merge, or expand provider permissions.

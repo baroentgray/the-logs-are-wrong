@@ -22,5 +22,7 @@ public static class Program
                 ? LinearCommand.Run(args, Console.Out, Console.Error)
             : args.Length > 0 && string.Equals(args[0], "doctor", StringComparison.Ordinal)
                 ? DoctorCommand.Run(args, Console.Out, Console.Error)
+            : args.Length > 1 && string.Equals(args[0], "local-worker", StringComparison.Ordinal) && string.Equals(args[1], "run", StringComparison.Ordinal)
+                ? LocalWorkerCommand.Run(args, Console.Out, Console.Error)
             : TaskPacketCommand.Run(args, Console.Out, Console.Error);
 }

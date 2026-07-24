@@ -186,6 +186,20 @@ dotnet run --configuration Release --project tools/Tlaw.Dispatcher -- doctor --c
 
 `doctor` accepts only the closed `codex`, `claude`, `grok`, `local` adapter set and writes a route-compatible agent snapshot. It uses direct processes with no shell or configured arguments. Static mode makes no provider request. In live mode Grok uses the fixed headless `grok -p <read-only probe> --output-format streaming-json` shape in an isolated temporary directory with a bounded timeout; no project context, task launch, session data, or API key is logged. The local adapter accepts only `localhost`, `127.0.0.1`, or `::1` endpoints and is readiness-only.
 
+## Local LM Studio read-only worker
+
+BAR-27 Increment 1 adds an explicit, non-authoritative local analysis boundary. It accepts only a valid fully claimed `tlaw.agent-task/v2` packet for `local`, `read_only_analysis`, and `read_only` autonomy, correlated to one active exact local lease. It does not acquire, renew, release, ingest, finalize, or transition anything.
+
+```powershell
+dotnet run --configuration Release --project tools/Tlaw.Dispatcher -- local-worker run --task <claimed-task-v2.yaml> --lease-store <absolute-path> --config <local-worker-config.json> --input <local-worker-input.json> --output <absolute-output.json>
+```
+
+`config` is closed `tlaw.local-worker-config/v1`: an HTTP loopback endpoint with an explicit port, one exact model key, optional API-token environment-variable name, bounded timeout, and bounded maximum output tokens. It accepts no paths, arbitrary headers, prompts, or provider request arguments. `input` is closed `tlaw.local-worker-input/v1`: ordered repository-relative UTF-8 text material or explicit inline UTF-8 text, plus one closed analysis operation. Traversal, `.git`, absolute paths, reparse-point escape, invalid UTF-8, binary text, and count/byte-limit violations fail before a provider call.
+
+Before the model-list probe, chat request, and publication, the worker holds the existing task lock and rechecks the exact task/claim identity and canonical timestamps against the active lease. It lists models with bounded `GET /api/v1/models`, requires the configured exact key to be a usable `llm`, and never loads or unloads a model. Its only generation request is `POST /v1/chat/completions` with fixed system boundary text, `stream: false`, `temperature: 0`, and the bounded `max_tokens`; it sends no tools, tool choice, MCP, or plugins.
+
+The only output is a stable UTF-8/no-BOM, LF-terminated `tlaw.local-worker-artifact/v1` JSON artifact. It records exact task/claim identity, operation, sanitized model metadata, ordered material hashes, prompt and exact response-byte hashes, untrusted analysis, and `non_authoritative: true` / `commands_executed: false`. Artifact validation completes before atomic replacement; a failure leaves an existing output, repository material, task, and lease unchanged.
+
 ## Deliberate limitations
 
 `linear snapshot` reads one minimal live Linear card, and `linear transition` performs only its documented, guarded Linear mutations after correlating typed repository-native evidence. Every other dispatcher evidence command — packet preparation, local routing, local lease acquisition, result ingestion, result finalization, review ingestion, handoff preparation, handoff ingestion, and handoff finalization — remains local and performs no network write. `doctor` performs readiness probes only. The dispatcher still writes no GitHub, does not merge, and does not launch agents; provider adapters, agent launch, and successor routing need separately approved increments. BAR-26 is not complete until BAR-41 is independently verified, merged, and post-merge CI succeeds.
