@@ -54,11 +54,7 @@ The separately explicit local `ingest-review` command consumes a fully claimed t
 
 ## Local LM Studio read-only worker
 
-`local-worker run` is the BAR-27 local execution boundary. It consumes a valid, fully claimed task/v2 packet only when `claimed_by: local`, `work_type: read_only_analysis`, and `autonomy_level: read_only`. The closed artifact kinds are contract extraction, acceptance-criteria matrix, test-case draft, document comparison, preliminary review, prompt draft, and task-packet draft. The endpoint is a plain HTTP loopback base URL (`localhost`, `127.0.0.1`, or `::1`) and the command writes only its explicitly named artifact and result packet outside the repository.
-
-The local prompt carries the task objective, every packet forbidden operation, supplied read-only excerpts, and a fixed boundary checklist. Model text is untrusted: it cannot invoke a shell, alter a repository, contact a remote-code host, write GitHub, or write Linear. A response that asserts a build or test outcome fails closed. The worker performs no verification command; its generated result/v1 packet is validated through `Tlaw.AgentProtocol` and states only that an untrusted artifact is available for human review. `--dry-run` writes a boundary receipt but makes no LM Studio request and produces no result packet.
-
-`local-worker complete` is deliberately separate from model execution. It consumes the generated result through the existing result-ingestion and finalization contracts, then calls only the existing guarded Linear `result` transition with its exact finalization evidence. A successful local-worker result reaches `In Review`; there is no local-worker target-state parameter and no path to `Done`. Completion still requires the existing exact task/snapshot identity, live concurrency refetch, post-mutation verification, and durable receipt.
+BAR-27 Increment 1 is a closed local read-only analysis boundary, not an AgentProtocol result producer. `local-worker run` accepts only a claimed local `read_only_analysis` task/v2, its exact active lease, closed `tlaw.local-worker-config/v1`, and closed `tlaw.local-worker-input/v1` material manifest. It sends only a bounded loopback LM Studio model-list probe and a no-tools/no-MCP chat completion request. The output is a stable internal `tlaw.local-worker-artifact/v1` JSON record with untrusted analysis, exact identity and hashes, and explicit non-authoritative/no-command flags. It cannot acquire, renew, release, ingest, finalize, transition, merge, or otherwise change task state.
 
 ## Human pause
 

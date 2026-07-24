@@ -188,27 +188,17 @@ dotnet run --configuration Release --project tools/Tlaw.Dispatcher -- doctor --c
 
 ## Local LM Studio read-only worker
 
-BAR-27 adds an explicit local preparation boundary. It accepts only a valid, fully claimed `tlaw.agent-task/v2` packet for `local`, `read_only_analysis`, and `read_only` autonomy. It accepts one closed artifact kind: `contract-extraction`, `acceptance-criteria-matrix`, `test-case-draft`, `document-comparison`, `preliminary-review`, `prompt-draft`, or `task-packet-draft`.
+BAR-27 Increment 1 adds an explicit, non-authoritative local analysis boundary. It accepts only a valid fully claimed `tlaw.agent-task/v2` packet for `local`, `read_only_analysis`, and `read_only` autonomy, correlated to one active exact local lease. It does not acquire, renew, release, ingest, finalize, or transition anything.
 
 ```powershell
-dotnet run --configuration Release --project tools/Tlaw.Dispatcher -- local-worker run --task <claimed-local-task.yaml> --input <read-only-excerpts.txt> --artifact-kind <closed-kind> --endpoint http://127.0.0.1:1234 --model <local-model-id> --artifact <absolute-local-artifact.md> --result <absolute-local-result.yaml>
+dotnet run --configuration Release --project tools/Tlaw.Dispatcher -- local-worker run --task <claimed-task-v2.yaml> --lease-store <absolute-path> --config <local-worker-config.json> --input <local-worker-input.json> --output <absolute-output.json>
 ```
 
-The endpoint must be an HTTP loopback base URL with no path, query, credentials, or fragment. The `run` command writes only the explicitly named artifact and result outside the repository. It never invokes a shell, repository client, remote-code-host API, or a task-tracker write. Supplied excerpts, task forbidden operations, and an explicit boundary checklist are included in the local prompt. The model response is saved only as untrusted text. Responses asserting a build or test outcome fail closed; the worker runs no verification command and its result packet does not self-certify one.
+`config` is closed `tlaw.local-worker-config/v1`: an HTTP loopback endpoint with an explicit port, one exact model key, optional API-token environment-variable name, bounded timeout, and bounded maximum output tokens. It accepts no paths, arbitrary headers, prompts, or provider request arguments. `input` is closed `tlaw.local-worker-input/v1`: ordered repository-relative UTF-8 text material or explicit inline UTF-8 text, plus one closed analysis operation. Traversal, `.git`, absolute paths, reparse-point escape, invalid UTF-8, binary text, and count/byte-limit violations fail before a provider call.
 
-`--dry-run` replaces `--result` and writes a local boundary receipt without contacting LM Studio:
+Before the model-list probe, chat request, and publication, the worker holds the existing task lock and rechecks the exact task/claim identity and canonical timestamps against the active lease. It lists models with bounded `GET /api/v1/models`, requires the configured exact key to be a usable `llm`, and never loads or unloads a model. Its only generation request is `POST /v1/chat/completions` with fixed system boundary text, `stream: false`, `temperature: 0`, and the bounded `max_tokens`; it sends no tools, tool choice, MCP, or plugins.
 
-```powershell
-dotnet run --configuration Release --project tools/Tlaw.Dispatcher -- local-worker run --task <claimed-local-task.yaml> --input <read-only-excerpts.txt> --artifact-kind contract-extraction --endpoint http://127.0.0.1:1234 --model <local-model-id> --artifact <absolute-local-dry-run.md> --dry-run
-```
-
-An explicit second command consumes the generated result through the existing lease, finalization, and guarded Linear adapter contracts. It has no target-state option: a successful local result follows only the existing `result -> In Review` edge, and there is no local-worker route to task completion.
-
-```powershell
-dotnet run --configuration Release --project tools/Tlaw.Dispatcher -- local-worker complete --task <claimed-local-task.yaml> --result <absolute-local-result.yaml> --lease-store <absolute-lease-store> --ingestion <absolute-local-ingestion.json> --finalization <absolute-local-finalization.json> --issue <BAR-ID> --snapshot <linear-snapshot.json> --api-key-env <ENV_NAME> --transition-output <absolute-local-receipt.json>
-```
-
-The completion command still relies on the adapter's exact task/snapshot identity, finalization evidence, live refetch, post-mutation verification, and receipt publication. It never transitions a card to `Done`.
+The only output is a stable UTF-8/no-BOM, LF-terminated `tlaw.local-worker-artifact/v1` JSON artifact. It records exact task/claim identity, operation, sanitized model metadata, ordered material hashes, prompt and exact response-byte hashes, untrusted analysis, and `non_authoritative: true` / `commands_executed: false`. Artifact validation completes before atomic replacement; a failure leaves an existing output, repository material, task, and lease unchanged.
 
 ## Deliberate limitations
 

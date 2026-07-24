@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Net.Http;
 using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
@@ -27,7 +28,7 @@ public static class DoctorCommand
             return 0;
         }
         catch (DoctorCommandException exception) { standardError.WriteLine($"FAIL: {exception.Message}"); return 1; }
-        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or DirectoryNotFoundException or ArgumentException or DecoderFallbackException or InvalidDataException or JsonException) { standardError.WriteLine($"FAIL: {exception.Message}"); return 1; }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or DirectoryNotFoundException or ArgumentException or DecoderFallbackException or InvalidDataException or JsonException or HttpRequestException or TaskCanceledException) { standardError.WriteLine($"FAIL: {exception.Message}"); return 1; }
         catch (Exception) { standardError.WriteLine("FAIL: doctor operation failed unexpectedly."); return 1; }
     }
 }
@@ -72,7 +73,8 @@ internal sealed record DoctorConfig(IReadOnlyList<DoctorAdapter> Agents)
     private static string S(JsonElement e,string n)=>e.TryGetProperty(n,out var p)&&p.ValueKind==JsonValueKind.String&&!string.IsNullOrWhiteSpace(p.GetString())?p.GetString()!:throw new DoctorCommandException($"Doctor adapter property '{n}' must be a non-empty string.");
     private static Uri ParseEndpoint(string value)
     {
-        if(!Uri.TryCreate(value,UriKind.Absolute,out var uri)||uri.Scheme is not("http" or "https")||uri.UserInfo.Length!=0||uri.HostNameType==UriHostNameType.Dns&&uri.Host!="localhost"||uri.HostNameType==UriHostNameType.IPv4&&uri.Host!="127.0.0.1"||uri.HostNameType==UriHostNameType.IPv6&&uri.Host!="::1")throw new DoctorCommandException("Local adapter endpoint must use an exact loopback host.");return uri;
+        try { return LocalLmStudioEndpoint.Parse(value).BaseUri; }
+        catch (LocalWorkerCommandException exception) { throw new DoctorCommandException(exception.Message); }
     }
 }
 
@@ -80,6 +82,9 @@ internal interface IDoctorProbe { bool ExecutableExists(string executable); Doct
 internal sealed record DoctorProbeResult(string Stage,string Diagnostic);
 internal sealed class SystemDoctorProbe : IDoctorProbe
 {
+    private readonly HttpMessageHandler? _handler;
+    internal SystemDoctorProbe(HttpMessageHandler handler) => _handler = handler;
+    public SystemDoctorProbe() { }
     public bool ExecutableExists(string executable) => Resolve(executable) is not null;
     public DoctorProbeResult ProbeGrok(string executable)
     {
@@ -87,7 +92,20 @@ internal sealed class SystemDoctorProbe : IDoctorProbe
         try { using var process=Process.Start(new ProcessStartInfo(executable){UseShellExecute=false,CreateNoWindow=true,WorkingDirectory=temp,RedirectStandardOutput=true,RedirectStandardError=true,ArgumentList={"-p","Reply only with one JSON object: {\\\"ready\\\":true}.","--output-format","streaming-json"}});if(process is null)return new("DEGRADED","process did not start");if(!process.WaitForExit(5000)){process.Kill(true);return new("DEGRADED","bounded timeout");}var text=process.StandardOutput.ReadToEnd();using var _=JsonDocument.Parse(text);return process.ExitCode==0?new("NON_INTERACTIVE_READY","structured probe accepted"):new("AUTH_REQUIRED","provider command rejected readiness probe"); }
         catch(JsonException){return new("DEGRADED","malformed structured provider response");}catch(Exception){return new("DEGRADED","provider probe failed");}finally{if(Directory.Exists(temp))Directory.Delete(temp,true);}
     }
-    public DoctorProbeResult ProbeLocal(Uri endpoint) => new("UNKNOWN","live local model-list probe is unavailable in this build");
+    public DoctorProbeResult ProbeLocal(Uri endpoint)
+    {
+        try
+        {
+            using var owned = _handler is null ? new SocketsHttpHandler { UseProxy = false } : null;
+            using var client = new HttpClient(_handler ?? owned!, disposeHandler: false) { Timeout = TimeSpan.FromSeconds(5) };
+            using var response = client.SendAsync(new HttpRequestMessage(HttpMethod.Get, new Uri(endpoint, "/api/v1/models"))).GetAwaiter().GetResult();
+            if (!response.IsSuccessStatusCode) return response.StatusCode is System.Net.HttpStatusCode.Unauthorized or System.Net.HttpStatusCode.Forbidden ? new("AUTH_REQUIRED", "model-list authentication required") : new("DEGRADED", $"model-list status {(int)response.StatusCode}");
+            var bytes = response.Content.ReadAsByteArrayAsync().GetAwaiter().GetResult();
+            return LocalLmStudioModelList.ContainsUsableLlm(bytes) ? new("LOCAL_LLM_AVAILABLE", "usable LLM listed") : new("DEGRADED", "no usable LLM listed or malformed model list");
+        }
+        catch (TaskCanceledException) { return new("DEGRADED", "bounded model-list timeout"); }
+        catch (HttpRequestException) { return new("DEGRADED", "model-list request failed"); }
+    }
     private static string? Resolve(string executable){var path=Environment.GetEnvironmentVariable("PATH")??string.Empty;return path.Split(Path.PathSeparator).Select(x=>Path.Combine(x,executable)).FirstOrDefault(File.Exists);}
 }
 
@@ -97,7 +115,12 @@ internal sealed record DoctorReport(string Agent,string Mode,bool Enabled,string
     {
         if(!adapter.Enabled)return new(adapter.Agent,adapter.Mode,false,adapter.Executable??adapter.Endpoint!.ToString(),"OFFLINE","OFFLINE","disabled");
         if(adapter.Mode is "api" or "manual_packet")return new(adapter.Agent,adapter.Mode,true,"configured","UNKNOWN","UNKNOWN","configuration only; no task launch");
-        if(adapter.Mode=="local_api")return new(adapter.Agent,adapter.Mode,true,adapter.Endpoint!.GetLeftPart(UriPartial.Authority),live?probe.ProbeLocal(adapter.Endpoint).Stage:"CLI_AVAILABLE",live?"UNKNOWN":"UNKNOWN","loopback-only endpoint");
+        if(adapter.Mode=="local_api")
+        {
+            var localResult = live ? probe.ProbeLocal(adapter.Endpoint!) : new DoctorProbeResult("CLI_AVAILABLE", "loopback-only endpoint");
+            var availability = localResult.Stage == "LOCAL_LLM_AVAILABLE" ? "AVAILABLE" : localResult.Stage == "CLI_AVAILABLE" ? "UNKNOWN" : "DEGRADED";
+            return new(adapter.Agent,adapter.Mode,true,adapter.Endpoint!.GetLeftPart(UriPartial.Authority),localResult.Stage,availability,localResult.Diagnostic);
+        }
         if(!probe.ExecutableExists(adapter.Executable!))return new(adapter.Agent,adapter.Mode,true,adapter.Executable!,"CLI_MISSING","OFFLINE","executable not found");
         var result=live&&adapter.Agent=="grok"?probe.ProbeGrok(adapter.Executable!):new DoctorProbeResult("CLI_AVAILABLE","no live provider request");
         return new(adapter.Agent,adapter.Mode,true,adapter.Executable!,result.Stage,result.Stage=="NON_INTERACTIVE_READY"?"AVAILABLE":result.Stage=="CLI_AVAILABLE"?"UNKNOWN":"DEGRADED",result.Diagnostic);
