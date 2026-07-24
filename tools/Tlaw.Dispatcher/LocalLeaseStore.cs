@@ -171,6 +171,76 @@ public sealed class FileLeaseStore
         });
     }
 
+    /// <summary>
+    /// Holds an already-existing task lock while the caller uses an exact active task/v2 lease.
+    /// Unlike the general active guard, this is for a claimed packet and also fences both canonical timestamps.
+    /// </summary>
+    internal static T WithExactActiveLeaseGuard<T>(
+        string storePath,
+        string taskId,
+        string claimedBy,
+        string claimId,
+        string claimStartedAt,
+        string claimExpiresAt,
+        ILeaseClock clock,
+        Func<Action, T> action)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(storePath);
+        ArgumentNullException.ThrowIfNull(clock);
+        ArgumentNullException.ThrowIfNull(action);
+        if (!Path.IsPathFullyQualified(storePath))
+        {
+            throw new ArgumentException("The lease store path must be absolute.", nameof(storePath));
+        }
+
+        ValidateIdentity(taskId, nameof(taskId));
+        ValidateIdentity(claimedBy, nameof(claimedBy));
+        ValidateIdentity(claimId, nameof(claimId));
+        ValidateIdentity(claimStartedAt, nameof(claimStartedAt));
+        ValidateIdentity(claimExpiresAt, nameof(claimExpiresAt));
+        var store = new FileLeaseStore(storePath, clock, createDirectories: false);
+        return store.WithExistingTaskLock(taskId, () =>
+        {
+            Action recheck = () => store.RequireMatchingActiveLease(taskId, claimedBy, claimId, claimStartedAt, claimExpiresAt);
+            recheck();
+            return action(recheck);
+        });
+    }
+
+    /// <summary>
+    /// Holds an already-existing task lock while the caller requires the exact task to have no lease.
+    /// The guard never creates, deletes, renews, or otherwise mutates a lease or lock file.
+    /// </summary>
+    internal static T WithMissingLeaseGuard<T>(
+        string storePath,
+        string taskId,
+        ILeaseClock clock,
+        Func<Action, T> action)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(storePath);
+        ArgumentNullException.ThrowIfNull(clock);
+        ArgumentNullException.ThrowIfNull(action);
+        if (!Path.IsPathFullyQualified(storePath))
+        {
+            throw new ArgumentException("The lease store path must be absolute.", nameof(storePath));
+        }
+
+        ValidateIdentity(taskId, nameof(taskId));
+        var store = new FileLeaseStore(storePath, clock, createDirectories: false);
+        return store.WithExistingTaskLock(taskId, () =>
+        {
+            Action recheck = () =>
+            {
+                if (store.ReadLease(taskId) is not null)
+                {
+                    throw new LeaseGuardException($"Task '{taskId}' has an active or retired lease when absence is required.");
+                }
+            };
+            recheck();
+            return action(recheck);
+        });
+    }
+
     internal static T WithMatchingLeaseStateGuard<T>(string storePath, string taskId, string claimedBy, string claimId, LocalLeaseStatus expectedStatus, ILeaseClock clock, Func<Action, T> action)
     {
         if (expectedStatus is not (LocalLeaseStatus.Active or LocalLeaseStatus.Expired)) throw new ArgumentOutOfRangeException(nameof(expectedStatus));
@@ -317,7 +387,7 @@ public sealed class FileLeaseStore
         }
     }
 
-    private LocalLease RequireMatchingActiveLease(string taskId, string claimedBy, string claimId)
+    private LocalLease RequireMatchingActiveLease(string taskId, string claimedBy, string claimId, string? expectedStartedAt = null, string? expectedExpiresAt = null)
     {
         var lease = ReadLease(taskId) ?? throw new LeaseGuardException($"Task '{taskId}' has no active lease.");
         if (lease.ClaimExpiresAt <= _clock.UtcNow.ToUniversalTime())
@@ -330,6 +400,12 @@ public sealed class FileLeaseStore
             !string.Equals(lease.ClaimId, claimId, StringComparison.Ordinal))
         {
             throw new LeaseGuardException($"Active lease identity does not match the claimed task packet for task '{taskId}'.");
+        }
+
+        if ((expectedStartedAt is not null && !string.Equals(FormatCanonicalTimestamp(lease.ClaimStartedAt), expectedStartedAt, StringComparison.Ordinal)) ||
+            (expectedExpiresAt is not null && !string.Equals(FormatCanonicalTimestamp(lease.ClaimExpiresAt), expectedExpiresAt, StringComparison.Ordinal)))
+        {
+            throw new LeaseGuardException($"Active lease timestamps do not exactly match the claimed task packet for task '{taskId}'.");
         }
 
         return lease;

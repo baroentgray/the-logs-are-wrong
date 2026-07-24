@@ -61,3 +61,11 @@ Result ingestion preserves a valid `failed` or `blocked` status. It is evidence 
 ## Evolution
 
 v1 identifiers are immutable. Task v2 is the first task-envelope evolution: consumers that only understand v1 must continue using `tlaw.agent-task/v1`; consumers of the richer preparation fields must require `tlaw.agent-task/v2` explicitly. There is no silent conversion between versions. Schema files, examples, and validator tests change together in a reviewed branch.
+
+## Live adapter boundary
+
+The dispatcher may create a local `tlaw.dispatcher-input/v1` only from a strict `tlaw.dispatcher-linear-profile/v1` plus an explicit minimal Linear snapshot. The profile supplies objective, work policy, autonomy, verification and delivery; Linear supplies identity and links only. The Linear description is never copied into either artifact. API credentials are accepted only via an explicitly named environment variable and are never packet fields or command values.
+
+`tlaw.dispatcher-linear-transition/v1` is an internal durable receipt, not an AgentProtocol envelope. A guarded adapter re-fetches the supplied snapshot, validates event-specific local evidence, executes the minimal allowed update, refetches, and publishes the receipt. A review decision with `merge` is not a merge and cannot mark Done without independent verifier and Git ancestry/reachability proof.
+
+`tlaw.dispatcher-doctor/v1` is a readiness-only report. Its corresponding `tlaw.dispatcher-agent-snapshot/v1` contains the closed `codex`, `claude`, `grok`, and `local` names with route-compatible availability. Doctor configuration does not contain shell syntax, arbitrary arguments, scripts, credentials, or task prompts; local endpoints must be exact loopback addresses.
