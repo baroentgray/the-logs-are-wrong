@@ -205,7 +205,7 @@ internal static class IngestionPathGuard
         }
     }
 
-    private static string Resolve(string path)
+    internal static string Resolve(string path)
     {
         var fullPath = Path.GetFullPath(path);
         var root = Path.GetPathRoot(fullPath) ?? throw new IngestResultCommandException("Result ingestion path has no filesystem root.");
@@ -271,9 +271,13 @@ internal static class IngestionPathGuard
         }
     }
 
-    private static bool SamePath(string left, string right) => string.Equals(left, right, PathComparison);
+    internal static StringComparer PathComparer => PathComparison == StringComparison.OrdinalIgnoreCase
+        ? StringComparer.OrdinalIgnoreCase
+        : StringComparer.Ordinal;
 
-    private static bool IsAtOrWithin(string path, string root)
+    internal static bool SamePath(string left, string right) => string.Equals(left, right, PathComparison);
+
+    internal static bool IsAtOrWithin(string path, string root)
     {
         if (SamePath(path, root))
         {

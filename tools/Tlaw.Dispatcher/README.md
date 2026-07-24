@@ -186,6 +186,30 @@ dotnet run --configuration Release --project tools/Tlaw.Dispatcher -- doctor --c
 
 `doctor` accepts only the closed `codex`, `claude`, `grok`, `local` adapter set and writes a route-compatible agent snapshot. It uses direct processes with no shell or configured arguments. Static mode makes no provider request. In live mode Grok uses the fixed headless `grok -p <read-only probe> --output-format streaming-json` shape in an isolated temporary directory with a bounded timeout; no project context, task launch, session data, or API key is logged. The local adapter accepts only `localhost`, `127.0.0.1`, or `::1` endpoints and is readiness-only.
 
+## Local LM Studio read-only worker
+
+BAR-27 adds an explicit local preparation boundary. It accepts only a valid, fully claimed `tlaw.agent-task/v2` packet for `local`, `read_only_analysis`, and `read_only` autonomy. It accepts one closed artifact kind: `contract-extraction`, `acceptance-criteria-matrix`, `test-case-draft`, `document-comparison`, `preliminary-review`, `prompt-draft`, or `task-packet-draft`.
+
+```powershell
+dotnet run --configuration Release --project tools/Tlaw.Dispatcher -- local-worker run --task <claimed-local-task.yaml> --input <read-only-excerpts.txt> --artifact-kind <closed-kind> --endpoint http://127.0.0.1:1234 --model <local-model-id> --artifact <absolute-local-artifact.md> --result <absolute-local-result.yaml>
+```
+
+The endpoint must be an HTTP loopback base URL with no path, query, credentials, or fragment. The `run` command writes only the explicitly named artifact and result outside the repository. It never invokes a shell, repository client, remote-code-host API, or a task-tracker write. Supplied excerpts, task forbidden operations, and an explicit boundary checklist are included in the local prompt. The model response is saved only as untrusted text. Responses asserting a build or test outcome fail closed; the worker runs no verification command and its result packet does not self-certify one.
+
+`--dry-run` replaces `--result` and writes a local boundary receipt without contacting LM Studio:
+
+```powershell
+dotnet run --configuration Release --project tools/Tlaw.Dispatcher -- local-worker run --task <claimed-local-task.yaml> --input <read-only-excerpts.txt> --artifact-kind contract-extraction --endpoint http://127.0.0.1:1234 --model <local-model-id> --artifact <absolute-local-dry-run.md> --dry-run
+```
+
+An explicit second command consumes the generated result through the existing lease, finalization, and guarded Linear adapter contracts. It has no target-state option: a successful local result follows only the existing `result -> In Review` edge, and there is no local-worker route to task completion.
+
+```powershell
+dotnet run --configuration Release --project tools/Tlaw.Dispatcher -- local-worker complete --task <claimed-local-task.yaml> --result <absolute-local-result.yaml> --lease-store <absolute-lease-store> --ingestion <absolute-local-ingestion.json> --finalization <absolute-local-finalization.json> --issue <BAR-ID> --snapshot <linear-snapshot.json> --api-key-env <ENV_NAME> --transition-output <absolute-local-receipt.json>
+```
+
+The completion command still relies on the adapter's exact task/snapshot identity, finalization evidence, live refetch, post-mutation verification, and receipt publication. It never transitions a card to `Done`.
+
 ## Deliberate limitations
 
 `linear snapshot` reads one minimal live Linear card, and `linear transition` performs only its documented, guarded Linear mutations after correlating typed repository-native evidence. Every other dispatcher evidence command — packet preparation, local routing, local lease acquisition, result ingestion, result finalization, review ingestion, handoff preparation, handoff ingestion, and handoff finalization — remains local and performs no network write. `doctor` performs readiness probes only. The dispatcher still writes no GitHub, does not merge, and does not launch agents; provider adapters, agent launch, and successor routing need separately approved increments. BAR-26 is not complete until BAR-41 is independently verified, merged, and post-merge CI succeeds.
