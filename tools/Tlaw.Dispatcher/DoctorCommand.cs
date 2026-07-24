@@ -99,10 +99,11 @@ internal sealed class SystemDoctorProbe : IDoctorProbe
             using var owned = _handler is null ? new SocketsHttpHandler { UseProxy = false } : null;
             using var client = new HttpClient(_handler ?? owned!, disposeHandler: false) { Timeout = TimeSpan.FromSeconds(5) };
             using var response = client.SendAsync(new HttpRequestMessage(HttpMethod.Get, new Uri(endpoint, "/api/v1/models"))).GetAwaiter().GetResult();
+            var bytes = LocalLmStudioResponseBody.Read(response.Content, LocalLmStudioResponseBody.MaximumModelListBytes);
             if (!response.IsSuccessStatusCode) return response.StatusCode is System.Net.HttpStatusCode.Unauthorized or System.Net.HttpStatusCode.Forbidden ? new("AUTH_REQUIRED", "model-list authentication required") : new("DEGRADED", $"model-list status {(int)response.StatusCode}");
-            var bytes = response.Content.ReadAsByteArrayAsync().GetAwaiter().GetResult();
             return LocalLmStudioModelList.ContainsUsableLlm(bytes) ? new("LOCAL_LLM_AVAILABLE", "usable LLM listed") : new("DEGRADED", "no usable LLM listed or malformed model list");
         }
+        catch (LocalLmStudioResponseBodyLimitException) { return new("DEGRADED", "model-list response exceeds closed byte limit"); }
         catch (TaskCanceledException) { return new("DEGRADED", "bounded model-list timeout"); }
         catch (HttpRequestException) { return new("DEGRADED", "model-list request failed"); }
     }

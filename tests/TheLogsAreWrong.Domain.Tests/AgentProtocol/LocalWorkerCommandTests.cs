@@ -176,6 +176,153 @@ public sealed class LocalWorkerCommandTests
     }
 
     [Fact]
+    public void Declared_oversized_model_list_fails_closed_before_buffering_or_chat_and_preserves_output_task_and_lease()
+    {
+        using var workspace = Workspace.Create();
+        var clock = new FakeClock(DateTimeOffset.UtcNow);
+        var fixture = ClaimedLocalTask.Create(workspace, clock, "BAR-27");
+        var config = workspace.Write("worker-config.json", Config());
+        var input = workspace.Write("worker-input.json", Input(InlineMaterial("note", "safe text")));
+        var output = workspace.Write("artifact.json", "previous\n");
+        var taskBefore = File.ReadAllBytes(fixture.TaskPath);
+        var leaseBefore = File.ReadAllBytes(fixture.LeasePath);
+        var oversized = new byte[LocalLmStudioResponseBody.MaximumModelListBytes + 1];
+        Encoding.UTF8.GetBytes("UNTRUSTED_RESPONSE_BODY_MUST_NOT_LEAK").CopyTo(oversized, 0);
+        var http = new FakeHttpHandler().Reply(HttpStatusCode.OK, oversized);
+        using var errors = new StringWriter();
+
+        var exit = LocalWorkerCommand.RunForTesting(Args(fixture, config, input, output), TextWriter.Null, errors, http, clock, null);
+
+        Assert.Equal(1, exit);
+        Assert.Single(http.Requests);
+        Assert.Equal("previous\n", File.ReadAllText(output));
+        Assert.Equal(taskBefore, File.ReadAllBytes(fixture.TaskPath));
+        Assert.Equal(leaseBefore, File.ReadAllBytes(fixture.LeasePath));
+        Assert.Contains("response exceeds closed byte limit", errors.ToString(), StringComparison.Ordinal);
+        Assert.DoesNotContain("UNTRUSTED_RESPONSE_BODY_MUST_NOT_LEAK", errors.ToString(), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Streamed_oversized_model_list_fails_closed_without_a_second_provider_request()
+    {
+        using var workspace = Workspace.Create();
+        var clock = new FakeClock(DateTimeOffset.UtcNow);
+        var fixture = ClaimedLocalTask.Create(workspace, clock, "BAR-27");
+        var config = workspace.Write("worker-config.json", Config());
+        var input = workspace.Write("worker-input.json", Input(InlineMaterial("note", "safe text")));
+        var output = workspace.Write("artifact.json", "previous\n");
+        var http = new FakeHttpHandler().ReplyStreamed(HttpStatusCode.OK, new byte[LocalLmStudioResponseBody.MaximumModelListBytes + 1]);
+
+        Assert.Equal(1, Run(fixture, config, input, output, http, clock));
+        Assert.Single(http.Requests);
+        Assert.Equal("previous\n", File.ReadAllText(output));
+    }
+
+    [Fact]
+    public void Oversized_chat_response_fails_closed_and_preserves_existing_artifact()
+    {
+        using var workspace = Workspace.Create();
+        var clock = new FakeClock(DateTimeOffset.UtcNow);
+        var fixture = ClaimedLocalTask.Create(workspace, clock, "BAR-27");
+        var config = workspace.Write("worker-config.json", Config());
+        var input = workspace.Write("worker-input.json", Input(InlineMaterial("note", "safe text")));
+        var output = workspace.Write("artifact.json", "previous\n");
+        var http = new FakeHttpHandler()
+            .Reply(HttpStatusCode.OK, UsableModelList())
+            .Reply(HttpStatusCode.OK, new byte[LocalLmStudioResponseBody.MaximumChatCompletionBytes + 1]);
+
+        Assert.Equal(1, Run(fixture, config, input, output, http, clock));
+        Assert.Equal(2, http.Requests.Count);
+        Assert.Equal("previous\n", File.ReadAllText(output));
+    }
+
+    [Fact]
+    public void Doctor_degrades_safely_when_its_model_list_exceeds_the_closed_byte_limit()
+    {
+        var handler = new FakeHttpHandler().Reply(HttpStatusCode.OK, new byte[LocalLmStudioResponseBody.MaximumModelListBytes + 1]);
+        var probe = new SystemDoctorProbe(handler);
+
+        var result = probe.ProbeLocal(new Uri("http://127.0.0.1:1234"));
+
+        Assert.Equal("DEGRADED", result.Stage);
+        Assert.Contains("byte limit", result.Diagnostic, StringComparison.Ordinal);
+        Assert.Single(handler.Requests);
+    }
+
+    [Theory]
+    [InlineData("{\"models\":[],\"models\":[]}")]
+    [InlineData("{\"models\":[{\"key\":\"approved-local\",\"key\":\"other\",\"type\":\"llm\"}]}")]
+    [InlineData("{\"models\":[{\"key\":\"approved-local\",\"type\":\"embedding\",\"type\":\"llm\"}]}")]
+    [InlineData("{\"models\":[{\"key\":\"approved-local\",\"type\":\"llm\",\"publisher\":\"one\",\"publisher\":\"two\"}]}")]
+    public void Duplicate_model_list_properties_fail_closed_without_replacing_an_artifact(string modelList)
+    {
+        using var workspace = Workspace.Create();
+        var clock = new FakeClock(DateTimeOffset.UtcNow);
+        var fixture = ClaimedLocalTask.Create(workspace, clock, "BAR-27");
+        var config = workspace.Write("worker-config.json", Config());
+        var input = workspace.Write("worker-input.json", Input(InlineMaterial("note", "safe text")));
+        var output = workspace.Write("artifact.json", "previous\n");
+        var http = new FakeHttpHandler().Reply(HttpStatusCode.OK, Encoding.UTF8.GetBytes(modelList));
+
+        Assert.Equal(1, Run(fixture, config, input, output, http, clock));
+        Assert.Single(http.Requests);
+        Assert.Equal("previous\n", File.ReadAllText(output));
+    }
+
+    [Theory]
+    [InlineData("{\"choices\":[],\"choices\":[]}")]
+    [InlineData("{\"choices\":[{\"message\":{\"content\":\"analysis\"},\"message\":{\"content\":\"contradiction\"}}]}")]
+    [InlineData("{\"choices\":[{\"message\":{\"content\":\"analysis\",\"content\":\"contradiction\"}}]}")]
+    public void Duplicate_chat_response_properties_fail_closed_without_replacing_an_artifact(string completion)
+    {
+        using var workspace = Workspace.Create();
+        var clock = new FakeClock(DateTimeOffset.UtcNow);
+        var fixture = ClaimedLocalTask.Create(workspace, clock, "BAR-27");
+        var config = workspace.Write("worker-config.json", Config());
+        var input = workspace.Write("worker-input.json", Input(InlineMaterial("note", "safe text")));
+        var output = workspace.Write("artifact.json", "previous\n");
+        var http = new FakeHttpHandler()
+            .Reply(HttpStatusCode.OK, UsableModelList())
+            .Reply(HttpStatusCode.OK, Encoding.UTF8.GetBytes(completion));
+
+        Assert.Equal(1, Run(fixture, config, input, output, http, clock));
+        Assert.Equal(2, http.Requests.Count);
+        Assert.Equal("previous\n", File.ReadAllText(output));
+    }
+
+    [Fact]
+    public void Provider_prompt_contains_only_the_closed_operation_and_ordered_materials_not_task_packet_metadata()
+    {
+        using var workspace = Workspace.Create();
+        var clock = new FakeClock(DateTimeOffset.UtcNow);
+        var fixture = ClaimedLocalTask.Create(workspace, clock, "BAR-27");
+        var task = workspace.Write("surface-task.yaml", ClaimedLocalTask.TaskYaml(fixture.Lease)
+            .Replace("Produce read-only contract extraction.", "UNAPPROVED_OBJECTIVE", StringComparison.Ordinal)
+            .Replace("https://linear.app/baronet/issue/BAR-27/tlaw-auto-002-local-lm-studio-read-only-worker", "https://example.invalid/UNAPPROVED_SOURCE", StringComparison.Ordinal)
+            .Replace("task/BAR-27-lmstudio-readonly-boundary", "UNAPPROVED_WORKTREE", StringComparison.Ordinal));
+        var config = workspace.Write("worker-config.json", Config());
+        var input = workspace.Write("worker-input.json", Input(InlineMaterial("first", "FIRST_MATERIAL"), InlineMaterial("second", "SECOND_MATERIAL")));
+        var output = Path.Combine(workspace.Path, "artifact.json");
+        var http = ReadyHttp("read-only analysis");
+
+        Assert.Equal(0, LocalWorkerCommand.RunForTesting(Args(task, fixture.StorePath, config, input, output), TextWriter.Null, TextWriter.Null, http, clock, null));
+        using var request = JsonDocument.Parse(http.Requests[1].Body);
+        var user = request.RootElement.GetProperty("messages")[1].GetProperty("content").GetString()!;
+        Assert.Contains("contract_extraction", user, StringComparison.Ordinal);
+        Assert.Contains("first", user, StringComparison.Ordinal);
+        Assert.Contains("second", user, StringComparison.Ordinal);
+        Assert.Contains("FIRST_MATERIAL", user, StringComparison.Ordinal);
+        Assert.Contains("SECOND_MATERIAL", user, StringComparison.Ordinal);
+        Assert.Contains(Sha256(Encoding.UTF8.GetBytes("FIRST_MATERIAL")), user, StringComparison.Ordinal);
+        Assert.Contains(Sha256(Encoding.UTF8.GetBytes("SECOND_MATERIAL")), user, StringComparison.Ordinal);
+        Assert.True(user.IndexOf("first", StringComparison.Ordinal) < user.IndexOf("second", StringComparison.Ordinal));
+        Assert.DoesNotContain("UNAPPROVED_OBJECTIVE", user, StringComparison.Ordinal);
+        Assert.DoesNotContain("BAR-27", user, StringComparison.Ordinal);
+        Assert.DoesNotContain("UNAPPROVED_SOURCE", user, StringComparison.Ordinal);
+        Assert.DoesNotContain("UNAPPROVED_WORKTREE", user, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void Task_and_lease_identity_must_match_exactly()
     {
         using var workspace = Workspace.Create();
@@ -348,11 +495,13 @@ public sealed class LocalWorkerCommandTests
     private static string[] Args(string task, string store, string config, string input, string output) => ["local-worker", "run", "--task", task, "--lease-store", store, "--config", config, "--input", input, "--output", output];
 
     private static FakeHttpHandler ReadyHttp(string analysis) => new FakeHttpHandler()
-        .Reply(HttpStatusCode.OK, "{\"models\":[{\"key\":\"approved-local\",\"type\":\"llm\",\"display_name\":\"Approved\",\"publisher\":\"local\",\"architecture\":\"qwen\"}]}"u8.ToArray())
+        .Reply(HttpStatusCode.OK, UsableModelList())
         .Reply(HttpStatusCode.OK, Encoding.UTF8.GetBytes(JsonSerializer.Serialize(new
         {
             choices = new[] { new { message = new { content = analysis } } }
         })));
+
+    private static byte[] UsableModelList() => "{\"models\":[{\"key\":\"approved-local\",\"type\":\"llm\",\"display_name\":\"Approved\",\"publisher\":\"local\",\"architecture\":\"qwen\"}]}"u8.ToArray();
 
     private static string Config(string endpoint = "http://127.0.0.1:1234", string? apiTokenEnvironment = null) => JsonSerializer.Serialize(new Dictionary<string, object?>
     {
@@ -403,6 +552,12 @@ public sealed class LocalWorkerCommandTests
         internal FakeHttpHandler Reply(HttpStatusCode status, byte[] body)
         {
             _responses.Enqueue(_ => new HttpResponseMessage(status) { Content = new ByteArrayContent(body) });
+            return this;
+        }
+
+        internal FakeHttpHandler ReplyStreamed(HttpStatusCode status, byte[] body)
+        {
+            _responses.Enqueue(_ => new HttpResponseMessage(status) { Content = new StreamContent(new MemoryStream(body, writable: false)) });
             return this;
         }
 
