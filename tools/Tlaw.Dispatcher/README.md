@@ -200,6 +200,20 @@ Before the model-list probe, chat request, and publication, the worker holds the
 
 The only output is a stable UTF-8/no-BOM, LF-terminated `tlaw.local-worker-artifact/v1` JSON artifact. It records exact task/claim identity, operation, sanitized model metadata, ordered material hashes, prompt and exact response-byte hashes, untrusted analysis, and `non_authoritative: true` / `commands_executed: false`. Artifact validation completes before atomic replacement; a failure leaves an existing output, repository material, task, and lease unchanged.
 
+## Local artifact correlation
+
+BAR-27 Increment 2 adds a trusted host-side correlation step after mandatory human or stronger-model inspection of the original untrusted artifact:
+
+```powershell
+dotnet run --configuration Release --project tools/Tlaw.Dispatcher -- local-worker complete --task <claimed-task-v2.yaml> --lease-store <absolute-path> --artifact <local-worker-artifact-v1.json> --output <agent-result-v1.yaml>
+```
+
+All options are required exactly once and `--lease-store` is absolute. The command reads only a schema-valid claimed local `read_only_analysis` task/v2 and strict UTF-8/no-BOM, LF-only Increment 1 artifact, then holds the existing per-task lock and rechecks the exact active local lease identity and canonical timestamps before correlation and publication. It never calls LM Studio or mutates a lease.
+
+The artifact and result output must remain outside the repository; the output must also remain outside `.git` and the lease store and cannot alias either input after resolving available symbolic links or junctions. On success it atomically writes one deterministic `tlaw.agent-result/v1` `success` packet with the fixed summary `Validated local read-only analysis artifact produced.` Its canonical file evidence identifies the artifact schema, exact artifact-byte SHA-256, closed operation, model key, and non-authoritative/no-command flags. It does not copy model analysis into the result, synthesize failures, contact Linear/GitHub, run Git/shell commands, or mark anything Done.
+
+The explicit manual sequence is `local-worker run → human/stronger-model inspection of untrusted artifact → local-worker complete → ingest-result → finalize-result → guarded linear transition to In Review`. `complete` only creates the existing result/v1 envelope; existing ingestion, finalization, and guarded Linear transition stay the only lifecycle path, and success finalization maps only to `in_review`, never `Done`.
+
 ## Deliberate limitations
 
 `linear snapshot` reads one minimal live Linear card, and `linear transition` performs only its documented, guarded Linear mutations after correlating typed repository-native evidence. Every other dispatcher evidence command — packet preparation, local routing, local lease acquisition, result ingestion, result finalization, review ingestion, handoff preparation, handoff ingestion, and handoff finalization — remains local and performs no network write. `doctor` performs readiness probes only. The dispatcher still writes no GitHub, does not merge, and does not launch agents; provider adapters, agent launch, and successor routing need separately approved increments. BAR-26 is not complete until BAR-41 is independently verified, merged, and post-merge CI succeeds.

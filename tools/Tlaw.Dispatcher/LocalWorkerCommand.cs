@@ -100,7 +100,7 @@ public static class LocalWorkerCommand
         }
     }
 
-    private static TaskV2Packet ReadLocalTask(string path)
+    internal static TaskV2Packet ReadLocalTask(string path)
     {
         var registry = PacketSchemaRegistry.Load(Path.Combine(TaskPacketCommand.FindRepositoryRoot(), "docs", "agent", "schemas"));
         var validation = PacketValidator.Validate(TaskPacketCommand.ReadUtf8(path), registry);
@@ -223,6 +223,8 @@ internal sealed record LocalWorkerInputManifest(string Operation, IReadOnlyList<
         "contract_extraction", "acceptance_criteria_matrix", "test_case_draft", "document_comparison", "preliminary_review", "prompt_task_packet_draft"
     };
 
+    internal static bool IsAllowedOperation(string value) => AllowedOperations.Contains(value);
+
     internal static LocalWorkerInputManifest Parse(string json)
     {
         using var document = LocalWorkerJson.ParseObject(json, "Worker input");
@@ -234,7 +236,7 @@ internal sealed record LocalWorkerInputManifest(string Operation, IReadOnlyList<
         }
 
         var operation = LocalWorkerJson.RequiredString(root, "operation", "Worker input");
-        if (!AllowedOperations.Contains(operation))
+        if (!IsAllowedOperation(operation))
         {
             throw new LocalWorkerCommandException("Worker input operation is not in the closed operation set.");
         }
@@ -702,9 +704,10 @@ internal static class LocalWorkerPolicy
         if (!task.IsClaimed || !string.Equals(task.ClaimedBy, "local", StringComparison.Ordinal) ||
             !task.EligibleAgents.Contains("local", StringComparer.Ordinal) ||
             !string.Equals(task.WorkType, "read_only_analysis", StringComparison.Ordinal) ||
-            !string.Equals(task.AutonomyLevel, "read_only", StringComparison.Ordinal))
+            !string.Equals(task.AutonomyLevel, "read_only", StringComparison.Ordinal) ||
+            !task.Delivery.MergeForbidden)
         {
-            throw new LocalWorkerCommandException("Worker accepts only a fully claimed local read_only_analysis task with read_only autonomy.");
+            throw new LocalWorkerCommandException("Worker accepts only a fully claimed local read_only_analysis task with read_only autonomy and merge_forbidden delivery.");
         }
     }
 }
@@ -715,19 +718,40 @@ internal static class LocalWorkerResponsePolicy
         @"(?im)(?:\b(?:build|tests?)\b[^\r\n]{0,160}\b(?:pass(?:ed|es)?|fail(?:ed|s)?|succeed(?:ed|s)?|error(?:s)?|green|red|zero|0)\b|\b(?:pass(?:ed|es)?|fail(?:ed|s)?|succeed(?:ed|s)?)\b[^\r\n]{0,80}\b(?:build|tests?)\b)",
         RegexOptions.CultureInvariant,
         TimeSpan.FromMilliseconds(100));
+    private static readonly Regex CommandExecutionClaim = new(
+        @"(?im)(?:\b(?:ran|executed|invoked)\b[^\r\n]{0,120}\b(?:commands?|build|tests?)\b|\b(?:commands?|build|tests?)\b[^\r\n]{0,80}\b(?:were|was)\s+(?:run|executed)\b)",
+        RegexOptions.CultureInvariant,
+        TimeSpan.FromMilliseconds(100));
 
     internal static void Validate(string response)
     {
-        if (string.IsNullOrWhiteSpace(response) || response.Length > 64_000 || LocalWorkerText.HasForbiddenControl(response) || VerificationClaim.IsMatch(response))
+        if (string.IsNullOrWhiteSpace(response) || response.Length > 64_000 || LocalWorkerText.HasForbiddenControl(response) || VerificationClaim.IsMatch(response) || CommandExecutionClaim.IsMatch(response))
         {
             throw new LocalWorkerCommandException("LM Studio response is empty, unsafe, or contains an unverified verification claim.");
         }
     }
 }
 
+internal sealed record LocalWorkerArtifactMaterial(string Identity, string Sha256);
+
+internal sealed record LocalWorkerArtifactPacket(
+    string TaskId,
+    string ClaimedBy,
+    string ClaimId,
+    string ClaimStartedAt,
+    string ClaimExpiresAt,
+    string Operation,
+    LocalLmStudioModel Model,
+    IReadOnlyList<LocalWorkerArtifactMaterial> Materials,
+    string EffectivePromptSha256,
+    string ProviderResponseSha256,
+    string Analysis);
+
 internal static class LocalWorkerArtifact
 {
     private static readonly string[] OrderedProperties = ["schema", "task_id", "claimed_by", "claim_id", "claim_started_at", "claim_expires_at", "operation", "model", "materials", "effective_prompt_sha256", "provider_response_sha256", "analysis", "non_authoritative", "commands_executed"];
+    private static readonly string[] OrderedModelProperties = ["key", "type", "display_name", "publisher", "architecture"];
+    private static readonly string[] OrderedMaterialProperties = ["identity", "sha256"];
 
     internal static string Render(TaskV2Packet task, string operation, LocalLmStudioModel model, IReadOnlyList<LocalWorkerMaterial> materials, LocalWorkerPrompt prompt, LocalLmStudioResponse response)
     {
@@ -778,7 +802,9 @@ internal static class LocalWorkerArtifact
             .Replace("\r\n", "\n", StringComparison.Ordinal);
     }
 
-    internal static void Validate(string artifact)
+    internal static void Validate(string artifact) => _ = Parse(artifact);
+
+    internal static LocalWorkerArtifactPacket Parse(string artifact)
     {
         if (!artifact.EndsWith('\n') || artifact.Contains('\r') || artifact.IndexOf('\0') >= 0)
         {
@@ -788,6 +814,7 @@ internal static class LocalWorkerArtifact
         using var document = LocalWorkerJson.ParseObject(artifact, "Worker artifact");
         var root = document.RootElement;
         var names = root.EnumerateObject().Select(property => property.Name).ToArray();
+        LocalWorkerJson.RequireClosedProperties(root, OrderedProperties.ToHashSet(StringComparer.Ordinal), "Worker artifact");
         if (!names.SequenceEqual(OrderedProperties, StringComparer.Ordinal) ||
             !string.Equals(LocalWorkerJson.RequiredString(root, "schema", "Worker artifact"), "tlaw.local-worker-artifact/v1", StringComparison.Ordinal) ||
             !root.TryGetProperty("non_authoritative", out var authoritative) || authoritative.ValueKind != JsonValueKind.True ||
@@ -795,6 +822,133 @@ internal static class LocalWorkerArtifact
         {
             throw new LocalWorkerCommandException("Worker artifact failed its strict closed-contract validation.");
         }
+
+        var taskId = RequiredIdentity(root, "task_id");
+        var claimedBy = RequiredIdentity(root, "claimed_by");
+        var claimId = RequiredIdentity(root, "claim_id");
+        var startedAt = RequiredCanonicalTimestamp(root, "claim_started_at");
+        var expiresAt = RequiredCanonicalTimestamp(root, "claim_expires_at");
+        var operation = RequiredIdentity(root, "operation");
+        if (!LocalWorkerInputManifest.IsAllowedOperation(operation))
+        {
+            throw new LocalWorkerCommandException("Worker artifact has an unsupported operation.");
+        }
+
+        var model = ParseModel(root);
+        var materials = ParseMaterials(root);
+        var effectivePromptSha256 = RequiredSha256(root, "effective_prompt_sha256");
+        var providerResponseSha256 = RequiredSha256(root, "provider_response_sha256");
+        var analysis = LocalWorkerJson.RequiredString(root, "analysis", "Worker artifact");
+        LocalWorkerResponsePolicy.Validate(analysis);
+        return new LocalWorkerArtifactPacket(taskId, claimedBy, claimId, startedAt, expiresAt, operation, model, materials, effectivePromptSha256, providerResponseSha256, analysis);
+    }
+
+    private static LocalLmStudioModel ParseModel(JsonElement root)
+    {
+        if (!root.TryGetProperty("model", out var model) || model.ValueKind != JsonValueKind.Object)
+        {
+            throw new LocalWorkerCommandException("Worker artifact model is invalid.");
+        }
+
+        LocalWorkerJson.RequireClosedProperties(model, OrderedModelProperties.ToHashSet(StringComparer.Ordinal), "Worker artifact model");
+        if (!model.EnumerateObject().Select(property => property.Name).SequenceEqual(OrderedModelProperties, StringComparer.Ordinal))
+        {
+            throw new LocalWorkerCommandException("Worker artifact model property order is invalid.");
+        }
+
+        var key = RequiredBoundedCleanString(model, "key", 256, "Worker artifact model");
+        var type = RequiredBoundedCleanString(model, "type", 64, "Worker artifact model");
+        if (!string.Equals(type, "llm", StringComparison.Ordinal))
+        {
+            throw new LocalWorkerCommandException("Worker artifact model type must be llm.");
+        }
+
+        return new LocalLmStudioModel(key, type, OptionalSanitizedMetadata(model, "display_name"), OptionalSanitizedMetadata(model, "publisher"), OptionalSanitizedMetadata(model, "architecture"));
+    }
+
+    private static IReadOnlyList<LocalWorkerArtifactMaterial> ParseMaterials(JsonElement root)
+    {
+        if (!root.TryGetProperty("materials", out var entries) || entries.ValueKind != JsonValueKind.Array || entries.GetArrayLength() is 0 or > LocalWorkerInputManifest.MaximumMaterialCount)
+        {
+            throw new LocalWorkerCommandException("Worker artifact materials are invalid.");
+        }
+
+        var identities = new HashSet<string>(StringComparer.Ordinal);
+        var result = new List<LocalWorkerArtifactMaterial>();
+        foreach (var entry in entries.EnumerateArray())
+        {
+            if (entry.ValueKind != JsonValueKind.Object)
+            {
+                throw new LocalWorkerCommandException("Worker artifact material is invalid.");
+            }
+
+            LocalWorkerJson.RequireClosedProperties(entry, OrderedMaterialProperties.ToHashSet(StringComparer.Ordinal), "Worker artifact material");
+            if (!entry.EnumerateObject().Select(property => property.Name).SequenceEqual(OrderedMaterialProperties, StringComparer.Ordinal))
+            {
+                throw new LocalWorkerCommandException("Worker artifact material property order is invalid.");
+            }
+
+            var identity = RequiredBoundedCleanString(entry, "identity", 128, "Worker artifact material");
+            if (!identities.Add(identity))
+            {
+                throw new LocalWorkerCommandException("Worker artifact material identity is duplicated.");
+            }
+
+            result.Add(new LocalWorkerArtifactMaterial(identity, RequiredSha256(entry, "sha256")));
+        }
+
+        return result;
+    }
+
+    private static string RequiredIdentity(JsonElement root, string name) => RequiredBoundedCleanString(root, name, 512, "Worker artifact");
+
+    private static string RequiredCanonicalTimestamp(JsonElement root, string name)
+    {
+        var value = RequiredIdentity(root, name);
+        if (!DateTime.TryParseExact(value, "yyyy-MM-dd'T'HH:mm:ss.fffffff'Z'", System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.AssumeUniversal | System.Globalization.DateTimeStyles.AdjustToUniversal, out var parsed) ||
+            !string.Equals(new DateTimeOffset(parsed, TimeSpan.Zero).ToString("yyyy-MM-dd'T'HH:mm:ss.fffffff'Z'", System.Globalization.CultureInfo.InvariantCulture), value, StringComparison.Ordinal))
+        {
+            throw new LocalWorkerCommandException($"Worker artifact property '{name}' must be a canonical UTC timestamp.");
+        }
+
+        return value;
+    }
+
+    private static string RequiredSha256(JsonElement root, string name)
+    {
+        var value = LocalWorkerJson.RequiredString(root, name, "Worker artifact");
+        if (value.Length != 64 || value.Any(character => !(character is >= '0' and <= '9' or >= 'a' and <= 'f')))
+        {
+            throw new LocalWorkerCommandException($"Worker artifact property '{name}' must be a lowercase SHA-256.");
+        }
+
+        return value;
+    }
+
+    private static string RequiredBoundedCleanString(JsonElement root, string name, int maximumLength, string subject)
+    {
+        var value = LocalWorkerJson.RequiredString(root, name, subject);
+        if (value.Length > maximumLength || value.Any(char.IsControl))
+        {
+            throw new LocalWorkerCommandException($"{subject} property '{name}' is invalid.");
+        }
+
+        return value;
+    }
+
+    private static string? OptionalSanitizedMetadata(JsonElement root, string name)
+    {
+        if (!root.TryGetProperty(name, out var property) || property.ValueKind == JsonValueKind.Null)
+        {
+            return null;
+        }
+
+        if (property.ValueKind != JsonValueKind.String || property.GetString() is not { } value || value.Length is 0 or > 256 || value.Any(char.IsControl))
+        {
+            throw new LocalWorkerCommandException($"Worker artifact model metadata '{name}' is invalid.");
+        }
+
+        return value;
     }
 }
 
@@ -811,6 +965,24 @@ internal static class LocalWorkerPathGuard
             SamePath(output, Resolve(options.TaskPath)) || SamePath(output, Resolve(options.ConfigPath)) || SamePath(output, Resolve(options.InputPath)))
         {
             throw new LocalWorkerCommandException("Worker output must be outside the repository and lease store and must not alias an input.");
+        }
+    }
+
+    internal static void ValidateComplete(string outputPath, string leaseStorePath, string taskPath, string artifactPath)
+    {
+        var output = Resolve(outputPath);
+        var repository = Resolve(TaskPacketCommand.FindRepositoryRoot());
+        var leaseStore = Resolve(leaseStorePath);
+        var task = Resolve(taskPath);
+        var artifact = Resolve(artifactPath);
+        if (IsAtOrWithin(artifact, repository))
+        {
+            throw new LocalWorkerCommandException("Worker artifact must remain outside the repository.");
+        }
+
+        if (IsAtOrWithin(output, repository) || IsAtOrWithin(output, leaseStore) || SamePath(output, task) || SamePath(output, artifact))
+        {
+            throw new LocalWorkerCommandException("Worker result output must be outside the repository and lease store and must not alias an input.");
         }
     }
 
@@ -879,7 +1051,11 @@ internal static class LocalWorkerJson
 
     internal static string ReadStrictUtf8(string path, string subject)
     {
-        var bytes = File.ReadAllBytes(path);
+        return DecodeStrictUtf8(File.ReadAllBytes(path), subject);
+    }
+
+    internal static string DecodeStrictUtf8(byte[] bytes, string subject)
+    {
         if (bytes.AsSpan().StartsWith(new byte[] { 0xEF, 0xBB, 0xBF })) throw new LocalWorkerCommandException($"{subject} must be UTF-8 without BOM.");
         try { return StrictUtf8.GetString(bytes); }
         catch (DecoderFallbackException) { throw new LocalWorkerCommandException($"{subject} is not valid UTF-8."); }
