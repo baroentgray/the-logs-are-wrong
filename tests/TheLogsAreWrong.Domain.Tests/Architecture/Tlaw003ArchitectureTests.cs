@@ -14,7 +14,9 @@ public sealed class Tlaw003ArchitectureTests
     {
         var sourceRoot = Path.Combine(AppContext.BaseDirectory, "DomainSources");
         var source = Directory.GetFiles(sourceRoot, "*.cs", SearchOption.AllDirectories)
-            .Where(path => path.Contains("\\Intents\\", StringComparison.Ordinal) || path.Contains("\\Runtime\\", StringComparison.Ordinal) || path.Contains("\\Logs\\", StringComparison.Ordinal))
+            .Where(path => Path.GetRelativePath(sourceRoot, path)
+                .Split([Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar], StringSplitOptions.RemoveEmptyEntries)
+                .Any(segment => segment is "Intents" or "Runtime" or "Logs"))
             .Select(File.ReadAllText)
             .ToArray();
         var forbidden = new[] { "Yaml", "UnityEngine", "FishNet", "Steamworks", "System.IO", "DateTime", "DateTimeOffset", "Stopwatch", "Timer", "Task", "Thread.Sleep", "File.", "Environment." };
