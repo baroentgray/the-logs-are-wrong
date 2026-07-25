@@ -13,7 +13,7 @@ public sealed record ActiveConfirmationTest
     public ActiveConfirmationTest(LogId logId, AnomalyId anomalyId, ConfirmationTestPlan plan, SimulationDuration accumulatedValidDuration, ServerTick? segmentStartedAt, ServerTick? dueAt, bool isRunning, ServerTick lastConditionBoundaryAt)
     {
         if (logId.IsDefault || anomalyId.IsDefault || plan is null || plan.AnomalyId != anomalyId || accumulatedValidDuration.IsDefault || accumulatedValidDuration < SimulationDuration.Zero || accumulatedValidDuration >= plan.Duration || lastConditionBoundaryAt.IsDefault) throw new ArgumentException("Invalid active confirmation test.");
-        if (isRunning != (segmentStartedAt.HasValue && dueAt.HasValue)) throw new ArgumentException("Running confirmation state requires exact segment ticks.");
+        if (segmentStartedAt.HasValue != dueAt.HasValue || isRunning != segmentStartedAt.HasValue) throw new ArgumentException("Running confirmation state requires both segment ticks; paused state requires neither.");
         var remaining = SimulationDuration.FromTicks(plan.Duration.Value - accumulatedValidDuration.Value);
         if (isRunning && (segmentStartedAt!.Value.IsDefault || dueAt!.Value.IsDefault || dueAt.Value != segmentStartedAt.Value + remaining)) throw new ArgumentException("Confirmation due tick is inconsistent.");
         LogId = logId; AnomalyId = anomalyId; Plan = plan; AccumulatedValidDuration = accumulatedValidDuration; SegmentStartedAt = segmentStartedAt; DueAt = dueAt; IsRunning = isRunning; LastConditionBoundaryAt = lastConditionBoundaryAt;

@@ -167,6 +167,19 @@ public sealed class ConfirmationTestLifecycleTests
         Assert.Throws<OverflowException>(() => Start(AtIntake("log_03"), "log_03", long.MaxValue - 1, LineNoise.QUIET, "sound_meter"));
     }
 
+    [Fact]
+    public void Active_confirmation_requires_both_segment_ticks_when_running_and_neither_when_paused()
+    {
+        var plan = new ConfirmationTestPlanResolver(Fixture.LoadP0().Anomalies).GetPlan(AnomalyId.From("PENITENT_TRUNK"));
+        var logId = LogId.From("log_03");
+        var tick = ServerTick.From(10);
+
+        _ = new ActiveConfirmationTest(logId, plan.AnomalyId, plan, SimulationDuration.Zero, null, null, false, tick);
+        _ = new ActiveConfirmationTest(logId, plan.AnomalyId, plan, SimulationDuration.Zero, tick, ServerTick.From(14), true, tick);
+        Assert.Throws<ArgumentException>(() => new ActiveConfirmationTest(logId, plan.AnomalyId, plan, SimulationDuration.Zero, tick, null, false, tick));
+        Assert.Throws<ArgumentException>(() => new ActiveConfirmationTest(logId, plan.AnomalyId, plan, SimulationDuration.Zero, null, ServerTick.From(14), false, tick));
+    }
+
     private static ConfirmationTestStartResult Start(ShiftRuntimeState state, string logId, long tick, LineNoise noise, params string[] tools) =>
         StartService.Start(state, LogId.From(logId), tools.Select(ItemId.From).ToImmutableHashSet(), ServerTick.From(tick), noise, Fixture.LoadP0().Anomalies);
 
