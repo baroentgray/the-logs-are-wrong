@@ -61,7 +61,7 @@ public sealed class ShiftRuntimeState
         ImmutableHashSet<IntentId> processedIntentIds,
         RuntimeInventory inventory,
         ImmutableDictionary<LogId, ProcedureProgress> procedureProgressByLog,
-        ActiveProcedureHold? activeProcedureHold)
+        ActiveProcedureHold? activeProcedureHold, ActiveConfirmationTest? activeConfirmationTest, ImmutableDictionary<LogId, ConfirmationTestResult> confirmationResultsByLog)
     {
         ShiftId = shiftId;
         ShiftSeed = shiftSeed;
@@ -73,6 +73,8 @@ public sealed class ShiftRuntimeState
         Inventory = inventory;
         ProcedureProgressByLog = procedureProgressByLog;
         ActiveProcedureHold = activeProcedureHold;
+        ActiveConfirmationTest = activeConfirmationTest;
+        ConfirmationResultsByLog = confirmationResultsByLog;
     }
 
     public ShiftId ShiftId { get; }
@@ -83,6 +85,8 @@ public sealed class ShiftRuntimeState
     public RuntimeInventory Inventory { get; }
     public ImmutableDictionary<LogId, ProcedureProgress> ProcedureProgressByLog { get; }
     public ActiveProcedureHold? ActiveProcedureHold { get; }
+    public ActiveConfirmationTest? ActiveConfirmationTest { get; }
+    public ImmutableDictionary<LogId, ConfirmationTestResult> ConfirmationResultsByLog { get; }
 
     public static ShiftRuntimeState Create(ShiftConfiguration configuration)
     {
@@ -151,7 +155,7 @@ public sealed class ShiftRuntimeState
             ImmutableHashSet<IntentId>.Empty,
             inventory,
             ImmutableDictionary<LogId, ProcedureProgress>.Empty,
-            null);
+            null, null, ImmutableDictionary<LogId, ConfirmationTestResult>.Empty);
     }
 
     public bool TryGetLog(LogId logId, out LogRuntimeState log)
@@ -191,7 +195,7 @@ public sealed class ShiftRuntimeState
 
     public bool ValueEquals(ShiftRuntimeState? other)
     {
-        if (other is null || ShiftId != other.ShiftId || ShiftSeed != other.ShiftSeed || StateVersion != other.StateVersion || Logs.Length != other.Logs.Length || !ProcessedIntentIds.SetEquals(other.ProcessedIntentIds) || _capacities.Count != other._capacities.Count || !Inventory.ValueEquals(other.Inventory) || ProcedureProgressByLog.Count != other.ProcedureProgressByLog.Count || ActiveProcedureHold != other.ActiveProcedureHold)
+        if (other is null || ShiftId != other.ShiftId || ShiftSeed != other.ShiftSeed || StateVersion != other.StateVersion || Logs.Length != other.Logs.Length || !ProcessedIntentIds.SetEquals(other.ProcessedIntentIds) || _capacities.Count != other._capacities.Count || !Inventory.ValueEquals(other.Inventory) || ProcedureProgressByLog.Count != other.ProcedureProgressByLog.Count || ActiveProcedureHold != other.ActiveProcedureHold || !ConfirmationEqual(ActiveConfirmationTest, other.ActiveConfirmationTest) || ConfirmationResultsByLog.Count != other.ConfirmationResultsByLog.Count)
         {
             return false;
         }
@@ -207,7 +211,8 @@ public sealed class ShiftRuntimeState
         }
 
         return _capacities.All(pair => other._capacities.TryGetValue(pair.Key, out var otherCapacity) && pair.Value == otherCapacity) &&
-            ProcedureProgressByLog.All(pair => other.ProcedureProgressByLog.TryGetValue(pair.Key, out var otherProgress) && pair.Value == otherProgress);
+            ProcedureProgressByLog.All(pair => other.ProcedureProgressByLog.TryGetValue(pair.Key, out var otherProgress) && pair.Value == otherProgress) &&
+            ConfirmationResultsByLog.All(pair => other.ConfirmationResultsByLog.TryGetValue(pair.Key, out var otherResult) && ResultEqual(pair.Value, otherResult));
     }
 
     internal bool TryGetLog(TargetId targetId, out LogRuntimeState log)
@@ -249,7 +254,8 @@ public sealed class ShiftRuntimeState
         var activeProcedureHold = ActiveProcedureHold is { } hold && hold.LogId == logId && toState != LogState.AT_PROCEDURE
             ? null
             : ActiveProcedureHold;
-        return new ShiftRuntimeState(ShiftId, ShiftSeed, StateVersion.Next(), updatedLogs, _logIndexes, _capacities, processed, Inventory, ProcedureProgressByLog, activeProcedureHold);
+        var activeConfirmation = ActiveConfirmationTest is { } test && test.LogId == logId && toState != LogState.AT_INTAKE ? null : ActiveConfirmationTest;
+        return new ShiftRuntimeState(ShiftId, ShiftSeed, StateVersion.Next(), updatedLogs, _logIndexes, _capacities, processed, Inventory, ProcedureProgressByLog, activeProcedureHold, activeConfirmation, ConfirmationResultsByLog);
     }
 
     internal ShiftRuntimeState ApplyItemAction(
@@ -289,7 +295,7 @@ public sealed class ShiftRuntimeState
             ProcessedIntentIds,
             inventory,
             updatedProgress,
-            activeProcedureHold);
+            activeProcedureHold, ActiveConfirmationTest, ConfirmationResultsByLog);
     }
 
     internal ShiftRuntimeState StartActiveProcedureHold(ActiveProcedureHold activeProcedureHold)
@@ -315,7 +321,7 @@ public sealed class ShiftRuntimeState
             ProcessedIntentIds,
             Inventory,
             ProcedureProgressByLog,
-            activeProcedureHold);
+            activeProcedureHold, ActiveConfirmationTest, ConfirmationResultsByLog);
     }
 
     internal ShiftRuntimeState ClearActiveProcedureHold()
@@ -335,6 +341,15 @@ public sealed class ShiftRuntimeState
             ProcessedIntentIds,
             Inventory,
             ProcedureProgressByLog,
-            null);
+            null, ActiveConfirmationTest, ConfirmationResultsByLog);
     }
+
+    public bool TryGetConfirmationResult(LogId logId, out ConfirmationTestResult result) => ConfirmationResultsByLog.TryGetValue(logId, out result!);
+    internal ShiftRuntimeState WithActiveConfirmation(ActiveConfirmationTest? active, ConfirmationTestResult? result = null)
+    {
+        var results = result is null ? ConfirmationResultsByLog : ConfirmationResultsByLog.Add(result.LogId, result);
+        return new ShiftRuntimeState(ShiftId, ShiftSeed, StateVersion.Next(), Logs, _logIndexes, _capacities, ProcessedIntentIds, Inventory, ProcedureProgressByLog, ActiveProcedureHold, active, results);
+    }
+    private static bool ConfirmationEqual(ActiveConfirmationTest? left, ActiveConfirmationTest? right) => left is null ? right is null : right is not null && left.LogId == right.LogId && left.AnomalyId == right.AnomalyId && left.AccumulatedValidDuration == right.AccumulatedValidDuration && left.SegmentStartedAt == right.SegmentStartedAt && left.DueAt == right.DueAt && left.IsRunning == right.IsRunning && left.LastConditionBoundaryAt == right.LastConditionBoundaryAt && left.Plan.AnomalyId == right.Plan.AnomalyId && left.Plan.RequiredTools.SetEquals(right.Plan.RequiredTools) && left.Plan.Duration == right.Plan.Duration && left.Plan.Continuous == right.Plan.Continuous && left.Plan.RequiredLineNoise == right.Plan.RequiredLineNoise && left.Plan.ResetWhenConditionLost == right.Plan.ResetWhenConditionLost && left.Plan.Result == right.Plan.Result;
+    private static bool ResultEqual(ConfirmationTestResult left, ConfirmationTestResult right) => left.LogId == right.LogId && left.AnomalyId == right.AnomalyId && left.Result == right.Result && left.RequiredTools.SetEquals(right.RequiredTools) && left.Duration == right.Duration && left.CompletedAt == right.CompletedAt;
 }
