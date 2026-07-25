@@ -41,6 +41,9 @@ public sealed record LogRuntimeState
     public ImmutableHashSet<FlagId> Flags { get; }
 
     internal LogRuntimeState WithState(LogState state) => new(LogId, TrueSpecies, DeclaredSpecies, Anomaly, state, Flags);
+
+    internal LogRuntimeState WithAdditionalFlags(ImmutableHashSet<FlagId> flags) =>
+        new(LogId, TrueSpecies, DeclaredSpecies, Anomaly, State, Flags.Union(flags).ToImmutableHashSet());
 }
 
 public sealed class ShiftRuntimeState
@@ -55,7 +58,9 @@ public sealed class ShiftRuntimeState
         ImmutableArray<LogRuntimeState> logs,
         ImmutableDictionary<LogId, int> logIndexes,
         ImmutableDictionary<NodeId, NodeCapacity> capacities,
-        ImmutableHashSet<IntentId> processedIntentIds)
+        ImmutableHashSet<IntentId> processedIntentIds,
+        RuntimeInventory inventory,
+        ImmutableDictionary<LogId, ProcedureProgress> procedureProgressByLog)
     {
         ShiftId = shiftId;
         ShiftSeed = shiftSeed;
@@ -64,6 +69,8 @@ public sealed class ShiftRuntimeState
         _logIndexes = logIndexes;
         _capacities = capacities;
         ProcessedIntentIds = processedIntentIds;
+        Inventory = inventory;
+        ProcedureProgressByLog = procedureProgressByLog;
     }
 
     public ShiftId ShiftId { get; }
@@ -71,6 +78,8 @@ public sealed class ShiftRuntimeState
     public StateVersion StateVersion { get; }
     public ImmutableArray<LogRuntimeState> Logs { get; }
     public ImmutableHashSet<IntentId> ProcessedIntentIds { get; }
+    public RuntimeInventory Inventory { get; }
+    public ImmutableDictionary<LogId, ProcedureProgress> ProcedureProgressByLog { get; }
 
     public static ShiftRuntimeState Create(ShiftConfiguration configuration)
     {
@@ -82,12 +91,14 @@ public sealed class ShiftRuntimeState
 
         ArgumentNullException.ThrowIfNull(configuration.Scheduler);
         ArgumentNullException.ThrowIfNull(configuration.Scheduler.Capacities);
+        ArgumentNullException.ThrowIfNull(configuration.Resources);
         if (configuration.Manifest.IsDefaultOrEmpty)
         {
             throw new ArgumentException("Shift configuration must contain a manifest.", nameof(configuration));
         }
 
         var capacities = configuration.Scheduler.Capacities;
+        var inventory = RuntimeInventory.Create(configuration.Resources);
         foreach (var node in Enum.GetValues<NodeId>())
         {
             if (node == NodeId.SUPPLY_QUEUE)
@@ -134,7 +145,9 @@ public sealed class ShiftRuntimeState
             logs.MoveToImmutable(),
             indexes.ToImmutable(),
             capacities,
-            ImmutableHashSet<IntentId>.Empty);
+            ImmutableHashSet<IntentId>.Empty,
+            inventory,
+            ImmutableDictionary<LogId, ProcedureProgress>.Empty);
     }
 
     public bool TryGetLog(LogId logId, out LogRuntimeState log)
@@ -156,9 +169,25 @@ public sealed class ShiftRuntimeState
 
     public int GetNodeOccupancy(NodeId node) => Logs.Count(log => LogStateNodes.GetNode(log.State) == node);
 
+    public bool TryGetProcedureProgress(LogId logId, out ProcedureProgress progress)
+    {
+        if (logId.IsDefault)
+        {
+            throw new ArgumentException("Log identifier must be initialized.", nameof(logId));
+        }
+
+        if (ProcedureProgressByLog.TryGetValue(logId, out progress!))
+        {
+            return true;
+        }
+
+        progress = default!;
+        return false;
+    }
+
     public bool ValueEquals(ShiftRuntimeState? other)
     {
-        if (other is null || ShiftId != other.ShiftId || ShiftSeed != other.ShiftSeed || StateVersion != other.StateVersion || Logs.Length != other.Logs.Length || !ProcessedIntentIds.SetEquals(other.ProcessedIntentIds) || _capacities.Count != other._capacities.Count)
+        if (other is null || ShiftId != other.ShiftId || ShiftSeed != other.ShiftSeed || StateVersion != other.StateVersion || Logs.Length != other.Logs.Length || !ProcessedIntentIds.SetEquals(other.ProcessedIntentIds) || _capacities.Count != other._capacities.Count || !Inventory.ValueEquals(other.Inventory) || ProcedureProgressByLog.Count != other.ProcedureProgressByLog.Count)
         {
             return false;
         }
@@ -173,7 +202,8 @@ public sealed class ShiftRuntimeState
             }
         }
 
-        return _capacities.All(pair => other._capacities.TryGetValue(pair.Key, out var otherCapacity) && pair.Value == otherCapacity);
+        return _capacities.All(pair => other._capacities.TryGetValue(pair.Key, out var otherCapacity) && pair.Value == otherCapacity) &&
+            ProcedureProgressByLog.All(pair => other.ProcedureProgressByLog.TryGetValue(pair.Key, out var otherProgress) && pair.Value == otherProgress);
     }
 
     internal bool TryGetLog(TargetId targetId, out LogRuntimeState log)
@@ -212,6 +242,37 @@ public sealed class ShiftRuntimeState
 
         var updatedLogs = Logs.SetItem(_logIndexes[logId], existing.WithState(toState));
         var processed = processedIntentId is { } intentId ? ProcessedIntentIds.Add(intentId) : ProcessedIntentIds;
-        return new ShiftRuntimeState(ShiftId, ShiftSeed, StateVersion.Next(), updatedLogs, _logIndexes, _capacities, processed);
+        return new ShiftRuntimeState(ShiftId, ShiftSeed, StateVersion.Next(), updatedLogs, _logIndexes, _capacities, processed, Inventory, ProcedureProgressByLog);
+    }
+
+    internal ShiftRuntimeState ApplyItemAction(
+        LogId logId,
+        RuntimeInventory inventory,
+        ProcedureProgress? progress,
+        ImmutableHashSet<FlagId> newlyGrantedFlags)
+    {
+        if (!TryGetLog(logId, out var existing))
+        {
+            throw new ArgumentException("Item action target must resolve to a manifest log.", nameof(logId));
+        }
+
+        ArgumentNullException.ThrowIfNull(inventory);
+        ArgumentNullException.ThrowIfNull(newlyGrantedFlags);
+        var updatedLogs = newlyGrantedFlags.IsEmpty
+            ? Logs
+            : Logs.SetItem(_logIndexes[logId], existing.WithAdditionalFlags(newlyGrantedFlags));
+        var updatedProgress = progress is null
+            ? ProcedureProgressByLog
+            : ProcedureProgressByLog.SetItem(logId, progress);
+        return new ShiftRuntimeState(
+            ShiftId,
+            ShiftSeed,
+            StateVersion.Next(),
+            updatedLogs,
+            _logIndexes,
+            _capacities,
+            ProcessedIntentIds,
+            inventory,
+            updatedProgress);
     }
 }
