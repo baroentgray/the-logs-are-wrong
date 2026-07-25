@@ -60,7 +60,8 @@ public sealed class ShiftRuntimeState
         ImmutableDictionary<NodeId, NodeCapacity> capacities,
         ImmutableHashSet<IntentId> processedIntentIds,
         RuntimeInventory inventory,
-        ImmutableDictionary<LogId, ProcedureProgress> procedureProgressByLog)
+        ImmutableDictionary<LogId, ProcedureProgress> procedureProgressByLog,
+        ActiveProcedureHold? activeProcedureHold)
     {
         ShiftId = shiftId;
         ShiftSeed = shiftSeed;
@@ -71,6 +72,7 @@ public sealed class ShiftRuntimeState
         ProcessedIntentIds = processedIntentIds;
         Inventory = inventory;
         ProcedureProgressByLog = procedureProgressByLog;
+        ActiveProcedureHold = activeProcedureHold;
     }
 
     public ShiftId ShiftId { get; }
@@ -80,6 +82,7 @@ public sealed class ShiftRuntimeState
     public ImmutableHashSet<IntentId> ProcessedIntentIds { get; }
     public RuntimeInventory Inventory { get; }
     public ImmutableDictionary<LogId, ProcedureProgress> ProcedureProgressByLog { get; }
+    public ActiveProcedureHold? ActiveProcedureHold { get; }
 
     public static ShiftRuntimeState Create(ShiftConfiguration configuration)
     {
@@ -147,7 +150,8 @@ public sealed class ShiftRuntimeState
             capacities,
             ImmutableHashSet<IntentId>.Empty,
             inventory,
-            ImmutableDictionary<LogId, ProcedureProgress>.Empty);
+            ImmutableDictionary<LogId, ProcedureProgress>.Empty,
+            null);
     }
 
     public bool TryGetLog(LogId logId, out LogRuntimeState log)
@@ -187,7 +191,7 @@ public sealed class ShiftRuntimeState
 
     public bool ValueEquals(ShiftRuntimeState? other)
     {
-        if (other is null || ShiftId != other.ShiftId || ShiftSeed != other.ShiftSeed || StateVersion != other.StateVersion || Logs.Length != other.Logs.Length || !ProcessedIntentIds.SetEquals(other.ProcessedIntentIds) || _capacities.Count != other._capacities.Count || !Inventory.ValueEquals(other.Inventory) || ProcedureProgressByLog.Count != other.ProcedureProgressByLog.Count)
+        if (other is null || ShiftId != other.ShiftId || ShiftSeed != other.ShiftSeed || StateVersion != other.StateVersion || Logs.Length != other.Logs.Length || !ProcessedIntentIds.SetEquals(other.ProcessedIntentIds) || _capacities.Count != other._capacities.Count || !Inventory.ValueEquals(other.Inventory) || ProcedureProgressByLog.Count != other.ProcedureProgressByLog.Count || ActiveProcedureHold != other.ActiveProcedureHold)
         {
             return false;
         }
@@ -242,7 +246,10 @@ public sealed class ShiftRuntimeState
 
         var updatedLogs = Logs.SetItem(_logIndexes[logId], existing.WithState(toState));
         var processed = processedIntentId is { } intentId ? ProcessedIntentIds.Add(intentId) : ProcessedIntentIds;
-        return new ShiftRuntimeState(ShiftId, ShiftSeed, StateVersion.Next(), updatedLogs, _logIndexes, _capacities, processed, Inventory, ProcedureProgressByLog);
+        var activeProcedureHold = ActiveProcedureHold is { } hold && hold.LogId == logId && toState != LogState.AT_PROCEDURE
+            ? null
+            : ActiveProcedureHold;
+        return new ShiftRuntimeState(ShiftId, ShiftSeed, StateVersion.Next(), updatedLogs, _logIndexes, _capacities, processed, Inventory, ProcedureProgressByLog, activeProcedureHold);
     }
 
     internal ShiftRuntimeState ApplyItemAction(
@@ -250,6 +257,14 @@ public sealed class ShiftRuntimeState
         RuntimeInventory inventory,
         ProcedureProgress? progress,
         ImmutableHashSet<FlagId> newlyGrantedFlags)
+        => ApplyItemAction(logId, inventory, progress, newlyGrantedFlags, ActiveProcedureHold);
+
+    internal ShiftRuntimeState ApplyItemAction(
+        LogId logId,
+        RuntimeInventory inventory,
+        ProcedureProgress? progress,
+        ImmutableHashSet<FlagId> newlyGrantedFlags,
+        ActiveProcedureHold? activeProcedureHold)
     {
         if (!TryGetLog(logId, out var existing))
         {
@@ -273,6 +288,53 @@ public sealed class ShiftRuntimeState
             _capacities,
             ProcessedIntentIds,
             inventory,
-            updatedProgress);
+            updatedProgress,
+            activeProcedureHold);
+    }
+
+    internal ShiftRuntimeState StartActiveProcedureHold(ActiveProcedureHold activeProcedureHold)
+    {
+        ArgumentNullException.ThrowIfNull(activeProcedureHold);
+        if (ActiveProcedureHold is not null)
+        {
+            throw new InvalidOperationException("Only one active procedure hold is permitted.");
+        }
+
+        if (!TryGetLog(activeProcedureHold.LogId, out var log) || log.State != LogState.AT_PROCEDURE || log.Anomaly != activeProcedureHold.AnomalyId)
+        {
+            throw new ArgumentException("Active procedure hold must match an anomalous log at procedure.", nameof(activeProcedureHold));
+        }
+
+        return new ShiftRuntimeState(
+            ShiftId,
+            ShiftSeed,
+            StateVersion.Next(),
+            Logs,
+            _logIndexes,
+            _capacities,
+            ProcessedIntentIds,
+            Inventory,
+            ProcedureProgressByLog,
+            activeProcedureHold);
+    }
+
+    internal ShiftRuntimeState ClearActiveProcedureHold()
+    {
+        if (ActiveProcedureHold is null)
+        {
+            throw new InvalidOperationException("There is no active procedure hold to clear.");
+        }
+
+        return new ShiftRuntimeState(
+            ShiftId,
+            ShiftSeed,
+            StateVersion.Next(),
+            Logs,
+            _logIndexes,
+            _capacities,
+            ProcessedIntentIds,
+            Inventory,
+            ProcedureProgressByLog,
+            null);
     }
 }

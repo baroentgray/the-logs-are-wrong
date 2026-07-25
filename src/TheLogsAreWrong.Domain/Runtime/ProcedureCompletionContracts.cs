@@ -172,6 +172,23 @@ public sealed class ItemActionCompletionService
     public ItemActionCompletionResult Complete(ShiftRuntimeState state, LogId logId, ItemId attemptedItem, AnomalyCatalog catalog)
     {
         ArgumentNullException.ThrowIfNull(state);
+        return CompleteCore(state, logId, attemptedItem, catalog, state.ActiveProcedureHold);
+    }
+
+    internal ItemActionCompletionResult CompleteActiveProcedureHold(ShiftRuntimeState state, ActiveProcedureHold activeProcedureHold, AnomalyCatalog catalog)
+    {
+        ArgumentNullException.ThrowIfNull(state);
+        ArgumentNullException.ThrowIfNull(activeProcedureHold);
+        return CompleteCore(state, activeProcedureHold.LogId, activeProcedureHold.AttemptedItem, catalog, null);
+    }
+
+    private static ItemActionCompletionResult CompleteCore(
+        ShiftRuntimeState state,
+        LogId logId,
+        ItemId attemptedItem,
+        AnomalyCatalog catalog,
+        ActiveProcedureHold? activeProcedureHold)
+    {
         if (logId.IsDefault)
         {
             throw new ArgumentException("Log identifier must be initialized.", nameof(logId));
@@ -222,19 +239,19 @@ public sealed class ItemActionCompletionService
                 return Reject(state, ProcedureCompletionRejectionReason.RepeatedCorrectStep);
             }
 
-            return CompleteConfiguredWrongAction(state, log, attemptedItem, catalog, priorProgress);
+            return CompleteConfiguredWrongAction(state, log, attemptedItem, catalog, priorProgress, activeProcedureHold);
         }
 
         var nextStepIndex = hasPriorProgress ? priorProgress.CompletedStepCount : 0;
         if (plan.Steps[nextStepIndex].Item == attemptedItem)
         {
-            return CompleteCorrectStep(state, log, plan, nextStepIndex, priorProgress, attemptedItem);
+            return CompleteCorrectStep(state, log, plan, nextStepIndex, priorProgress, attemptedItem, activeProcedureHold);
         }
 
         var wrongAction = WrongActionResolver.Resolve(log, attemptedItem, catalog);
         if (wrongAction is ConfiguredWrongActionResolution configured)
         {
-            return CompleteConfiguredWrongAction(state, log, configured, priorProgress);
+            return CompleteConfiguredWrongAction(state, log, configured, priorProgress, activeProcedureHold);
         }
 
         if (!state.Inventory.IsAvailable(attemptedItem))
@@ -253,7 +270,8 @@ public sealed class ItemActionCompletionService
         ProcedurePlan plan,
         int nextStepIndex,
         ProcedureProgress? priorProgress,
-        ItemId attemptedItem)
+        ItemId attemptedItem,
+        ActiveProcedureHold? activeProcedureHold)
     {
         var step = plan.Steps[nextStepIndex];
         if (!state.Inventory.IsAvailable(attemptedItem))
@@ -278,7 +296,7 @@ public sealed class ItemActionCompletionService
         var newlyGrantedFlags = progress.IsComplete
             ? plan.GrantedFlags.Except(log.Flags).ToImmutableHashSet()
             : ImmutableHashSet<FlagId>.Empty;
-        var updatedState = state.ApplyItemAction(log.LogId, inventory, progress, newlyGrantedFlags);
+        var updatedState = state.ApplyItemAction(log.LogId, inventory, progress, newlyGrantedFlags, activeProcedureHold);
         return new ItemActionCompletionAccepted(
             updatedState,
             new ItemActionCompletionDescriptor(
@@ -299,11 +317,12 @@ public sealed class ItemActionCompletionService
         LogRuntimeState log,
         ItemId attemptedItem,
         AnomalyCatalog catalog,
-        ProcedureProgress? priorProgress)
+        ProcedureProgress? priorProgress,
+        ActiveProcedureHold? activeProcedureHold)
     {
         var resolution = WrongActionResolver.Resolve(log, attemptedItem, catalog);
         return resolution is ConfiguredWrongActionResolution configured
-            ? CompleteConfiguredWrongAction(state, log, configured, priorProgress)
+            ? CompleteConfiguredWrongAction(state, log, configured, priorProgress, activeProcedureHold)
             : Reject(state, state.Inventory.IsAvailable(attemptedItem)
                 ? ProcedureCompletionRejectionReason.UnconfiguredWrongAction
                 : ProcedureCompletionRejectionReason.MissingItem);
@@ -313,7 +332,8 @@ public sealed class ItemActionCompletionService
         ShiftRuntimeState state,
         LogRuntimeState log,
         ConfiguredWrongActionResolution configured,
-        ProcedureProgress? priorProgress)
+        ProcedureProgress? priorProgress,
+        ActiveProcedureHold? activeProcedureHold)
     {
         if (!configured.LeavesStateUnchanged)
         {
@@ -331,7 +351,7 @@ public sealed class ItemActionCompletionService
             return Reject(state, ProcedureCompletionRejectionReason.MissingItem);
         }
 
-        var updatedState = state.ApplyItemAction(log.LogId, inventory, null, ImmutableHashSet<FlagId>.Empty);
+        var updatedState = state.ApplyItemAction(log.LogId, inventory, null, ImmutableHashSet<FlagId>.Empty, activeProcedureHold);
         return new ItemActionCompletionAccepted(
             updatedState,
             new ItemActionCompletionDescriptor(
