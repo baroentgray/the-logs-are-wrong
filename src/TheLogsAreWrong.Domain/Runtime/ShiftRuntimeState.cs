@@ -327,6 +327,48 @@ public sealed class ShiftRuntimeState
             Line);
     }
 
+    internal ShiftRuntimeState ConsumePendingFeed(LogState destination)
+    {
+        if (PendingFeed is not { } pendingFeed)
+        {
+            throw new InvalidOperationException("A pending feed is required for scheduler-owned resolution.");
+        }
+
+        if (destination is not (LogState.AT_INTAKE or LogState.AT_FEED_GATE))
+        {
+            throw new ArgumentOutOfRangeException(nameof(destination), "Feed resolution accepts only intake or feed-gate destinations.");
+        }
+
+        if (!TryGetLog(pendingFeed.LogId, out var log) || log.State != LogState.SCHEDULED)
+        {
+            throw new InvalidOperationException("The pending feed must reserve an existing scheduled log.");
+        }
+
+        if (!CanEnter(destination))
+        {
+            throw new InvalidOperationException("The scheduler-owned feed destination must have capacity.");
+        }
+
+        var updatedLogs = Logs.SetItem(_logIndexes[pendingFeed.LogId], log.WithState(destination));
+        return new ShiftRuntimeState(
+            ShiftId,
+            ShiftSeed,
+            StateVersion.Next(),
+            updatedLogs,
+            _logIndexes,
+            _capacities,
+            ProcessedIntentIds,
+            null,
+            Inventory,
+            ProcedureProgressByLog,
+            ActiveProcedureHold,
+            ActiveConfirmationTest,
+            ConfirmationResultsByLog,
+            Containment,
+            ActiveContainmentRitual,
+            Line);
+    }
+
     internal ShiftRuntimeState ApplyTransition(LogId logId, LogState toState, IntentId? processedIntentId)
     {
         if (!TryGetLog(logId, out var existing))
