@@ -41,7 +41,8 @@ public sealed class Tlaw013ArchitectureTests
         var current = new DirectoryInfo(AppContext.BaseDirectory);
         while (current is not null)
         {
-            if (Directory.Exists(Path.Combine(current.FullName, ".git")))
+            var gitMarker = Path.Combine(current.FullName, ".git");
+            if (Directory.Exists(gitMarker) || File.Exists(gitMarker))
             {
                 return current.FullName;
             }
