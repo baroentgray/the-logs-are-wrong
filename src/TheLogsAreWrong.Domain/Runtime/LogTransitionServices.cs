@@ -34,7 +34,8 @@ public enum HostLogTransitionFailure
 {
     TargetNotFound,
     IllegalTransition,
-    TargetOccupied
+    TargetOccupied,
+    PendingFeedReserved
 }
 
 /// <summary>Host-only seam for future scheduler and saw orchestration. It performs no timing, event emission, or authority binding.</summary>
@@ -43,6 +44,11 @@ public sealed class HostLogTransitionService
     public HostLogTransitionResult Apply(ShiftRuntimeState state, LogId logId, LogState toState)
     {
         ArgumentNullException.ThrowIfNull(state);
+        if (state.PendingFeed is { } pending && pending.LogId == logId)
+        {
+            return new HostLogTransitionRejected(state, HostLogTransitionFailure.PendingFeedReserved);
+        }
+
         var attempt = LogTransitionExecutor.Apply(state, logId, toState, null);
         return attempt switch
         {

@@ -7,6 +7,7 @@ using TheLogsAreWrong.Domain.Intents;
 using TheLogsAreWrong.Domain.Line;
 using TheLogsAreWrong.Domain.Logs;
 using TheLogsAreWrong.Domain.Primitives;
+using TheLogsAreWrong.Domain.Scheduler;
 
 namespace TheLogsAreWrong.Domain.Runtime;
 
@@ -61,6 +62,7 @@ public sealed class ShiftRuntimeState
         ImmutableDictionary<LogId, int> logIndexes,
         ImmutableDictionary<NodeId, NodeCapacity> capacities,
         ImmutableHashSet<IntentId> processedIntentIds,
+        PendingFeedSchedule? pendingFeed,
         RuntimeInventory inventory,
         ImmutableDictionary<LogId, ProcedureProgress> procedureProgressByLog,
         ActiveProcedureHold? activeProcedureHold,
@@ -77,6 +79,7 @@ public sealed class ShiftRuntimeState
         _logIndexes = logIndexes;
         _capacities = capacities;
         ProcessedIntentIds = processedIntentIds;
+        PendingFeed = pendingFeed;
         Inventory = inventory;
         ProcedureProgressByLog = procedureProgressByLog;
         ActiveProcedureHold = activeProcedureHold;
@@ -92,6 +95,7 @@ public sealed class ShiftRuntimeState
     public StateVersion StateVersion { get; }
     public ImmutableArray<LogRuntimeState> Logs { get; }
     public ImmutableHashSet<IntentId> ProcessedIntentIds { get; }
+    public PendingFeedSchedule? PendingFeed { get; }
     public RuntimeInventory Inventory { get; }
     public ImmutableDictionary<LogId, ProcedureProgress> ProcedureProgressByLog { get; }
     public ActiveProcedureHold? ActiveProcedureHold { get; }
@@ -166,6 +170,7 @@ public sealed class ShiftRuntimeState
             indexes.ToImmutable(),
             capacities,
             ImmutableHashSet<IntentId>.Empty,
+            null,
             inventory,
             ImmutableDictionary<LogId, ProcedureProgress>.Empty,
             null,
@@ -213,7 +218,7 @@ public sealed class ShiftRuntimeState
 
     public bool ValueEquals(ShiftRuntimeState? other)
     {
-        if (other is null || ShiftId != other.ShiftId || ShiftSeed != other.ShiftSeed || StateVersion != other.StateVersion || Logs.Length != other.Logs.Length || !ProcessedIntentIds.SetEquals(other.ProcessedIntentIds) || _capacities.Count != other._capacities.Count || !Inventory.ValueEquals(other.Inventory) || ProcedureProgressByLog.Count != other.ProcedureProgressByLog.Count || ActiveProcedureHold != other.ActiveProcedureHold || !ConfirmationEqual(ActiveConfirmationTest, other.ActiveConfirmationTest) || ConfirmationResultsByLog.Count != other.ConfirmationResultsByLog.Count || Containment != other.Containment || ActiveContainmentRitual != other.ActiveContainmentRitual || Line != other.Line)
+        if (other is null || ShiftId != other.ShiftId || ShiftSeed != other.ShiftSeed || StateVersion != other.StateVersion || Logs.Length != other.Logs.Length || !ProcessedIntentIds.SetEquals(other.ProcessedIntentIds) || PendingFeed != other.PendingFeed || _capacities.Count != other._capacities.Count || !Inventory.ValueEquals(other.Inventory) || ProcedureProgressByLog.Count != other.ProcedureProgressByLog.Count || ActiveProcedureHold != other.ActiveProcedureHold || !ConfirmationEqual(ActiveConfirmationTest, other.ActiveConfirmationTest) || ConfirmationResultsByLog.Count != other.ConfirmationResultsByLog.Count || Containment != other.Containment || ActiveContainmentRitual != other.ActiveContainmentRitual || Line != other.Line)
         {
             return false;
         }
@@ -260,6 +265,68 @@ public sealed class ShiftRuntimeState
         return GetNodeOccupancy(node.Value) < capacity.Limit;
     }
 
+    internal bool TryGetNextScheduledLog(out LogRuntimeState log)
+    {
+        foreach (var candidate in Logs)
+        {
+            if (candidate.State == LogState.SCHEDULED)
+            {
+                log = candidate;
+                return true;
+            }
+        }
+
+        log = default!;
+        return false;
+    }
+
+    internal bool IsPristineForInitialFeedPlanning =>
+        StateVersion == StateVersion.Zero &&
+        PendingFeed is null &&
+        Line.State == LineState.LINE_CLEAR &&
+        ActiveProcedureHold is null &&
+        ActiveConfirmationTest is null &&
+        ActiveContainmentRitual is null &&
+        Logs.All(log => log.State == LogState.SCHEDULED);
+
+    internal ShiftRuntimeState WithPendingFeed(PendingFeedSchedule pendingFeed, IntentId? processedIntentId)
+    {
+        ArgumentNullException.ThrowIfNull(pendingFeed);
+        if (PendingFeed is not null)
+        {
+            throw new InvalidOperationException("Only one pending feed is permitted.");
+        }
+
+        if (!TryGetLog(pendingFeed.LogId, out var log) || log.State != LogState.SCHEDULED)
+        {
+            throw new ArgumentException("A pending feed must reserve a currently scheduled manifest log.", nameof(pendingFeed));
+        }
+
+        if (pendingFeed.CausedByIntentId != processedIntentId)
+        {
+            throw new ArgumentException("Pending-feed causation must match its processed intent identity.", nameof(processedIntentId));
+        }
+
+        var processed = processedIntentId is { } intentId ? ProcessedIntentIds.Add(intentId) : ProcessedIntentIds;
+        return new ShiftRuntimeState(
+            ShiftId,
+            ShiftSeed,
+            StateVersion.Next(),
+            Logs,
+            _logIndexes,
+            _capacities,
+            processed,
+            pendingFeed,
+            Inventory,
+            ProcedureProgressByLog,
+            ActiveProcedureHold,
+            ActiveConfirmationTest,
+            ConfirmationResultsByLog,
+            Containment,
+            ActiveContainmentRitual,
+            Line);
+    }
+
     internal ShiftRuntimeState ApplyTransition(LogId logId, LogState toState, IntentId? processedIntentId)
     {
         if (!TryGetLog(logId, out var existing))
@@ -273,7 +340,7 @@ public sealed class ShiftRuntimeState
             ? null
             : ActiveProcedureHold;
         var activeConfirmation = ActiveConfirmationTest is { } test && test.LogId == logId && toState != LogState.AT_INTAKE ? null : ActiveConfirmationTest;
-        return new ShiftRuntimeState(ShiftId, ShiftSeed, StateVersion.Next(), updatedLogs, _logIndexes, _capacities, processed, Inventory, ProcedureProgressByLog, activeProcedureHold, activeConfirmation, ConfirmationResultsByLog, Containment, ActiveContainmentRitual, Line);
+        return new ShiftRuntimeState(ShiftId, ShiftSeed, StateVersion.Next(), updatedLogs, _logIndexes, _capacities, processed, PendingFeed, Inventory, ProcedureProgressByLog, activeProcedureHold, activeConfirmation, ConfirmationResultsByLog, Containment, ActiveContainmentRitual, Line);
     }
 
     internal ShiftRuntimeState ApplyItemAction(
@@ -311,6 +378,7 @@ public sealed class ShiftRuntimeState
             _logIndexes,
             _capacities,
             ProcessedIntentIds,
+            PendingFeed,
             inventory,
             updatedProgress,
             activeProcedureHold, ActiveConfirmationTest, ConfirmationResultsByLog, Containment, ActiveContainmentRitual, Line);
@@ -337,6 +405,7 @@ public sealed class ShiftRuntimeState
             _logIndexes,
             _capacities,
             ProcessedIntentIds,
+            PendingFeed,
             Inventory,
             ProcedureProgressByLog,
             activeProcedureHold, ActiveConfirmationTest, ConfirmationResultsByLog, Containment, ActiveContainmentRitual, Line);
@@ -357,6 +426,7 @@ public sealed class ShiftRuntimeState
             _logIndexes,
             _capacities,
             ProcessedIntentIds,
+            PendingFeed,
             Inventory,
             ProcedureProgressByLog,
             null, ActiveConfirmationTest, ConfirmationResultsByLog, Containment, ActiveContainmentRitual, Line);
@@ -366,7 +436,7 @@ public sealed class ShiftRuntimeState
     internal ShiftRuntimeState WithActiveConfirmation(ActiveConfirmationTest? active, ConfirmationTestResult? result = null)
     {
         var results = result is null ? ConfirmationResultsByLog : ConfirmationResultsByLog.Add(result.LogId, result);
-        return new ShiftRuntimeState(ShiftId, ShiftSeed, StateVersion.Next(), Logs, _logIndexes, _capacities, ProcessedIntentIds, Inventory, ProcedureProgressByLog, ActiveProcedureHold, active, results, Containment, ActiveContainmentRitual, Line);
+        return new ShiftRuntimeState(ShiftId, ShiftSeed, StateVersion.Next(), Logs, _logIndexes, _capacities, ProcessedIntentIds, PendingFeed, Inventory, ProcedureProgressByLog, ActiveProcedureHold, active, results, Containment, ActiveContainmentRitual, Line);
     }
 
     internal ShiftRuntimeState WithContainment(ContainmentRuntimeState containment, ActiveContainmentRitual? activeContainmentRitual)
@@ -380,6 +450,7 @@ public sealed class ShiftRuntimeState
             _logIndexes,
             _capacities,
             ProcessedIntentIds,
+            PendingFeed,
             Inventory,
             ProcedureProgressByLog,
             ActiveProcedureHold,
@@ -401,6 +472,7 @@ public sealed class ShiftRuntimeState
             _logIndexes,
             _capacities,
             ProcessedIntentIds,
+            PendingFeed,
             Inventory,
             ProcedureProgressByLog,
             ActiveProcedureHold,
