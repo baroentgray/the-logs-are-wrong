@@ -32,6 +32,18 @@ public sealed class JamRepairLifecycleTests
     }
 
     [Fact]
+    public void Repairing_line_entry_must_equal_active_repair_start()
+    {
+        var hold = new ActiveRepairHold(ServerTick.From(10), ServerTick.From(16), TheLogsAreWrong.Domain.Time.SimulationDuration.FromTicks(6));
+
+        Assert.Throws<ArgumentException>(() => new LineRuntimeState(LineState.REPAIRING, ServerTick.From(11), JamCause.FEED_GATE_BLOCKED, LogId.From("log_01"), hold));
+        Assert.Throws<ArgumentException>(() => new LineRuntimeState(LineState.REPAIRING, ServerTick.From(9), JamCause.FEED_GATE_BLOCKED, LogId.From("log_01"), hold));
+
+        var valid = new LineRuntimeState(LineState.REPAIRING, ServerTick.From(10), JamCause.FEED_GATE_BLOCKED, LogId.From("log_01"), hold);
+        Assert.Equal((ServerTick.From(10), ServerTick.From(10)), (valid.EnteredAt, valid.ActiveRepairHold!.StartedAt));
+    }
+
+    [Fact]
     public void Feed_gate_jam_derives_the_exact_pending_log_and_moves_nothing()
     {
         var state = CreateFeedGateShape();

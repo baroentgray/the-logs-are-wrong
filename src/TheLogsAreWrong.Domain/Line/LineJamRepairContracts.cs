@@ -63,6 +63,11 @@ public sealed record LineRuntimeState
             {
                 throw new ArgumentException("A repairing line requires an active repair hold.");
             }
+
+            if (state == LineState.REPAIRING && activeRepairHold is not null && activeRepairHold.StartedAt != enteredAt)
+            {
+                throw new ArgumentException("A repairing line must enter when its repair hold starts.");
+            }
         }
 
         State = state;
