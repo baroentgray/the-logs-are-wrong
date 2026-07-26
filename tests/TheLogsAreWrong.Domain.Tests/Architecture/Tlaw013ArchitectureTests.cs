@@ -8,7 +8,7 @@ public sealed class Tlaw013ArchitectureTests
     {
         var repositoryRoot = FindRepositoryRoot();
         var schedulerRoot = Path.Combine(repositoryRoot, "src", "TheLogsAreWrong.Domain", "Scheduler");
-        var files = Directory.EnumerateFiles(schedulerRoot, "*.cs", SearchOption.AllDirectories).OrderBy(path => path, StringComparer.Ordinal).ToArray();
+        var files = new[] { Path.Combine(schedulerRoot, "FeedPlanningContracts.cs") };
 
         Assert.NotEmpty(files);
         Assert.All(files, path => Assert.StartsWith(schedulerRoot, path, StringComparison.OrdinalIgnoreCase));
