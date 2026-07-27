@@ -6,7 +6,7 @@ Public title: **THE LOGS ARE WRONG**. Tagline: **Quota still applies.** Namespac
 
 Gate 0 is closed and protected from accidental edits. Its frozen documents and approved architecture are the highest repository authority. Gate 1 Domain remains independent of `UnityEngine`; no knowledge-pack file grants gameplay, networking, scheduler, clock, journal, state-machine, or provider permission.
 
-The canonical source hierarchy is recorded in `CONTEXT_INDEX.md`. Treat GitHub merged code and the exact reviewed SHA as the executable contract; use Linear for work queue/status; treat this pack as operational context and `STATUS.md` as a non-authoritative cache.
+The canonical source hierarchy is recorded in `CONTEXT_INDEX.md`. Treat GitHub merged code and the exact reviewed SHA as the executable contract; use Linear for work queue/status; treat this pack as operational context, `CURRENT_STATE.md` as the single non-authoritative volatile current-state cache, and `ACTIVE_RUNS.md` plus `HANDOFF.md` as generated non-authoritative projections.
 
 ## Preserved merged semantics
 

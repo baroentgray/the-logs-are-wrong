@@ -18,7 +18,7 @@
         "required": ["identity", "kind", "status", "task_id"],
         "properties": {
           "identity": { "type": "string", "minLength": 1 },
-          "kind": { "enum": ["implementation", "authoritative_review", "correction", "merge"] },
+          "kind": { "enum": ["implementation", "authoritative_review", "correction", "merge", "verification", "post_merge_verification"] },
           "status": { "enum": ["prepared", "running", "blocked", "awaiting_authoritative_review", "awaiting_correction", "awaiting_merge"] },
           "task_id": { "type": "string", "minLength": 1 },
           "agent": { "type": "string", "minLength": 1 },

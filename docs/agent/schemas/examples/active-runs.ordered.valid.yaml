@@ -14,6 +14,16 @@ runs:
     status: running
     task_id: TLAW-AUTO-010
     agent: Codex
+  - identity: c-verification
+    kind: verification
+    status: running
+    task_id: TLAW-AUTO-009
+    candidate_sha: eb18408e4a82cade0c460580ea963bd08d0c50c7
+    workflow_run: https://github.com/baroentgray/the-logs-are-wrong/actions/runs/30255643780
+  - identity: d-post-merge-verification
+    kind: post_merge_verification
+    status: prepared
+    task_id: TLAW-AUTO-010
 staleness_rule: Validate live GitHub, Linear, and CI before relying on or updating this projection.
 refresh_triggers:
   - TASK_CREATED

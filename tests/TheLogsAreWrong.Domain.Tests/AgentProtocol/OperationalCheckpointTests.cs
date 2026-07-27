@@ -23,6 +23,7 @@ public sealed class OperationalCheckpointTests
     [InlineData("invalid/current-state-unknown-stage.yaml")]
     [InlineData("invalid/current-state-missing-verification.yaml")]
     [InlineData("invalid/active-runs-unknown-status.yaml")]
+    [InlineData("invalid/active-runs-unknown-kind.yaml")]
     [InlineData("invalid/active-runs-duplicate-identity.yaml")]
     [InlineData("invalid/active-runs-unstable-order.yaml")]
     [InlineData("invalid/active-runs-unsafe-anchor.yaml")]
@@ -43,6 +44,36 @@ public sealed class OperationalCheckpointTests
 
         Assert.Contains(duplicate.Diagnostics, item => item.Code == "TLAW-PKT-041");
         Assert.Contains(unordered.Diagnostics, item => item.Code == "TLAW-PKT-042");
+    }
+
+    [Fact]
+    public void Active_runs_accept_unfinished_verification_kinds_and_reject_unknown_kinds()
+    {
+        var orderedFixture = File.ReadAllText(Path.Combine(Examples, "active-runs.ordered.valid.yaml"));
+        var ordered = PacketValidator.Validate(orderedFixture, Registry);
+        var unknownKind = PacketValidator.Validate(File.ReadAllText(Path.Combine(Examples, "invalid", "active-runs-unknown-kind.yaml")), Registry);
+
+        Assert.Contains("kind: verification", orderedFixture, StringComparison.Ordinal);
+        Assert.Contains("kind: post_merge_verification", orderedFixture, StringComparison.Ordinal);
+        Assert.True(ordered.IsValid, string.Join(" | ", ordered.Diagnostics.Select(item => item.Code)));
+        Assert.False(unknownKind.IsValid);
+        Assert.Contains(unknownKind.Diagnostics, item => item.Code == "TLAW-PKT-016");
+    }
+
+    [Fact]
+    public void Current_operational_policy_has_no_status_cache_or_alternative_reviewer()
+    {
+        var context = File.ReadAllText(Path.Combine(AgentRoot, "CONTEXT.md"));
+        var automation = File.ReadAllText(Path.Combine(AgentRoot, "AUTOMATION.md"));
+
+        Assert.DoesNotContain("STATUS.md", context, StringComparison.Ordinal);
+        Assert.Contains("CURRENT_STATE.md", context, StringComparison.Ordinal);
+        Assert.Contains("single non-authoritative volatile current-state cache", context, StringComparison.Ordinal);
+        Assert.Contains("Codex is the implementation executor.", automation, StringComparison.Ordinal);
+        Assert.Contains("Grok is the sole authoritative reviewer", automation, StringComparison.Ordinal);
+        Assert.Contains("no automatic fallback or return to Claude", automation, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("Claude plans/reviews", automation, StringComparison.Ordinal);
+        Assert.DoesNotContain("alternative review", automation, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]

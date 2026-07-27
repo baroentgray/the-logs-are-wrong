@@ -44,6 +44,11 @@ ascending ordinal order. A prepared-target snapshot must say so explicitly and
 never claim that an unmerged candidate is merged. `CURRENT_STATE.md` is the one
 volatile current-state cache; the other two documents are generated projections.
 
+The `verification` kind represents unfinished exact-head or other candidate
+verification. The `post_merge_verification` kind represents unfinished
+verification of the exact resulting `main` SHA. Completed verification history
+does not belong in `ACTIVE_RUNS.md`.
+
 The documented refresh triggers are `TASK_CREATED`,
 `IMPLEMENTATION_CANDIDATE_READY`, `AUTHORITATIVE_REVIEW_COMPLETE`,
 `CORRECTION_CANDIDATE_READY`, `MERGED_AND_VERIFIED`, and
