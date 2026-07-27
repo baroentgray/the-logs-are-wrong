@@ -70,7 +70,8 @@ public sealed class ShiftRuntimeState
         ImmutableDictionary<LogId, ConfirmationTestResult> confirmationResultsByLog,
         ContainmentRuntimeState containment,
         ActiveContainmentRitual? activeContainmentRitual,
-        LineRuntimeState line)
+        LineRuntimeState line,
+        ActiveIntakeDeadline? activeIntakeDeadline)
     {
         ShiftId = shiftId;
         ShiftSeed = shiftSeed;
@@ -88,6 +89,7 @@ public sealed class ShiftRuntimeState
         Containment = containment;
         ActiveContainmentRitual = activeContainmentRitual;
         Line = line;
+        ActiveIntakeDeadline = activeIntakeDeadline;
     }
 
     public ShiftId ShiftId { get; }
@@ -104,6 +106,7 @@ public sealed class ShiftRuntimeState
     public ContainmentRuntimeState Containment { get; }
     public ActiveContainmentRitual? ActiveContainmentRitual { get; }
     public LineRuntimeState Line { get; }
+    public ActiveIntakeDeadline? ActiveIntakeDeadline { get; }
 
     public static ShiftRuntimeState Create(ShiftConfiguration configuration)
     {
@@ -178,7 +181,8 @@ public sealed class ShiftRuntimeState
             ImmutableDictionary<LogId, ConfirmationTestResult>.Empty,
             new ContainmentRuntimeState(ContainmentState.STABLE, ServerTick.Zero, null),
             null,
-            new LineRuntimeState(LineState.LINE_CLEAR, ServerTick.Zero, null, null, null));
+            new LineRuntimeState(LineState.LINE_CLEAR, ServerTick.Zero, null, null, null),
+            null);
     }
 
     public bool TryGetLog(LogId logId, out LogRuntimeState log)
@@ -218,7 +222,7 @@ public sealed class ShiftRuntimeState
 
     public bool ValueEquals(ShiftRuntimeState? other)
     {
-        if (other is null || ShiftId != other.ShiftId || ShiftSeed != other.ShiftSeed || StateVersion != other.StateVersion || Logs.Length != other.Logs.Length || !ProcessedIntentIds.SetEquals(other.ProcessedIntentIds) || PendingFeed != other.PendingFeed || _capacities.Count != other._capacities.Count || !Inventory.ValueEquals(other.Inventory) || ProcedureProgressByLog.Count != other.ProcedureProgressByLog.Count || ActiveProcedureHold != other.ActiveProcedureHold || !ConfirmationEqual(ActiveConfirmationTest, other.ActiveConfirmationTest) || ConfirmationResultsByLog.Count != other.ConfirmationResultsByLog.Count || Containment != other.Containment || ActiveContainmentRitual != other.ActiveContainmentRitual || Line != other.Line)
+        if (other is null || ShiftId != other.ShiftId || ShiftSeed != other.ShiftSeed || StateVersion != other.StateVersion || Logs.Length != other.Logs.Length || !ProcessedIntentIds.SetEquals(other.ProcessedIntentIds) || PendingFeed != other.PendingFeed || _capacities.Count != other._capacities.Count || !Inventory.ValueEquals(other.Inventory) || ProcedureProgressByLog.Count != other.ProcedureProgressByLog.Count || ActiveProcedureHold != other.ActiveProcedureHold || !ConfirmationEqual(ActiveConfirmationTest, other.ActiveConfirmationTest) || ConfirmationResultsByLog.Count != other.ConfirmationResultsByLog.Count || Containment != other.Containment || ActiveContainmentRitual != other.ActiveContainmentRitual || Line != other.Line || ActiveIntakeDeadline != other.ActiveIntakeDeadline)
         {
             return false;
         }
@@ -324,7 +328,8 @@ public sealed class ShiftRuntimeState
             ConfirmationResultsByLog,
             Containment,
             ActiveContainmentRitual,
-            Line);
+            Line,
+            ActiveIntakeDeadline);
     }
 
     internal ShiftRuntimeState ConsumePendingFeed(LogState destination)
@@ -366,7 +371,8 @@ public sealed class ShiftRuntimeState
             ConfirmationResultsByLog,
             Containment,
             ActiveContainmentRitual,
-            Line);
+            Line,
+            ActiveIntakeDeadline);
     }
 
     internal ShiftRuntimeState ApplyTransition(LogId logId, LogState toState, IntentId? processedIntentId)
@@ -382,7 +388,34 @@ public sealed class ShiftRuntimeState
             ? null
             : ActiveProcedureHold;
         var activeConfirmation = ActiveConfirmationTest is { } test && test.LogId == logId && toState != LogState.AT_INTAKE ? null : ActiveConfirmationTest;
-        return new ShiftRuntimeState(ShiftId, ShiftSeed, StateVersion.Next(), updatedLogs, _logIndexes, _capacities, processed, PendingFeed, Inventory, ProcedureProgressByLog, activeProcedureHold, activeConfirmation, ConfirmationResultsByLog, Containment, ActiveContainmentRitual, Line);
+        var activeIntakeDeadline = ActiveIntakeDeadline is { } deadline && deadline.LogId == logId && existing.State == LogState.AT_INTAKE && toState != LogState.AT_INTAKE ? null : ActiveIntakeDeadline;
+        return new ShiftRuntimeState(ShiftId, ShiftSeed, StateVersion.Next(), updatedLogs, _logIndexes, _capacities, processed, PendingFeed, Inventory, ProcedureProgressByLog, activeProcedureHold, activeConfirmation, ConfirmationResultsByLog, Containment, ActiveContainmentRitual, Line, activeIntakeDeadline);
+    }
+
+    internal ShiftRuntimeState WithActiveIntakeDeadline(ActiveIntakeDeadline deadline)
+    {
+        ArgumentNullException.ThrowIfNull(deadline);
+        if (ActiveIntakeDeadline is not null)
+        {
+            throw new InvalidOperationException("Only one active intake deadline is permitted.");
+        }
+
+        if (!TryGetLog(deadline.LogId, out var log) || log.State != LogState.AT_INTAKE)
+        {
+            throw new ArgumentException("An active intake deadline must own a log at intake.", nameof(deadline));
+        }
+
+        return new ShiftRuntimeState(ShiftId, ShiftSeed, StateVersion.Next(), Logs, _logIndexes, _capacities, ProcessedIntentIds, PendingFeed, Inventory, ProcedureProgressByLog, ActiveProcedureHold, ActiveConfirmationTest, ConfirmationResultsByLog, Containment, ActiveContainmentRitual, Line, deadline);
+    }
+
+    internal ShiftRuntimeState ClearActiveIntakeDeadline()
+    {
+        if (ActiveIntakeDeadline is null)
+        {
+            throw new InvalidOperationException("There is no active intake deadline to clear.");
+        }
+
+        return new ShiftRuntimeState(ShiftId, ShiftSeed, StateVersion.Next(), Logs, _logIndexes, _capacities, ProcessedIntentIds, PendingFeed, Inventory, ProcedureProgressByLog, ActiveProcedureHold, ActiveConfirmationTest, ConfirmationResultsByLog, Containment, ActiveContainmentRitual, Line, null);
     }
 
     internal ShiftRuntimeState ApplyItemAction(
@@ -423,7 +456,7 @@ public sealed class ShiftRuntimeState
             PendingFeed,
             inventory,
             updatedProgress,
-            activeProcedureHold, ActiveConfirmationTest, ConfirmationResultsByLog, Containment, ActiveContainmentRitual, Line);
+            activeProcedureHold, ActiveConfirmationTest, ConfirmationResultsByLog, Containment, ActiveContainmentRitual, Line, ActiveIntakeDeadline);
     }
 
     internal ShiftRuntimeState StartActiveProcedureHold(ActiveProcedureHold activeProcedureHold)
@@ -450,7 +483,7 @@ public sealed class ShiftRuntimeState
             PendingFeed,
             Inventory,
             ProcedureProgressByLog,
-            activeProcedureHold, ActiveConfirmationTest, ConfirmationResultsByLog, Containment, ActiveContainmentRitual, Line);
+            activeProcedureHold, ActiveConfirmationTest, ConfirmationResultsByLog, Containment, ActiveContainmentRitual, Line, ActiveIntakeDeadline);
     }
 
     internal ShiftRuntimeState ClearActiveProcedureHold()
@@ -471,14 +504,14 @@ public sealed class ShiftRuntimeState
             PendingFeed,
             Inventory,
             ProcedureProgressByLog,
-            null, ActiveConfirmationTest, ConfirmationResultsByLog, Containment, ActiveContainmentRitual, Line);
+            null, ActiveConfirmationTest, ConfirmationResultsByLog, Containment, ActiveContainmentRitual, Line, ActiveIntakeDeadline);
     }
 
     public bool TryGetConfirmationResult(LogId logId, out ConfirmationTestResult result) => ConfirmationResultsByLog.TryGetValue(logId, out result!);
     internal ShiftRuntimeState WithActiveConfirmation(ActiveConfirmationTest? active, ConfirmationTestResult? result = null)
     {
         var results = result is null ? ConfirmationResultsByLog : ConfirmationResultsByLog.Add(result.LogId, result);
-        return new ShiftRuntimeState(ShiftId, ShiftSeed, StateVersion.Next(), Logs, _logIndexes, _capacities, ProcessedIntentIds, PendingFeed, Inventory, ProcedureProgressByLog, ActiveProcedureHold, active, results, Containment, ActiveContainmentRitual, Line);
+        return new ShiftRuntimeState(ShiftId, ShiftSeed, StateVersion.Next(), Logs, _logIndexes, _capacities, ProcessedIntentIds, PendingFeed, Inventory, ProcedureProgressByLog, ActiveProcedureHold, active, results, Containment, ActiveContainmentRitual, Line, ActiveIntakeDeadline);
     }
 
     internal ShiftRuntimeState WithContainment(ContainmentRuntimeState containment, ActiveContainmentRitual? activeContainmentRitual)
@@ -500,7 +533,8 @@ public sealed class ShiftRuntimeState
             ConfirmationResultsByLog,
             containment,
             activeContainmentRitual,
-            Line);
+            Line,
+            ActiveIntakeDeadline);
     }
 
     internal ShiftRuntimeState WithLine(LineRuntimeState line)
@@ -522,7 +556,8 @@ public sealed class ShiftRuntimeState
             ConfirmationResultsByLog,
             Containment,
             ActiveContainmentRitual,
-            line);
+            line,
+            ActiveIntakeDeadline);
     }
 
     private static bool ConfirmationEqual(ActiveConfirmationTest? left, ActiveConfirmationTest? right) => left is null ? right is null : right is not null && left.LogId == right.LogId && left.AnomalyId == right.AnomalyId && left.AccumulatedValidDuration == right.AccumulatedValidDuration && left.SegmentStartedAt == right.SegmentStartedAt && left.DueAt == right.DueAt && left.IsRunning == right.IsRunning && left.LastConditionBoundaryAt == right.LastConditionBoundaryAt && left.Plan.AnomalyId == right.Plan.AnomalyId && left.Plan.RequiredTools.SetEquals(right.Plan.RequiredTools) && left.Plan.Duration == right.Plan.Duration && left.Plan.Continuous == right.Plan.Continuous && left.Plan.RequiredLineNoise == right.Plan.RequiredLineNoise && left.Plan.ResetWhenConditionLost == right.Plan.ResetWhenConditionLost && left.Plan.Result == right.Plan.Result;
