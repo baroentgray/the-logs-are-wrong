@@ -1,7 +1,9 @@
 using TheLogsAreWrong.Domain.Configuration;
 using TheLogsAreWrong.Domain.Enums;
+using TheLogsAreWrong.Domain.Events;
 using TheLogsAreWrong.Domain.Identifiers;
 using TheLogsAreWrong.Domain.Intents;
+using TheLogsAreWrong.Domain.Journal;
 using TheLogsAreWrong.Domain.Primitives;
 using TheLogsAreWrong.Domain.Runtime;
 using TheLogsAreWrong.Domain.Scheduler;
@@ -105,11 +107,97 @@ public sealed class IntakeDeadlineLifecycleTests
         Assert.Same(routed.State, noActive.State);
     }
 
+    [Fact]
+    public void Accepted_start_and_expiration_commit_once_through_tlaw011_and_no_ops_do_not_append()
+    {
+        var commit = new JournaledMutationCommitService();
+        var initial = RuntimeFixture.CreateInitialState();
+        var journal = new InMemoryEventJournal(initial.ShiftId);
+        var planned = Assert.IsType<InitialFeedScheduled>(new InitialFeedPlanningService().Plan(initial, ServerTick.Zero, Fixture.LoadP0().Shift.Scheduler));
+        Commit(commit, journal, initial, planned.State, ServerTick.Zero, "deadline_plan");
+        var admission = Assert.IsType<FeedDueResolved>(new FeedDueResolutionService().Resolve(planned.State, ServerTick.Zero));
+        Commit(commit, journal, planned.State, admission.State, ServerTick.Zero, "deadline_admission");
+        var started = Start(admission);
+
+        var startCommit = Assert.IsType<JournaledMutationCommitted>(commit.Commit(journal, admission.State, started.State, admission.ResolvedAt, Draft("deadline_start")));
+        Assert.Same(admission.State, startCommit.Before);
+        Assert.Same(started.State, startCommit.After);
+        Assert.Equal((3, started.State.StateVersion, admission.ResolvedAt), (journal.Events.Count, journal.LastStateVersion, journal.LastTick));
+        Assert.Equal((admission.ResolvedAt, started.State.StateVersion), (startCommit.Envelope.ServerTick, startCommit.Envelope.StateVersionAfter));
+
+        var snapshot = (journal.Events.Count, journal.LastSequence, journal.LastTick, journal.LastStateVersion);
+        var retry = Assert.IsType<IntakeDeadlineAlreadyActive>(new IntakeDeadlineStartService().Start(started.State, admission, Profile("learning")));
+        var rejected = Assert.IsType<JournaledMutationCommitRejected>(commit.Commit(journal, retry.State, retry.State, ServerTick.Zero, Draft("deadline_retry")));
+        Assert.Equal(JournaledMutationCommitRejectionReason.StateVersionNotNext, rejected.Reason);
+        Assert.Equal(snapshot, (journal.Events.Count, journal.LastSequence, journal.LastTick, journal.LastStateVersion));
+
+        var expiration = Assert.IsType<IntakeDeadlineExpired>(new IntakeDeadlineExpirationService().Expire(started.State, ServerTick.From(60)));
+        var expirationCommit = Assert.IsType<JournaledMutationCommitted>(commit.Commit(journal, started.State, expiration.State, ServerTick.From(60), Draft("deadline_expiration")));
+        Assert.Same(started.State, expirationCommit.Before);
+        Assert.Same(expiration.State, expirationCommit.After);
+        Assert.Equal((4, expiration.State.StateVersion, ServerTick.From(60)), (journal.Events.Count, journal.LastStateVersion, journal.LastTick));
+        Assert.Equal(LogState.AT_INTAKE, Log(expiration.State, "log_01").State);
+        Assert.Null(expiration.State.ActiveIntakeDeadline);
+
+        Assert.Same(started.State, Assert.IsType<IntakeDeadlineNotDueYet>(new IntakeDeadlineExpirationService().Expire(started.State, ServerTick.From(59))).State);
+        Assert.Same(expiration.State, Assert.IsType<IntakeDeadlineNoActiveDeadline>(new IntakeDeadlineExpirationService().Expire(expiration.State, ServerTick.From(61))).State);
+    }
+
+    [Fact]
+    public void Start_rejects_feed_gate_descriptor_null_inputs_different_profile_and_non_exact_state()
+    {
+        var admission = AdmitInitial();
+        var service = new IntakeDeadlineStartService();
+        Assert.Throws<ArgumentNullException>(() => service.Start(null!, admission, Profile("learning")));
+        Assert.Throws<ArgumentNullException>(() => service.Start(admission.State, null!, Profile("learning")));
+        var started = Start(admission);
+        Assert.Throws<InvalidOperationException>(() => service.Start(started.State, admission, Profile("pressure")));
+
+        var intake = RuntimeFixture.MoveToIntake(RuntimeFixture.CreateInitialState(), "log_01");
+        var intent = new IntentEnvelope(intake.ShiftId, IntentId.From("gate_descriptor"), ActorId.From("hint"), FeedPlanningTargets.FeedGate, FeedPlanningIntentActions.RequestEarlyFeed, intake.StateVersion, ServerTick.Zero, NoIntentParameters.Instance);
+        var plan = Assert.IsType<EarlyFeedScheduled>(new EarlyFeedIntentHandler().Handle(intake, intent, RuntimeFixture.BoundActor, ServerTick.From(10), Fixture.LoadP0().Shift.Scheduler));
+        var gate = Assert.IsType<FeedDueResolved>(new FeedDueResolutionService().Resolve(plan.State, ServerTick.From(12)));
+        Assert.Equal(FeedDueDisposition.PlacedAtFeedGate, gate.Disposition);
+        Assert.Throws<ArgumentException>(() => service.Start(gate.State, gate, Profile("learning")));
+    }
+
+    [Fact]
+    public void Expiration_no_active_default_tick_and_late_catch_up_are_exact_and_preserve_unrelated_runtime()
+    {
+        var expiration = new IntakeDeadlineExpirationService();
+        var initial = RuntimeFixture.CreateInitialState();
+        Assert.Same(initial, Assert.IsType<IntakeDeadlineNoActiveDeadline>(expiration.Expire(initial, ServerTick.Zero)).State);
+        Assert.Throws<ArgumentOutOfRangeException>(() => expiration.Expire(initial, default));
+
+        var started = StartInitial();
+        var before = (started.State.PendingFeed, started.State.Inventory, started.State.Line, started.State.Containment, started.State.ProcessedIntentIds);
+        var late = Assert.IsType<IntakeDeadlineExpired>(expiration.Expire(started.State, ServerTick.From(61)));
+        Assert.Equal((ServerTick.From(60), ServerTick.From(61)), (late.ExpiredDeadline.DueAt, late.ExpiredAt));
+        Assert.Equal(before, (late.State.PendingFeed, late.State.Inventory, late.State.Line, late.State.Containment, late.State.ProcessedIntentIds));
+        Assert.Same(late.State, Assert.IsType<IntakeDeadlineNoActiveDeadline>(expiration.Expire(late.State, ServerTick.From(62))).State);
+    }
+
+    [Fact]
+    public void Rejected_and_transition_into_intake_preserve_or_do_not_create_deadlines()
+    {
+        var started = StartInitial();
+        var rejected = Assert.IsType<HostLogTransitionRejected>(new HostLogTransitionService().Apply(started.State, LogId.From("log_01"), LogState.AT_FEED_GATE));
+        Assert.Same(started.State, rejected.State);
+        Assert.Equal(started.Deadline, rejected.State.ActiveIntakeDeadline);
+
+        var fresh = RuntimeFixture.MoveHost(RuntimeFixture.CreateInitialState(), "log_01", LogState.AT_FEED_GATE);
+        var returned = RuntimeFixture.MoveHost(fresh, "log_01", LogState.AT_INTAKE);
+        Assert.Null(returned.ActiveIntakeDeadline);
+    }
+
     private static IntakeDeadlineStarted StartInitial()
     {
         var admission = AdmitInitial();
         return Assert.IsType<IntakeDeadlineStarted>(new IntakeDeadlineStartService().Start(admission.State, admission, Profile("learning")));
     }
+
+    private static IntakeDeadlineStarted Start(FeedDueResolved admission) =>
+        Assert.IsType<IntakeDeadlineStarted>(new IntakeDeadlineStartService().Start(admission.State, admission, Profile("learning")));
 
     private static FeedDueResolved AdmitInitial()
     {
@@ -125,4 +213,11 @@ public sealed class IntakeDeadlineLifecycleTests
         Assert.True(state.TryGetLog(LogId.From(id), out var log));
         return log;
     }
+
+    private static DomainEventDraft Draft(string id) => new(EventId.From(id), EventTypeId.From("test.tlaw016"), new DeadlinePayload(id), null);
+
+    private static void Commit(JournaledMutationCommitService service, IEventJournal journal, ShiftRuntimeState before, ShiftRuntimeState after, ServerTick tick, string id) =>
+        Assert.IsType<JournaledMutationCommitted>(service.Commit(journal, before, after, tick, Draft(id)));
+
+    private sealed record DeadlinePayload(string Value) : IDomainEventPayload;
 }
