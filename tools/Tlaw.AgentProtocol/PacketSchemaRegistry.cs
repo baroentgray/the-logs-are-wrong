@@ -11,7 +11,10 @@ public sealed class PacketSchemaRegistry
         ["tlaw.agent-result/v1"] = "result.schema.json",
         ["tlaw.agent-review/v1"] = "review.schema.json",
         ["tlaw.agent-handoff/v1"] = "handoff.schema.json",
-        ["tlaw.agent-handoff/v2"] = "handoff.v2.schema.json"
+        ["tlaw.agent-handoff/v2"] = "handoff.v2.schema.json",
+        ["tlaw.current-state/v1"] = "current-state.schema.json",
+        ["tlaw.active-runs/v1"] = "active-runs.schema.json",
+        ["tlaw.chat-handoff/v1"] = "chat-handoff.schema.json"
     };
 
     private readonly IReadOnlyDictionary<string, JsonDocument> schemas;

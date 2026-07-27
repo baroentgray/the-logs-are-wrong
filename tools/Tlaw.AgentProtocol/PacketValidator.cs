@@ -193,6 +193,11 @@ public static class PacketValidator
 
     private static JsonNode? ToJsonScalar(YamlScalarNode scalar)
     {
+        if (scalar.Style == ScalarStyle.Plain && scalar.Value is "null" or "~")
+        {
+            return null;
+        }
+
         if (scalar.Style == ScalarStyle.Plain && bool.TryParse(scalar.Value, out var boolean))
         {
             return JsonValue.Create(boolean);
@@ -214,9 +219,9 @@ public static class PacketValidator
 
     private static void ValidateSchema(JsonNode? value, JsonElement schema, string path, ICollection<PacketDiagnostic> diagnostics)
     {
-        if (schema.TryGetProperty("type", out var type) && !MatchesType(value, type.GetString()))
+        if (schema.TryGetProperty("type", out var type) && !MatchesDeclaredType(value, type))
         {
-            diagnostics.Add(new PacketDiagnostic("TLAW-PKT-014", DisplayPath(path), $"Expected YAML {type.GetString()}."));
+            diagnostics.Add(new PacketDiagnostic("TLAW-PKT-014", DisplayPath(path), "Value does not match the schema type."));
             return;
         }
 
@@ -294,6 +299,12 @@ public static class PacketValidator
 
     private static void ValidateSemantics(JsonObject root, string schema, ICollection<PacketDiagnostic> diagnostics)
     {
+        if (schema == "tlaw.active-runs/v1")
+        {
+            ValidateActiveRunsSemantics(root, diagnostics);
+            return;
+        }
+
         if (schema == "tlaw.agent-task/v2")
         {
             ValidateTaskV2Semantics(root, diagnostics);
@@ -334,6 +345,30 @@ public static class PacketValidator
         if (human["safe_options"] is not JsonArray options || options.Count == 0)
         {
             diagnostics.Add(new PacketDiagnostic("TLAW-PKT-025", "human.safe_options", "A required human decision must provide safe options."));
+        }
+    }
+
+    private static void ValidateActiveRunsSemantics(JsonObject root, ICollection<PacketDiagnostic> diagnostics)
+    {
+        if (root["runs"] is not JsonArray runs)
+        {
+            return;
+        }
+
+        var identities = runs
+            .Select(run => run?["identity"] is JsonValue value && value.TryGetValue<string>(out var identity) ? identity : null)
+            .Where(identity => identity is not null)
+            .Cast<string>()
+            .ToArray();
+
+        if (identities.Distinct(StringComparer.Ordinal).Count() != identities.Length)
+        {
+            diagnostics.Add(new PacketDiagnostic("TLAW-PKT-041", "runs", "Active-run identities must be unique."));
+        }
+
+        if (!identities.SequenceEqual(identities.OrderBy(identity => identity, StringComparer.Ordinal), StringComparer.Ordinal))
+        {
+            diagnostics.Add(new PacketDiagnostic("TLAW-PKT-042", "runs", "Active runs must use ascending identity order."));
         }
     }
 
@@ -479,6 +514,13 @@ public static class PacketValidator
         ? values.Select(value => value is JsonValue scalar && scalar.TryGetValue<string>(out var text) ? text : null).Where(text => text is not null).Cast<string>().ToArray()
         : [];
 
+    private static bool MatchesDeclaredType(JsonNode? value, JsonElement declaredType) => declaredType.ValueKind switch
+    {
+        JsonValueKind.String => MatchesType(value, declaredType.GetString()),
+        JsonValueKind.Array => declaredType.EnumerateArray().Any(type => type.ValueKind == JsonValueKind.String && MatchesType(value, type.GetString())),
+        _ => false
+    };
+
     private static bool MatchesType(JsonNode? value, string? type) => type switch
     {
         "object" => value is JsonObject,
@@ -486,6 +528,7 @@ public static class PacketValidator
         "string" => value is JsonValue scalar && scalar.TryGetValue<string>(out _),
         "boolean" => value is JsonValue scalar && scalar.TryGetValue<bool>(out _),
         "integer" => value is JsonValue scalar && scalar.TryGetValue<int>(out _),
+        "null" => value is null,
         _ => false
     };
 

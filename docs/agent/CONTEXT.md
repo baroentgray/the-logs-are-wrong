@@ -14,7 +14,7 @@ The canonical source hierarchy is recorded in `CONTEXT_INDEX.md`. Treat GitHub m
 
 ## Execution model
 
-Temporary executors are routed dynamically; provider availability and quota are configuration, not a repository permission expansion. Current roles are: Codex for implementation; Claude for planning/review and fallback implementation; local tools for read-only preparation; and Grok console/CLI for model or asset experiments, research, red-team work, and alternative review until the implementation benchmark is met. Grok is console/CLI-capable; an adapter or doctor check owns exact invocation details.
+Temporary executors are routed dynamically; provider availability and quota are configuration, not a repository permission expansion. Codex is the implementation executor. Grok is the sole authoritative reviewer under the current policy. There is no dual authoritative review, no automatic return to Claude, and at most one bounded correction round. Local tools remain limited to read-only preparation. Implementation and merge roles remain constrained by their exact handoffs.
 
 Manual merge is the default while the user is present. Deterministic automated merge is a future mode; agent merge is only an optional unattended fallback after explicit authorization.
 

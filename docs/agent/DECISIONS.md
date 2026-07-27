@@ -37,3 +37,52 @@ Source: [BAR-34](https://linear.app/baronet/issue/BAR-34/bar-26-increment-3-dete
 BAR-35 accepts a result/v1 packet only when its task identity and a fully claimed task/v2 packet match the exact currently active local lease, including agent and fencing token. It records concise projected evidence but does not release the lease, select fallback, transition Linear, launch an agent, write GitHub, merge, or complete BAR-26.
 
 Source: [BAR-35](https://linear.app/baronet/issue/BAR-35/bar-26-increment-4-correlated-result-ingestion-and-human-pause).
+
+## D-007 — Chat and model memory are not project authority
+
+Chat history and model memory are lower than repository evidence and cannot
+establish a baseline, task status, reviewer policy, or mutation permission.
+
+Source: [BAR-55](https://linear.app/baronet/issue/BAR-55) and [Issue #47](https://github.com/baroentgray/the-logs-are-wrong/issues/47).
+
+## D-008 — CURRENT_STATE is the single volatile current-state cache
+
+`CURRENT_STATE.md` replaces `STATUS.md`. It is non-authoritative and volatile;
+there must not be two competing current-state caches.
+
+Source: [Issue #47](https://github.com/baroentgray/the-logs-are-wrong/issues/47).
+
+## D-009 — ACTIVE_RUNS and HANDOFF are generated projections
+
+`ACTIVE_RUNS.md` records only unfinished operations and `HANDOFF.md` supports a
+new control chat. Both are generated, non-authoritative projections that require
+live validation before any write.
+
+Source: [Issue #47](https://github.com/baroentgray/the-logs-are-wrong/issues/47).
+
+## D-010 — Operational snapshots refresh only at safe workflow checkpoints
+
+The allowed refresh triggers are `TASK_CREATED`,
+`IMPLEMENTATION_CANDIDATE_READY`, `AUTHORITATIVE_REVIEW_COMPLETE`,
+`CORRECTION_CANDIDATE_READY`, `MERGED_AND_VERIFIED`, and
+`CHAT_HANDOFF_CREATED`. The triggers document checkpoints; they do not launch
+agents or write GitHub or Linear automatically.
+
+Source: [Issue #47](https://github.com/baroentgray/the-logs-are-wrong/issues/47).
+
+## D-011 — Grok is the sole authoritative reviewer under current policy
+
+From TLAW-013 until an explicit user policy change, Grok is the sole
+authoritative reviewer. There is no dual authoritative review and no automatic
+fallback to Claude; implementation and merge roles remain constrained by their
+exact handoffs.
+
+Source: [Issue #47](https://github.com/baroentgray/the-logs-are-wrong/issues/47).
+
+## D-012 — One append-only log records accepted, rejected, and superseded decisions
+
+`DECISIONS.md` remains the single append-only log. Accepted decisions are added
+here; rejected and superseded options are represented by new references rather
+than rewriting earlier entries. At most one bounded correction round is allowed.
+
+Source: [Issue #47](https://github.com/baroentgray/the-logs-are-wrong/issues/47).
