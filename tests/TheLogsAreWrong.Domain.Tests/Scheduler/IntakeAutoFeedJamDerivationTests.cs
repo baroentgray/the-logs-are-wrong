@@ -1,4 +1,5 @@
 using System.Reflection;
+using System.Collections.Immutable;
 using TheLogsAreWrong.Domain.Configuration;
 using TheLogsAreWrong.Domain.Enums;
 using TheLogsAreWrong.Domain.Events;
@@ -102,6 +103,45 @@ public sealed class IntakeAutoFeedJamDerivationTests
         Assert.True(first.State.ValueEquals(second.State));
     }
 
+    [Fact]
+    public void Owner_missing_multiple_intake_and_later_clear_line_are_exact_defensive_or_no_op_branches()
+    {
+        var blocked = Blocked(ServerTick.From(60));
+        var missing = OwnerMissingCurrent(blocked);
+        var missingResult = Assert.IsType<IntakeAutoFeedJamOwnerMissing>(Derive.Derive(missing, blocked));
+        Assert.Same(missing, missingResult.State);
+        Assert.Equal(blocked.LogId, missingResult.LogId);
+        Assert.Equal(missing.StateVersion, missingResult.State.StateVersion);
+
+        var ambiguous = RuntimeFixture.MoveHost(blocked.State, "log_03", LogState.AT_FEED_GATE);
+        ambiguous = RuntimeFixture.MoveHost(ambiguous, "log_03", LogState.AT_INTAKE);
+        var ambiguousResult = Assert.IsType<IntakeAutoFeedJamDefensiveFailure>(Derive.Derive(ambiguous, blocked));
+        Assert.Equal(IntakeAutoFeedJamDefensiveFailureReason.CurrentShapeInvalid, ambiguousResult.Reason);
+        Assert.Same(ambiguous, ambiguousResult.State);
+        Assert.Equal((LogState.AT_INTAKE, LogState.AT_INTAKE, LineState.LINE_CLEAR), (Log(ambiguous, "log_01").State, Log(ambiguous, "log_03").State, ambiguous.Line.State));
+
+        var laterLine = WithLine(blocked.State, new LineRuntimeState(LineState.LINE_CLEAR, ServerTick.From(61), null, null, null));
+        var timingResult = Assert.IsType<IntakeAutoFeedJamDefensiveFailure>(Derive.Derive(laterLine, blocked));
+        Assert.Equal(IntakeAutoFeedJamDefensiveFailureReason.AttemptTickPrecedesLine, timingResult.Reason);
+        Assert.Same(laterLine, timingResult.State);
+    }
+
+    [Fact]
+    public void Attempted_at_isolated_sensitivity_changes_only_accepted_line_entry_timing()
+    {
+        var firstBlocked = Blocked(ServerTick.From(60));
+        var secondBlocked = Blocked(ServerTick.From(61));
+        Assert.True(firstBlocked.State.ValueEquals(secondBlocked.State));
+        var first = Assert.IsType<IntakeAutoFeedJamEntered>(Derive.Derive(firstBlocked.State, firstBlocked));
+        var second = Assert.IsType<IntakeAutoFeedJamEntered>(Derive.Derive(secondBlocked.State, secondBlocked));
+        Assert.Equal((first.LogId, first.Cause, first.PriorStateVersion, first.CurrentStateVersion), (second.LogId, second.Cause, second.PriorStateVersion, second.CurrentStateVersion));
+        Assert.Equal((ServerTick.From(60), ServerTick.From(61)), (first.EnteredAt, second.EnteredAt));
+        Assert.Equal((ServerTick.From(60), ServerTick.From(61)), (first.State.Line.EnteredAt, second.State.Line.EnteredAt));
+        Assert.Equal(first.State.Logs, second.State.Logs);
+        Assert.Equal(first.State.Inventory.ConsumableQuantities, second.State.Inventory.ConsumableQuantities);
+        Assert.True(first.State.Inventory.ReusableItems.SetEquals(second.State.Inventory.ReusableItems));
+    }
+
     private static DefaultIntakeAutoRouteBlocked Blocked(ServerTick tick)
     {
         var fixture = Fixture.LoadP0();
@@ -152,6 +192,28 @@ public sealed class IntakeAutoFeedJamDerivationTests
     {
         var mutation = typeof(ShiftRuntimeState).GetMethod("WithActiveIntakeDeadline", BindingFlags.Instance | BindingFlags.NonPublic)!;
         return Assert.IsType<ShiftRuntimeState>(mutation.Invoke(blocked.State, [new ActiveIntakeDeadline(blocked.LogId, ServerTick.From(60), TheLogsAreWrong.Domain.Time.SimulationDuration.FromTicks(60))]));
+    }
+
+    private static ShiftRuntimeState WithLine(ShiftRuntimeState state, LineRuntimeState line)
+    {
+        var mutation = typeof(ShiftRuntimeState).GetMethod("WithLine", BindingFlags.Instance | BindingFlags.NonPublic)!;
+        return Assert.IsType<ShiftRuntimeState>(mutation.Invoke(state, [line]));
+    }
+
+    private static ShiftRuntimeState OwnerMissingCurrent(DefaultIntakeAutoRouteBlocked blocked)
+    {
+        var fixture = Fixture.LoadP0();
+        var scheduler = fixture.Shift.Scheduler with { Capacities = fixture.Shift.Scheduler.Capacities.SetItem(NodeId.INTAKE, NodeCapacity.Limited(2)) };
+        var configuration = fixture.Shift with { Scheduler = scheduler, Manifest = fixture.Shift.Manifest.Where(log => log.Id != blocked.LogId).ToImmutableArray() };
+        var state = ShiftRuntimeState.Create(configuration);
+        state = RuntimeFixture.MoveHost(state, "log_02", LogState.AT_FEED_GATE);
+        state = RuntimeFixture.MoveHost(state, "log_02", LogState.AT_INTAKE);
+        state = RuntimeFixture.MoveHost(state, "log_02", LogState.QUEUED_FOR_SAW);
+        state = RuntimeFixture.MoveHost(state, "log_03", LogState.AT_FEED_GATE);
+        state = RuntimeFixture.MoveHost(state, "log_03", LogState.AT_INTAKE);
+        state = RuntimeFixture.MoveHost(state, "log_03", LogState.AT_PROCEDURE);
+        state = RuntimeFixture.MoveHost(state, "log_03", LogState.AT_INTAKE);
+        return RuntimeFixture.MoveHost(state, "log_03", LogState.AT_PROCEDURE);
     }
 
     private static (DefaultIntakeAutoRouteBlocked Blocked, InMemoryEventJournal Journal, JournaledMutationCommitService Commits) BlockedWithJournal(ServerTick tick)
