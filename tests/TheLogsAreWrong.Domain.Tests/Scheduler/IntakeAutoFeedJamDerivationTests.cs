@@ -23,15 +23,17 @@ public sealed class IntakeAutoFeedJamDerivationTests
         var blocked = Blocked(ServerTick.From(60));
         Assert.Throws<ArgumentNullException>(() => Derive.Derive(null!, blocked));
         Assert.Throws<ArgumentNullException>(() => Derive.Derive(blocked.State, null!));
-        Assert.IsType<IntakeAutoFeedJamDefensiveFailure>(Derive.Derive(blocked.State, blocked with { Reason = (DefaultIntakeAutoRouteBlockReason)99 }));
-        Assert.IsType<IntakeAutoFeedJamDefensiveFailure>(Derive.Derive(blocked.State, blocked with { FollowUp = DefaultIntakeAutoRouteFollowUp.ExistingLineConditionRetained }));
-        Assert.IsType<IntakeAutoFeedJamDefensiveFailure>(Derive.Derive(blocked.State, blocked with { LogId = default }));
-        Assert.IsType<IntakeAutoFeedJamDefensiveFailure>(Derive.Derive(blocked.State, blocked with { AttemptedAt = default }));
+        Assert.Equal(IntakeAutoFeedJamDefensiveFailureReason.InvalidBlockedDescriptor, Assert.IsType<IntakeAutoFeedJamDefensiveFailure>(Derive.Derive(blocked.State, blocked with { Reason = (DefaultIntakeAutoRouteBlockReason)99 })).Reason);
+        Assert.Equal(IntakeAutoFeedJamDefensiveFailureReason.InvalidBlockedDescriptor, Assert.IsType<IntakeAutoFeedJamDefensiveFailure>(Derive.Derive(blocked.State, blocked with { FollowUp = DefaultIntakeAutoRouteFollowUp.ExistingLineConditionRetained })).Reason);
+        Assert.Equal(IntakeAutoFeedJamDefensiveFailureReason.InvalidBlockedDescriptor, Assert.IsType<IntakeAutoFeedJamDefensiveFailure>(Derive.Derive(blocked.State, blocked with { LogId = default })).Reason);
+        Assert.Equal(IntakeAutoFeedJamDefensiveFailureReason.InvalidBlockedDescriptor, Assert.IsType<IntakeAutoFeedJamDefensiveFailure>(Derive.Derive(blocked.State, blocked with { AttemptedAt = default })).Reason);
 
         var newer = RuntimeFixture.MoveHost(blocked.State, "log_03", LogState.AT_FEED_GATE);
-        Assert.IsType<IntakeAutoFeedJamDefensiveFailure>(Derive.Derive(blocked.State, new DefaultIntakeAutoRouteBlocked(newer, blocked.LogId, blocked.AttemptedAt, blocked.Reason, blocked.FollowUp)));
-        var divergent = ShiftRuntimeState.Create(Fixture.LoadP0().Shift);
-        Assert.IsType<IntakeAutoFeedJamDefensiveFailure>(Derive.Derive(divergent, blocked));
+        Assert.Equal(IntakeAutoFeedJamDefensiveFailureReason.CurrentStatePrecedesBlocked, Assert.IsType<IntakeAutoFeedJamDefensiveFailure>(Derive.Derive(blocked.State, new DefaultIntakeAutoRouteBlocked(newer, blocked.LogId, blocked.AttemptedAt, blocked.Reason, blocked.FollowUp))).Reason);
+        var older = ShiftRuntimeState.Create(Fixture.LoadP0().Shift);
+        Assert.Equal(IntakeAutoFeedJamDefensiveFailureReason.CurrentStatePrecedesBlocked, Assert.IsType<IntakeAutoFeedJamDefensiveFailure>(Derive.Derive(older, blocked)).Reason);
+        var divergent = Blocked(ServerTick.From(60));
+        Assert.Equal(IntakeAutoFeedJamDefensiveFailureReason.DivergentSameVersion, Assert.IsType<IntakeAutoFeedJamDefensiveFailure>(Derive.Derive(divergent.State, blocked)).Reason);
     }
 
     [Fact]
@@ -61,9 +63,8 @@ public sealed class IntakeAutoFeedJamDerivationTests
         var cleared = RuntimeFixture.MoveHost(blocked.State, "log_02", LogState.IN_SAW);
         Assert.Same(cleared, Assert.IsType<IntakeAutoFeedJamBlockerCleared>(Derive.Derive(cleared, blocked)).State);
 
-        var active = StartInitial().State;
-        var activeBlocked = new DefaultIntakeAutoRouteBlocked(active, LogId.From("log_01"), ServerTick.From(60), DefaultIntakeAutoRouteBlockReason.SawQueueOccupied, DefaultIntakeAutoRouteFollowUp.IntakeAutoFeedJamDerivationRequired);
-        Assert.IsType<IntakeAutoFeedJamDefensiveFailure>(Derive.Derive(active, activeBlocked));
+        var active = NewerStateWithActiveDeadline(blocked);
+        Assert.Throws<InvalidOperationException>(() => Derive.Derive(active, blocked));
     }
 
     [Fact]
@@ -74,14 +75,17 @@ public sealed class IntakeAutoFeedJamDerivationTests
         var entered = Assert.IsType<IntakeAutoFeedJamEntered>(Derive.Derive(newer, blocked));
         Assert.Equal(LogState.AT_FEED_GATE, Log(entered.State, "log_03").State);
 
-        var journal = AlignedJournal(newer, ServerTick.From(60));
-        var commit = new JournaledMutationCommitService();
-        var accepted = Assert.IsType<JournaledMutationCommitted>(commit.Commit(journal, newer, entered.State, blocked.AttemptedAt, Draft("jam")));
-        Assert.Same(newer, accepted.Before);
-        Assert.Same(entered.State, accepted.After);
-        Assert.Equal(entered.State.StateVersion, journal.LastStateVersion);
+        var (blockedForJournal, journal, commits) = BlockedWithJournal(ServerTick.From(60));
+        var journalNewer = RuntimeFixture.MoveHost(blockedForJournal.State, "log_03", LogState.AT_FEED_GATE);
+        Commit(commits, journal, blockedForJournal.State, journalNewer, ServerTick.From(60), "unrelated");
+        var journalEntered = Assert.IsType<IntakeAutoFeedJamEntered>(Derive.Derive(journalNewer, blockedForJournal));
+        var commit = commits;
+        var accepted = Commit(commit, journal, journalNewer, journalEntered.State, blockedForJournal.AttemptedAt, "jam");
+        Assert.Same(journalNewer, accepted.Before);
+        Assert.Same(journalEntered.State, accepted.After);
+        Assert.Equal(journalEntered.State.StateVersion, journal.LastStateVersion);
         var snapshot = (journal.Events.Count, journal.LastSequence, journal.LastTick, journal.LastStateVersion);
-        Assert.Same(entered.State, Assert.IsType<IntakeAutoFeedJamExistingLineConditionRetained>(Derive.Derive(entered.State, blocked)).State);
+        Assert.Same(journalEntered.State, Assert.IsType<IntakeAutoFeedJamExistingLineConditionRetained>(Derive.Derive(journalEntered.State, blockedForJournal)).State);
         Assert.Equal(snapshot, (journal.Events.Count, journal.LastSequence, journal.LastTick, journal.LastStateVersion));
     }
 
@@ -129,16 +133,55 @@ public sealed class IntakeAutoFeedJamDerivationTests
         Assert.Null(entered.State.ActiveIntakeDeadline);
         Assert.Equal(LogState.AT_INTAKE, Log(entered.State, "log_01").State);
         Assert.Equal(LogState.QUEUED_FOR_SAW, Log(entered.State, "log_02").State);
+        Assert.Equal(blocked.State.ShiftId, entered.State.ShiftId);
+        Assert.Equal(blocked.State.ShiftSeed, entered.State.ShiftSeed);
+        Assert.Equal(blocked.State.Logs, entered.State.Logs);
+        Assert.Equal(blocked.State.PendingFeed, entered.State.PendingFeed);
+        Assert.Equal(blocked.State.Inventory, entered.State.Inventory);
+        Assert.Equal(blocked.State.ProcedureProgressByLog, entered.State.ProcedureProgressByLog);
+        Assert.Equal(blocked.State.ActiveProcedureHold, entered.State.ActiveProcedureHold);
+        Assert.Equal(blocked.State.ActiveConfirmationTest, entered.State.ActiveConfirmationTest);
+        Assert.Equal(blocked.State.ConfirmationResultsByLog, entered.State.ConfirmationResultsByLog);
+        Assert.Equal(blocked.State.Containment, entered.State.Containment);
+        Assert.Equal(blocked.State.ActiveContainmentRitual, entered.State.ActiveContainmentRitual);
+        Assert.True(blocked.State.ProcessedIntentIds.SetEquals(entered.State.ProcessedIntentIds));
+        Assert.False(blocked.State.ValueEquals(entered.State));
     }
 
-    private static InMemoryEventJournal AlignedJournal(ShiftRuntimeState state, ServerTick tick)
+    private static ShiftRuntimeState NewerStateWithActiveDeadline(DefaultIntakeAutoRouteBlocked blocked)
     {
-        var journal = new InMemoryEventJournal(state.ShiftId);
-        for (var version = 1L; version <= state.StateVersion.Value; version++) journal.Append(new EventEnvelope { ShiftId = state.ShiftId, EventId = EventId.From($"seed_{version}"), Sequence = EventSequence.From(version), ServerTick = tick, StateVersionAfter = StateVersion.From(version), EventType = EventTypeId.From("test.seed"), Payload = new Payload($"seed_{version}") });
-        return journal;
+        var mutation = typeof(ShiftRuntimeState).GetMethod("WithActiveIntakeDeadline", BindingFlags.Instance | BindingFlags.NonPublic)!;
+        return Assert.IsType<ShiftRuntimeState>(mutation.Invoke(blocked.State, [new ActiveIntakeDeadline(blocked.LogId, ServerTick.From(60), TheLogsAreWrong.Domain.Time.SimulationDuration.FromTicks(60))]));
+    }
+
+    private static (DefaultIntakeAutoRouteBlocked Blocked, InMemoryEventJournal Journal, JournaledMutationCommitService Commits) BlockedWithJournal(ServerTick tick)
+    {
+        var fixture = Fixture.LoadP0();
+        var scheduler = fixture.Shift.Scheduler with { Capacities = fixture.Shift.Scheduler.Capacities.SetItem(NodeId.INTAKE, NodeCapacity.Limited(2)) };
+        var initial = ShiftRuntimeState.Create(fixture.Shift with { Scheduler = scheduler });
+        var journal = new InMemoryEventJournal(initial.ShiftId);
+        var commits = new JournaledMutationCommitService();
+        var plan = Assert.IsType<InitialFeedScheduled>(new InitialFeedPlanningService().Plan(initial, ServerTick.Zero, scheduler));
+        Commit(commits, journal, initial, plan.State, ServerTick.Zero, "plan");
+        var admission = Assert.IsType<FeedDueResolved>(new FeedDueResolutionService().Resolve(plan.State, ServerTick.Zero));
+        Commit(commits, journal, plan.State, admission.State, ServerTick.Zero, "admission");
+        var started = Assert.IsType<IntakeDeadlineStarted>(new IntakeDeadlineStartService().Start(admission.State, admission, fixture.Shift.Profiles[ProfileId.From("learning")]));
+        Commit(commits, journal, admission.State, started.State, ServerTick.Zero, "start");
+        var gate = RuntimeFixture.MoveHost(started.State, "log_02", LogState.AT_FEED_GATE);
+        Commit(commits, journal, started.State, gate, ServerTick.Zero, "gate");
+        var intake = RuntimeFixture.MoveHost(gate, "log_02", LogState.AT_INTAKE);
+        Commit(commits, journal, gate, intake, ServerTick.Zero, "second_intake");
+        var queue = RuntimeFixture.MoveHost(intake, "log_02", LogState.QUEUED_FOR_SAW);
+        Commit(commits, journal, intake, queue, ServerTick.Zero, "queue");
+        var expired = Assert.IsType<IntakeDeadlineExpired>(new IntakeDeadlineExpirationService().Expire(queue, tick));
+        Commit(commits, journal, queue, expired.State, tick, "expiration");
+        var blocked = Assert.IsType<DefaultIntakeAutoRouteBlocked>(new DefaultIntakeAutoRouteService().Attempt(expired.State, expired.FollowUp, tick));
+        Assert.Same(expired.State, blocked.State);
+        return (blocked, journal, commits);
     }
 
     private static DomainEventDraft Draft(string id) => new(EventId.From($"tlaw018_{id}"), EventTypeId.From("test.tlaw018"), new Payload(id), null);
+    private static JournaledMutationCommitted Commit(JournaledMutationCommitService commits, IEventJournal journal, ShiftRuntimeState before, ShiftRuntimeState after, ServerTick tick, string id) => Assert.IsType<JournaledMutationCommitted>(commits.Commit(journal, before, after, tick, Draft(id)));
     private static LogRuntimeState Log(ShiftRuntimeState state, string id) { Assert.True(state.TryGetLog(LogId.From(id), out var log)); return log; }
     private sealed record Payload(string Value) : IDomainEventPayload;
 }
