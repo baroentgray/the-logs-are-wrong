@@ -1,0 +1,40 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "tlaw.active-runs/v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "non_authoritative", "generated", "snapshot_kind", "generated_at", "runs", "staleness_rule", "refresh_triggers", "prepared_target_note"],
+  "properties": {
+    "schema": { "const": "tlaw.active-runs/v1" },
+    "non_authoritative": { "const": true },
+    "generated": { "const": true },
+    "snapshot_kind": { "enum": ["prepared_target", "live_checkpoint"] },
+    "generated_at": { "type": "string", "minLength": 1 },
+    "runs": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["identity", "kind", "status", "task_id"],
+        "properties": {
+          "identity": { "type": "string", "minLength": 1 },
+          "kind": { "enum": ["implementation", "authoritative_review", "correction", "merge", "verification", "post_merge_verification"] },
+          "status": { "enum": ["prepared", "running", "blocked", "awaiting_authoritative_review", "awaiting_correction", "awaiting_merge"] },
+          "task_id": { "type": "string", "minLength": 1 },
+          "agent": { "type": "string", "minLength": 1 },
+          "candidate_sha": { "type": "string", "pattern": "^[0-9a-f]{40}$" },
+          "workflow_run": { "type": "string", "minLength": 1 },
+          "job": { "type": "string", "minLength": 1 },
+          "artifact": { "type": "string", "minLength": 1 }
+        }
+      }
+    },
+    "staleness_rule": { "type": "string", "minLength": 1 },
+    "refresh_triggers": {
+      "type": "array",
+      "minItems": 6,
+      "items": { "enum": ["TASK_CREATED", "IMPLEMENTATION_CANDIDATE_READY", "AUTHORITATIVE_REVIEW_COMPLETE", "CORRECTION_CANDIDATE_READY", "MERGED_AND_VERIFIED", "CHAT_HANDOFF_CREATED"] }
+    },
+    "prepared_target_note": { "type": "string", "minLength": 1 }
+  }
+}

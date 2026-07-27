@@ -1,0 +1,48 @@
+schema: tlaw.chat-handoff/v1
+non_authoritative: true
+snapshot_kind: prepared_target
+mode: development_control_center
+source_hierarchy:
+  - frozen Gate documents
+  - merged GitHub code and exact SHA
+  - GitHub PR evidence and CI
+  - Linear work queue and status
+  - repository operational context
+  - generated volatile caches
+  - chat or model memory
+verified_main:
+  sha: e13b439d2929b969d179b012b2cfee05f66467c5
+  workflow: https://github.com/baroentgray/the-logs-are-wrong/actions/runs/30252521683
+  job: https://github.com/baroentgray/the-logs-are-wrong/actions/runs/30252521683/job/89933564902
+  artifact: verification-30252521683
+  artifact_id: 8647559612
+  artifact_digest: sha256:fde729a98e10c1d556c6a58d14a30781a4564a21686bcceeab748667bd0a6977
+completed_tasks:
+  - task_id: TLAW-013
+    summary: Completed through its merged GitHub evidence.
+    source_link: https://github.com/baroentgray/the-logs-are-wrong/issues/41
+  - task_id: TLAW-014
+    summary: Completed through its merged GitHub evidence.
+    source_link: https://github.com/baroentgray/the-logs-are-wrong/issues/43
+  - task_id: TLAW-015
+    summary: PR 46 merged, Issue 45 closed, and BAR-54 completed.
+    source_link: https://github.com/baroentgray/the-logs-are-wrong/issues/45
+current_operational_task: null
+unresolved_questions: []
+accepted_process_decisions:
+  - Codex is the implementation executor.
+  - Grok is the sole authoritative reviewer.
+decision_references:
+  - docs/agent/DECISIONS.md#d-007
+next_action: Start a new control chat and select or define the next task after live validation.
+startup_reading_order:
+  - AGENTS.md
+  - docs/agent/CONTEXT_INDEX.md
+  - docs/agent/HANDOFF.md
+  - live GitHub, Linear, and CI
+  - docs/agent/DECISIONS.md
+live_validation_required: true
+old_chat_non_authoritative: true
+unverified_baseline_forbidden: true
+silent_reviewer_policy_change_forbidden: true
+prepared_target_note: This describes the intended post-merge checkpoint and must be live-validated before any write.

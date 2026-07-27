@@ -6,9 +6,9 @@ public static class Program
 {
     public static int Main(string[] args)
     {
-        if (args.Length != 2 || args[0] is not ("validate" or "project-result"))
+        if (args.Length != 2 || args[0] is not ("validate" or "project-result" or "validate-document"))
         {
-            Console.Error.WriteLine("Usage: tlaw-agent-protocol <validate|project-result> <packet.yaml>");
+            Console.Error.WriteLine("Usage: tlaw-agent-protocol <validate|project-result|validate-document> <packet-or-document>");
             return 2;
         }
 
@@ -16,8 +16,11 @@ public static class Program
         {
             var packetPath = Path.GetFullPath(args[1]);
             var schemaRoot = Path.Combine(FindRepositoryRoot(packetPath), "docs", "agent", "schemas");
-            var yaml = new UTF8Encoding(encoderShouldEmitUTF8Identifier: false, throwOnInvalidBytes: true).GetString(File.ReadAllBytes(packetPath));
-            var result = PacketValidator.Validate(yaml, PacketSchemaRegistry.Load(schemaRoot));
+            var contents = new UTF8Encoding(encoderShouldEmitUTF8Identifier: false, throwOnInvalidBytes: true).GetString(File.ReadAllBytes(packetPath));
+            var registry = PacketSchemaRegistry.Load(schemaRoot);
+            var result = args[0] == "validate-document"
+                ? OperationalDocumentValidator.ValidateFrontMatter(contents, registry)
+                : PacketValidator.Validate(contents, registry);
             if (!result.IsValid)
             {
                 foreach (var diagnostic in result.Diagnostics)
@@ -28,7 +31,7 @@ public static class Program
                 return 1;
             }
 
-            Console.WriteLine(args[0] == "validate" ? "PASS" : ResultProjector.Project(result.Packet!));
+            Console.WriteLine(args[0] is "validate" or "validate-document" ? "PASS" : ResultProjector.Project(result.Packet!));
             return 0;
         }
         catch (Exception exception)

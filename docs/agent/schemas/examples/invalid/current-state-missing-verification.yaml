@@ -1,0 +1,14 @@
+schema: tlaw.current-state/v1
+non_authoritative: true
+snapshot_kind: prepared_target
+stage: MERGED_AND_VERIFIED
+completed_tasks: []
+active_task: null
+active_pr: null
+candidate_sha: null
+open_blockers: []
+next_action: Validate live state.
+source_links:
+  - https://example.invalid
+staleness_rule: Validate live state.
+prepared_target_note: Prepared target only.

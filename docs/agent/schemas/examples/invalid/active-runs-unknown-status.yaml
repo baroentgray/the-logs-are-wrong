@@ -1,0 +1,19 @@
+schema: tlaw.active-runs/v1
+non_authoritative: true
+generated: true
+snapshot_kind: live_checkpoint
+generated_at: 2026-07-27T09:07:39Z
+runs:
+  - identity: active-run
+    kind: implementation
+    status: completed
+    task_id: TLAW-AUTO-009
+staleness_rule: Validate live state.
+refresh_triggers:
+  - TASK_CREATED
+  - IMPLEMENTATION_CANDIDATE_READY
+  - AUTHORITATIVE_REVIEW_COMPLETE
+  - CORRECTION_CANDIDATE_READY
+  - MERGED_AND_VERIFIED
+  - CHAT_HANDOFF_CREATED
+prepared_target_note: Fixture only.

@@ -28,6 +28,34 @@ Every result, review, and handoff has `human_summary` with at most five non-empt
 
 Every review has `reviewed_head`: exactly 40 hexadecimal characters naming the reviewed Git commit. v1 validates this recorded evidence structurally; a later merge policy may compare it with a live pull-request head.
 
+## Operational checkpoint projections
+
+`CURRENT_STATE.md`, `ACTIVE_RUNS.md`, and `HANDOFF.md` are repository-backed
+operational projections, not agent envelopes and not sources of authority.
+Their YAML front matter uses the closed schemas `tlaw.current-state/v1`,
+`tlaw.active-runs/v1`, and `tlaw.chat-handoff/v1`. Validate a document with:
+
+```powershell
+dotnet run --configuration Release --project tools/Tlaw.AgentProtocol -- validate-document docs/agent/HANDOFF.md
+```
+
+The same safe YAML subset applies. Active-run identities must be unique and in
+ascending ordinal order. A prepared-target snapshot must say so explicitly and
+never claim that an unmerged candidate is merged. `CURRENT_STATE.md` is the one
+volatile current-state cache; the other two documents are generated projections.
+
+The `verification` kind represents unfinished exact-head or other candidate
+verification. The `post_merge_verification` kind represents unfinished
+verification of the exact resulting `main` SHA. Completed verification history
+does not belong in `ACTIVE_RUNS.md`.
+
+The documented refresh triggers are `TASK_CREATED`,
+`IMPLEMENTATION_CANDIDATE_READY`, `AUTHORITATIVE_REVIEW_COMPLETE`,
+`CORRECTION_CANDIDATE_READY`, `MERGED_AND_VERIFIED`, and
+`CHAT_HANDOFF_CREATED`. They are safe workflow checkpoints only: this tooling
+does not automatically write GitHub or Linear, launch agents, monitor
+continuously, or create chats.
+
 ## Handoff v2 preparation
 
 `tlaw.agent-handoff/v1` is immutable. `tlaw.agent-handoff/v2` is an explicitly required compatible envelope for complete reassignment/continuation evidence; there is no v1/v2 conversion. It records task-derived `task_id`, `source_id`, claim identity, `base_sha`, and branch, plus snapshot-derived status, head/ordered commits, work, normalized changed paths, commands, evidence, failures/questions, summary, and next action.

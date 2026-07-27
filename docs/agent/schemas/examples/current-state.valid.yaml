@@ -1,0 +1,37 @@
+schema: tlaw.current-state/v1
+non_authoritative: true
+snapshot_kind: prepared_target
+stage: MERGED_AND_VERIFIED
+verified_main:
+  sha: e13b439d2929b969d179b012b2cfee05f66467c5
+  workflow: https://github.com/baroentgray/the-logs-are-wrong/actions/runs/30252521683
+  job: https://github.com/baroentgray/the-logs-are-wrong/actions/runs/30252521683/job/89933564902
+  artifact: verification-30252521683
+  artifact_id: 8647559612
+  artifact_digest: sha256:fde729a98e10c1d556c6a58d14a30781a4564a21686bcceeab748667bd0a6977
+  tests_passed: 940
+  tests_failed: 0
+  tests_skipped: 0
+  build_warnings: 0
+  build_errors: 0
+  clean_tree: true
+  diff_check: true
+  gate_0: true
+  architecture: true
+  domain_dependencies: true
+  git_object_reader: true
+completed_tasks:
+  - task_id: TLAW-015
+    github_issue: https://github.com/baroentgray/the-logs-are-wrong/issues/45
+    pull_request: https://github.com/baroentgray/the-logs-are-wrong/pull/46
+    linear_issue: https://linear.app/baronet/issue/BAR-54
+    status: completed
+active_task: null
+active_pr: null
+candidate_sha: null
+open_blockers: []
+next_action: Start a new control chat and select or define the next task after live validation.
+source_links:
+  - https://github.com/baroentgray/the-logs-are-wrong/actions/runs/30252521683
+staleness_rule: Validate live GitHub, Linear, and CI before relying on or updating this cache.
+prepared_target_note: This describes the intended post-merge checkpoint and is not a claim about an unmerged candidate.

@@ -4,7 +4,9 @@
     "AGENTS.md",
     "docs/agent/CONTEXT_INDEX.md",
     "docs/agent/CONTEXT.md",
-    "docs/agent/STATUS.md",
+    "docs/agent/HANDOFF.md",
+    "docs/agent/CURRENT_STATE.md",
+    "docs/agent/ACTIVE_RUNS.md",
     "docs/agent/DECISIONS.md",
     "docs/agent/AGENT_PROTOCOL.md",
     "docs/agent/AUTOMATION.md"
@@ -17,7 +19,9 @@
     { "path": "docs/NETWORK_RULES.md", "authority": "frozen-gate", "stability": "frozen" },
     { "path": "docs/agent/CONTEXT_INDEX.md", "authority": "repository-operational", "stability": "stable" },
     { "path": "docs/agent/CONTEXT.md", "authority": "repository-operational", "stability": "stable" },
-    { "path": "docs/agent/STATUS.md", "authority": "cache", "stability": "volatile" },
+    { "path": "docs/agent/CURRENT_STATE.md", "authority": "cache", "stability": "volatile" },
+    { "path": "docs/agent/ACTIVE_RUNS.md", "authority": "cache", "stability": "volatile" },
+    { "path": "docs/agent/HANDOFF.md", "authority": "cache", "stability": "volatile" },
     { "path": "docs/agent/DECISIONS.md", "authority": "repository-operational", "stability": "append-only" },
     { "path": "docs/agent/AUTOMATION.md", "authority": "repository-operational", "stability": "stable" },
     { "path": "docs/agent/AGENT_PROTOCOL.md", "authority": "repository-operational", "stability": "versioned" },
@@ -25,6 +29,9 @@
     { "path": "docs/agent/schemas/task.v2.schema.json", "authority": "protocol", "stability": "versioned" },
     { "path": "docs/agent/schemas/result.schema.json", "authority": "protocol", "stability": "versioned" },
     { "path": "docs/agent/schemas/review.schema.json", "authority": "protocol", "stability": "versioned" },
-    { "path": "docs/agent/schemas/handoff.schema.json", "authority": "protocol", "stability": "versioned" }
+    { "path": "docs/agent/schemas/handoff.schema.json", "authority": "protocol", "stability": "versioned" },
+    { "path": "docs/agent/schemas/current-state.schema.json", "authority": "protocol", "stability": "versioned" },
+    { "path": "docs/agent/schemas/active-runs.schema.json", "authority": "protocol", "stability": "versioned" },
+    { "path": "docs/agent/schemas/chat-handoff.schema.json", "authority": "protocol", "stability": "versioned" }
   ]
 }
