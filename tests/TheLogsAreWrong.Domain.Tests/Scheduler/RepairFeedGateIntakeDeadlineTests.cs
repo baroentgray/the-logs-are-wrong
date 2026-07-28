@@ -189,6 +189,26 @@ public sealed class RepairFeedGateIntakeDeadlineTests
     }
 
     [Fact]
+    public void Existing_tlaw016_public_start_and_repaired_tlaw020_start_preserve_equivalent_deadline_semantics()
+    {
+        var fixture = Fixture.LoadP0();
+        var initial = ShiftRuntimeState.Create(fixture.Shift);
+        var planned = Assert.IsType<InitialFeedScheduled>(new InitialFeedPlanningService().Plan(initial, ServerTick.Zero, fixture.Shift.Scheduler));
+        var admitted = Assert.IsType<FeedDueResolved>(new FeedDueResolutionService().Resolve(planned.State, ServerTick.Zero));
+        var existing = Assert.IsType<IntakeDeadlineStarted>(new IntakeDeadlineStartService().Start(admitted.State, admitted, Profile("learning")));
+        var repairedAdmission = RepairedFeedGateAdmission(ServerTick.From(9), ServerTick.From(9));
+        var repaired = Assert.IsType<IntakeDeadlineStarted>(Start.Start(repairedAdmission.State, repairedAdmission, Profile("learning")));
+
+        Assert.Equal((admitted.ConsumedSchedule.LogId, admitted.ResolvedAt), (existing.Deadline.LogId, existing.Deadline.StartedAt));
+        Assert.Equal((repairedAdmission.LogId, repairedAdmission.AppliedAt), (repaired.Deadline.LogId, repaired.Deadline.StartedAt));
+        Assert.Equal(existing.Deadline.Duration, repaired.Deadline.Duration);
+        Assert.Equal(existing.PriorStateVersion.Next(), existing.CurrentStateVersion);
+        Assert.Equal(repaired.PriorStateVersion.Next(), repaired.CurrentStateVersion);
+        Assert.Same(existing.Deadline, existing.State.ActiveIntakeDeadline);
+        Assert.Same(repaired.Deadline, repaired.State.ActiveIntakeDeadline);
+    }
+
+    [Fact]
     public void Public_input_surface_is_closed()
     {
         var method = typeof(RepairFeedGateIntakeDeadlineStartService).GetMethod(nameof(RepairFeedGateIntakeDeadlineStartService.Start), [typeof(ShiftRuntimeState), typeof(RepairPendingTransitionExecuted), typeof(ShiftProfile)]);

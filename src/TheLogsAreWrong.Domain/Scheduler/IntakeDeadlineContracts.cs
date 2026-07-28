@@ -55,7 +55,7 @@ public sealed class IntakeDeadlineStartService
             throw new ArgumentException("Only a valid admitted-to-intake deadline-start descriptor is accepted.", nameof(admission));
         }
 
-        return StartFromAcceptedAdmission(
+        return StartFromValidatedAdmission(
             state,
             admission.State,
             admission.ConsumedSchedule.LogId,
@@ -64,7 +64,26 @@ public sealed class IntakeDeadlineStartService
             selectedProfile);
     }
 
-    internal static IntakeDeadlineStartResult StartFromAcceptedAdmission(
+    internal static IntakeDeadlineStartResult StartFromRepairedAdmission(
+        ShiftRuntimeState state,
+        RepairPendingTransitionExecuted repairedAdmission,
+        ShiftProfile selectedProfile)
+    {
+        ArgumentNullException.ThrowIfNull(state);
+        ArgumentNullException.ThrowIfNull(repairedAdmission);
+        ArgumentNullException.ThrowIfNull(selectedProfile);
+        ValidateRepairedFeedGateAdmission(repairedAdmission);
+
+        return StartFromValidatedAdmission(
+            state,
+            repairedAdmission.State,
+            repairedAdmission.LogId,
+            repairedAdmission.AppliedAt,
+            repairedAdmission.CurrentStateVersion,
+            selectedProfile);
+    }
+
+    private static IntakeDeadlineStartResult StartFromValidatedAdmission(
         ShiftRuntimeState state,
         ShiftRuntimeState admittedState,
         LogId owner,
@@ -105,6 +124,55 @@ public sealed class IntakeDeadlineStartService
 
         var after = state.WithActiveIntakeDeadline(expected);
         return new IntakeDeadlineStarted(after, expected, state.StateVersion, after.StateVersion);
+    }
+
+    private static void ValidateRepairedFeedGateAdmission(RepairPendingTransitionExecuted repairedAdmission)
+    {
+        if (repairedAdmission.State is null ||
+            repairedAdmission.PendingTransition is not { } pending ||
+            repairedAdmission.AppliedAt.IsDefault ||
+            pending.LogId.IsDefault ||
+            pending.Cause != JamCause.FEED_GATE_BLOCKED ||
+            pending.FromState != LogState.AT_FEED_GATE ||
+            pending.ToState != LogState.AT_INTAKE ||
+            repairedAdmission.LogId != pending.LogId ||
+            repairedAdmission.Cause != pending.Cause ||
+            repairedAdmission.Source != pending.FromState ||
+            repairedAdmission.Destination != pending.ToState ||
+            repairedAdmission.FollowUpRequirement != RepairPendingTransitionFollowUp.IntakeDeadlineStartRequired ||
+            repairedAdmission.PriorStateVersion.IsDefault ||
+            repairedAdmission.CurrentStateVersion.IsDefault ||
+            !repairedAdmission.PriorStateVersion.TryNext(out var expectedCurrentVersion) ||
+            repairedAdmission.CurrentStateVersion != expectedCurrentVersion ||
+            repairedAdmission.State.StateVersion != repairedAdmission.CurrentStateVersion)
+        {
+            throw new ArgumentException("Only an exact accepted repaired feed-gate admission can start an intake deadline.", nameof(repairedAdmission));
+        }
+
+        if (!repairedAdmission.State.TryGetLog(repairedAdmission.LogId, out var owner))
+        {
+            throw new InvalidOperationException("A repaired admission deadline owner must resolve in the retained result state.");
+        }
+
+        if (owner.State != LogState.AT_INTAKE)
+        {
+            throw new InvalidOperationException("A repaired admission deadline owner must be at intake.");
+        }
+
+        var line = repairedAdmission.State.Line;
+        if (line is null ||
+            line.State != LineState.LINE_CLEAR ||
+            line.Cause is not null ||
+            line.PendingLogId is not null ||
+            line.ActiveRepairHold is not null)
+        {
+            throw new InvalidOperationException("A repaired admission deadline requires an exactly clear retained line.");
+        }
+
+        if (repairedAdmission.State.ActiveIntakeDeadline is not null)
+        {
+            throw new InvalidOperationException("A repaired admission result cannot already contain an active intake deadline.");
+        }
     }
 }
 
