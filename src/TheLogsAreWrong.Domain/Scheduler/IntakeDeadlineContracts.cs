@@ -55,7 +55,29 @@ public sealed class IntakeDeadlineStartService
             throw new ArgumentException("Only a valid admitted-to-intake deadline-start descriptor is accepted.", nameof(admission));
         }
 
-        var expected = new ActiveIntakeDeadline(admission.ConsumedSchedule.LogId, admission.ResolvedAt, SimulationDuration.FromTicks(selectedProfile.IntakeTimeoutSeconds));
+        return StartFromAcceptedAdmission(
+            state,
+            admission.State,
+            admission.ConsumedSchedule.LogId,
+            admission.ResolvedAt,
+            admission.CurrentStateVersion,
+            selectedProfile);
+    }
+
+    internal static IntakeDeadlineStartResult StartFromAcceptedAdmission(
+        ShiftRuntimeState state,
+        ShiftRuntimeState admittedState,
+        LogId owner,
+        ServerTick startedAt,
+        StateVersion acceptedStateVersion,
+        ShiftProfile selectedProfile)
+    {
+        if (selectedProfile.IntakeTimeoutSeconds <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(selectedProfile), "Selected profile intake timeout must be positive.");
+        }
+
+        var expected = new ActiveIntakeDeadline(owner, startedAt, SimulationDuration.FromTicks(selectedProfile.IntakeTimeoutSeconds));
         if (state.ActiveIntakeDeadline is { } active)
         {
             if (active != expected)
@@ -71,7 +93,7 @@ public sealed class IntakeDeadlineStartService
             return new IntakeDeadlineAlreadyActive(state, active);
         }
 
-        if (!ReferenceEquals(state, admission.State) || state.StateVersion != admission.CurrentStateVersion)
+        if (!ReferenceEquals(state, admittedState) || state.StateVersion != acceptedStateVersion)
         {
             throw new ArgumentException("A new intake deadline must start from the exact admitted runtime state.", nameof(state));
         }
