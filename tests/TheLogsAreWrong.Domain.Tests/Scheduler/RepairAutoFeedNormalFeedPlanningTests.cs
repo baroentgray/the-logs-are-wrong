@@ -44,8 +44,12 @@ public sealed class RepairAutoFeedNormalFeedPlanningTests
         Assert.Same(before.Line, scheduled.State.Line);
         Assert.Same(before.Inventory, scheduled.State.Inventory);
         Assert.Same(before.ProcedureProgressByLog, scheduled.State.ProcedureProgressByLog);
+        Assert.Same(before.ActiveProcedureHold, scheduled.State.ActiveProcedureHold);
+        Assert.Same(before.ActiveConfirmationTest, scheduled.State.ActiveConfirmationTest);
         Assert.Same(before.ConfirmationResultsByLog, scheduled.State.ConfirmationResultsByLog);
         Assert.Same(before.Containment, scheduled.State.Containment);
+        Assert.Same(before.ActiveContainmentRitual, scheduled.State.ActiveContainmentRitual);
+        Assert.Same(before.ActiveIntakeDeadline, scheduled.State.ActiveIntakeDeadline);
         Assert.True(before.ProcessedIntentIds.SetEquals(scheduled.State.ProcessedIntentIds));
         Assert.Equal(LogState.QUEUED_FOR_SAW, Log(scheduled.State, repaired.LogId).State);
         Assert.Equal(0, scheduled.State.GetNodeOccupancy(NodeId.INTAKE));
@@ -84,6 +88,62 @@ public sealed class RepairAutoFeedNormalFeedPlanningTests
         Assert.Throws<InvalidOperationException>(() => Planning.Plan(differentSchedule.State, repaired, configuration));
         Assert.Throws<InvalidOperationException>(() => Planning.Plan(scheduled.State, repaired, configuration with { NormalFeedDelaySeconds = 6 }));
         Assert.Same(scheduled.Schedule, scheduled.State.PendingFeed);
+    }
+
+    [Fact]
+    public void Fabricated_one_step_retry_with_exact_pending_schedule_but_different_line_fails_value_equality()
+    {
+        var (repaired, configuration) = RepairedAutoRoute(ServerTick.From(66), ServerTick.From(66));
+        var scheduled = Assert.IsType<NormalFeedScheduled>(Planning.Plan(repaired.State, repaired, configuration));
+        var alteredLine = CloneWith(
+            scheduled.State.Line,
+            nameof(LineRuntimeState.EnteredAt),
+            ServerTick.From(scheduled.State.Line.EnteredAt.Value + 1));
+        var fabricated = CloneWith(scheduled.State, nameof(ShiftRuntimeState.Line), alteredLine);
+
+        Assert.Equal(scheduled.CurrentStateVersion, fabricated.StateVersion);
+        Assert.Equal(scheduled.Schedule, fabricated.PendingFeed);
+        Assert.False(fabricated.ValueEquals(scheduled.State));
+        Assert.Throws<InvalidOperationException>(() => Planning.Plan(fabricated, repaired, configuration));
+        Assert.Same(alteredLine, fabricated.Line);
+        Assert.Equal(scheduled.CurrentStateVersion, fabricated.StateVersion);
+    }
+
+    [Fact]
+    public void Retained_owner_missing_fails_loudly_without_creating_schedule_or_advancing_journal()
+    {
+        var (repaired, configuration) = RepairedAutoRoute(ServerTick.From(66), ServerTick.From(66));
+        var withoutOwner = CloneWith(
+            repaired.State,
+            nameof(ShiftRuntimeState.Logs),
+            repaired.State.Logs.Where(log => log.LogId != repaired.LogId).ToImmutableArray());
+        var indexes = Assert.IsType<ImmutableDictionary<LogId, int>>(FindField(typeof(ShiftRuntimeState), "_logIndexes").GetValue(repaired.State));
+        withoutOwner = CloneWith(withoutOwner, "_logIndexes", indexes.Remove(repaired.LogId));
+        var contradictory = CloneWith(repaired, nameof(RepairPendingTransitionExecutionResult.State), withoutOwner);
+        var journal = new InMemoryEventJournal(repaired.State.ShiftId);
+        var cursor = JournalCursor(journal);
+
+        Assert.Throws<InvalidOperationException>(() => Planning.Plan(withoutOwner, contradictory, configuration));
+        Assert.Same(withoutOwner, contradictory.State);
+        Assert.Null(withoutOwner.PendingFeed);
+        Assert.Null(repaired.State.PendingFeed);
+        Assert.Equal(repaired.CurrentStateVersion, withoutOwner.StateVersion);
+        AssertJournalCursor(cursor, journal);
+    }
+
+    [Fact]
+    public void Frozen_descriptor_and_public_result_projections_must_match_the_exact_auto_route()
+    {
+        var (repaired, configuration) = RepairedAutoRoute(ServerTick.From(66), ServerTick.From(66));
+        var resultLogMismatch = CloneWith(repaired, nameof(RepairPendingTransitionExecuted.LogId), LogId.From("log_02"));
+        var wrongCause = CloneWith(repaired.PendingTransition, nameof(PendingLineTransitionDescriptor.Cause), JamCause.FEED_GATE_BLOCKED);
+        var wrongSource = CloneWith(repaired.PendingTransition, nameof(PendingLineTransitionDescriptor.FromState), LogState.AT_FEED_GATE);
+        var wrongDestination = CloneWith(repaired.PendingTransition, nameof(PendingLineTransitionDescriptor.ToState), LogState.AT_INTAKE);
+
+        AssertRejected(repaired.State, resultLogMismatch, configuration);
+        AssertRejected(repaired.State, WithDescriptorProjections(repaired, wrongCause), configuration);
+        AssertRejected(repaired.State, WithDescriptorProjections(repaired, wrongSource), configuration);
+        AssertRejected(repaired.State, WithDescriptorProjections(repaired, wrongDestination), configuration);
     }
 
     [Fact]
@@ -143,6 +203,10 @@ public sealed class RepairAutoFeedNormalFeedPlanningTests
         var ownerMoved = CloneWith(repaired.State, nameof(ShiftRuntimeState.Logs), repaired.State.Logs.SetItem(0, ownerMovedLog));
         var activeDeadline = CloneWith(repaired.State, nameof(ShiftRuntimeState.ActiveIntakeDeadline), new ActiveIntakeDeadline(repaired.LogId, repaired.AppliedAt, SimulationDuration.FromTicks(60)));
         var jammed = CloneWith(repaired.State, nameof(ShiftRuntimeState.Line), new LineRuntimeState(LineState.LINE_JAMMED, repaired.AppliedAt, JamCause.INTAKE_AUTOFEED_BLOCKED, repaired.LogId, null));
+        var hold = new ActiveRepairHold(repaired.AppliedAt, repaired.AppliedAt + SimulationDuration.FromTicks(6), SimulationDuration.FromTicks(6));
+        var repairing = CloneWith(repaired.State, nameof(ShiftRuntimeState.Line), new LineRuntimeState(LineState.REPAIRING, repaired.AppliedAt, JamCause.INTAKE_AUTOFEED_BLOCKED, repaired.LogId, hold));
+        var clearWithPending = CloneWith(repaired.State.Line, nameof(LineRuntimeState.PendingLogId), (LogId?)repaired.LogId);
+        var clearWithHold = CloneWith(repaired.State.Line, nameof(LineRuntimeState.ActiveRepairHold), hold);
         var retainedCause = CloneWith(repaired.State.Line, nameof(LineRuntimeState.Cause), (JamCause?)JamCause.INTAKE_AUTOFEED_BLOCKED);
         var wrongIntakeLog = CloneWith(Log(repaired.State, LogId.From("log_03")), nameof(LogRuntimeState.State), LogState.AT_INTAKE);
         var wrongIntake = CloneWith(repaired.State, nameof(ShiftRuntimeState.Logs), repaired.State.Logs.SetItem(2, wrongIntakeLog));
@@ -150,6 +214,11 @@ public sealed class RepairAutoFeedNormalFeedPlanningTests
         AssertRejected(ownerMoved, CloneWith(repaired, nameof(RepairPendingTransitionExecutionResult.State), ownerMoved), configuration);
         AssertRejected(activeDeadline, CloneWith(repaired, nameof(RepairPendingTransitionExecutionResult.State), activeDeadline), configuration);
         AssertRejected(jammed, CloneWith(repaired, nameof(RepairPendingTransitionExecutionResult.State), jammed), configuration);
+        AssertRejected(repairing, CloneWith(repaired, nameof(RepairPendingTransitionExecutionResult.State), repairing), configuration);
+        var clearWithPendingState = CloneWith(repaired.State, nameof(ShiftRuntimeState.Line), clearWithPending);
+        AssertRejected(clearWithPendingState, CloneWith(repaired, nameof(RepairPendingTransitionExecutionResult.State), clearWithPendingState), configuration);
+        var clearWithHoldState = CloneWith(repaired.State, nameof(ShiftRuntimeState.Line), clearWithHold);
+        AssertRejected(clearWithHoldState, CloneWith(repaired, nameof(RepairPendingTransitionExecutionResult.State), clearWithHoldState), configuration);
         var retainedCauseState = CloneWith(repaired.State, nameof(ShiftRuntimeState.Line), retainedCause);
         AssertRejected(retainedCauseState, CloneWith(repaired, nameof(RepairPendingTransitionExecutionResult.State), retainedCauseState), configuration);
         AssertRejected(wrongIntake, CloneWith(repaired, nameof(RepairPendingTransitionExecutionResult.State), wrongIntake), configuration);
@@ -200,10 +269,27 @@ public sealed class RepairAutoFeedNormalFeedPlanningTests
         Assert.Same(repaired.State, schedulingCommit.Before);
         Assert.Same(scheduled.State, schedulingCommit.After);
 
-        var cursor = (journal.Count, journal.LastSequence, journal.LastStateVersion, journal.LastTick);
+        var cursor = JournalCursor(journal);
+        var noOpContext = AutoRouteCompletion(ServerTick.From(66));
+        var gateOccupied = RuntimeFixture.MoveHost(noOpContext.Completion.State, "log_03", LogState.AT_FEED_GATE);
+        var retainedNoOp = Assert.IsType<RepairPendingTransitionExecuted>(Execute.Execute(gateOccupied, noOpContext.Completion, ServerTick.From(66)));
+        var noOp = Assert.IsType<NormalFeedPlanningNoOp>(Planning.Plan(retainedNoOp.State, retainedNoOp, noOpContext.Configuration));
+        Assert.Equal(NormalFeedPlanningNoOpReason.FeedGateOccupied, noOp.Reason);
+        AssertJournalCursor(cursor, journal);
+
+        var malformed = CloneWith(repaired, nameof(RepairPendingTransitionExecuted.LogId), LogId.From("log_02"));
+        Assert.Throws<ArgumentException>(() => Planning.Plan(repaired.State, malformed, scheduler));
+        AssertJournalCursor(cursor, journal);
+
+        var divergentLine = CloneWith(scheduled.State.Line, nameof(LineRuntimeState.EnteredAt), ServerTick.From(scheduled.State.Line.EnteredAt.Value + 1));
+        var divergent = CloneWith(scheduled.State, nameof(ShiftRuntimeState.Line), divergentLine);
+        Assert.Throws<InvalidOperationException>(() => Planning.Plan(divergent, repaired, scheduler));
+        AssertJournalCursor(cursor, journal);
+
         var retry = Assert.IsType<NormalFeedPlanningNoOp>(Planning.Plan(scheduled.State, repaired, scheduler));
+        AssertJournalCursor(cursor, journal);
         Assert.IsType<JournaledMutationCommitRejected>(commits.Commit(journal, retry.State, retry.State, ServerTick.From(66), Draft("retry")));
-        Assert.Equal(cursor, (journal.Count, journal.LastSequence, journal.LastStateVersion, journal.LastTick));
+        AssertJournalCursor(cursor, journal);
     }
 
     [Fact]
@@ -281,11 +367,35 @@ public sealed class RepairAutoFeedNormalFeedPlanningTests
         Assert.Null(repaired.State.Line.ActiveRepairHold);
     }
 
+    private static RepairPendingTransitionExecuted WithDescriptorProjections(
+        RepairPendingTransitionExecuted repaired,
+        PendingLineTransitionDescriptor descriptor)
+    {
+        var projected = CloneWith(repaired, nameof(RepairPendingTransitionExecuted.PendingTransition), descriptor);
+        projected = CloneWith(projected, nameof(RepairPendingTransitionExecuted.LogId), descriptor.LogId);
+        projected = CloneWith(projected, nameof(RepairPendingTransitionExecuted.Cause), descriptor.Cause);
+        projected = CloneWith(projected, nameof(RepairPendingTransitionExecuted.Source), descriptor.FromState);
+        return CloneWith(projected, nameof(RepairPendingTransitionExecuted.Destination), descriptor.ToState);
+    }
+
+    private static (int Count, EventSequence LastSequence, StateVersion LastStateVersion, ServerTick LastTick) JournalCursor(IEventJournal journal) =>
+        (journal.Count, journal.LastSequence, journal.LastStateVersion, journal.LastTick);
+
+    private static void AssertJournalCursor(
+        (int Count, EventSequence LastSequence, StateVersion LastStateVersion, ServerTick LastTick) expected,
+        IEventJournal journal) =>
+        Assert.Equal(expected, JournalCursor(journal));
+
     private static void AssertRejected(ShiftRuntimeState state, RepairPendingTransitionExecuted repaired, SchedulerConfiguration configuration)
     {
         var version = state.StateVersion;
+        var pending = state.PendingFeed;
+        var line = state.Line;
         Assert.ThrowsAny<Exception>(() => Planning.Plan(state, repaired, configuration));
         Assert.Equal(version, state.StateVersion);
+        Assert.Same(pending, state.PendingFeed);
+        Assert.Same(line, state.Line);
+        Assert.Null(state.PendingFeed);
     }
 
     private static ShiftProfile Profile(string id) => Fixture.LoadP0().Shift.Profiles[ProfileId.From(id)];
