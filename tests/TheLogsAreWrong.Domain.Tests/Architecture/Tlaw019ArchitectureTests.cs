@@ -12,7 +12,7 @@ public sealed class Tlaw019ArchitectureTests
         var source = File.ReadAllText(path);
         Assert.False(string.IsNullOrWhiteSpace(source));
         Assert.Contains("HostLogTransitionService", source, StringComparison.Ordinal);
-        Assert.All(new[] { "EventEnvelope", "EventId", "EventSequence", "IEventJournal", "Append(", "TryAppend(", "LineRepairStartService", "LineRepairDueCompletionService", "IntakeDeadlineStartService", "NormalFeedPlanningService", "SawCycle", "LineNoise", "Dispatcher", "DateTime", "Stopwatch", "Timer", "Random", "Environment.", "File.", "Directory.", "Task", "Thread", "Unity", "FishNet", "Steam", "Yaml" }, token => Assert.DoesNotContain(token, source, StringComparison.Ordinal));
+        Assert.All(new[] { "EventEnvelope", "EventId", "EventSequence", "IEventJournal", "Append(", "TryAppend(", "LineRepairStartService", "LineRepairDueCompletionService", "IntakeDeadlineStartService", "NormalFeedPlanningService", "ConfirmationTestCancellationService", "ConfirmationTestConditionService", "ConfirmationTestDueCompletionService", "SawCycle", "LineNoise", "Dispatcher", "DateTime", "Stopwatch", "Timer", "Random", "Environment.", "File.", "Directory.", "Task", "Thread", "Unity", "FishNet", "Steam", "Yaml" }, token => Assert.DoesNotContain(token, source, StringComparison.Ordinal));
         var project = File.ReadAllText(Path.Combine(root, "src", "TheLogsAreWrong.Domain", "TheLogsAreWrong.Domain.csproj"));
         Assert.DoesNotContain("<PackageReference", project, StringComparison.Ordinal);
     }

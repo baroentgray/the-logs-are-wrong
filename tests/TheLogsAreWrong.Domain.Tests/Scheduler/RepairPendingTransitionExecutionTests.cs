@@ -143,6 +143,65 @@ public sealed class RepairPendingTransitionExecutionTests
     }
 
     [Fact]
+    public void Intake_auto_feed_owner_confirmation_is_cleared_only_by_the_accepted_host_transition()
+    {
+        var completion = IntakeAutoFeedCompositionWithOwnerConfirmation(ServerTick.From(66));
+        var before = completion.State;
+        var pending = Assert.IsType<PendingLineTransitionDescriptor>(completion.PendingTransition);
+        var active = Assert.IsType<ActiveConfirmationTest>(before.ActiveConfirmationTest);
+        var results = before.ConfirmationResultsByLog;
+
+        Assert.Equal((LogId.From("log_10"), JamCause.INTAKE_AUTOFEED_BLOCKED, LogState.AT_INTAKE, LogState.QUEUED_FOR_SAW), (pending.LogId, pending.Cause, pending.FromState, pending.ToState));
+        Assert.Equal(LogId.From("log_10"), active.LogId);
+        Assert.Equal(LogState.AT_INTAKE, Log(before, "log_10").State);
+        Assert.Equal(LineState.LINE_CLEAR, before.Line.State);
+        Assert.Null(before.ActiveIntakeDeadline);
+        Assert.Equal(0, before.GetNodeOccupancy(NodeId.SAW_QUEUE));
+        Assert.Null(before.PendingFeed);
+        Assert.True(before.TryGetConfirmationResult(LogId.From("log_06"), out _));
+
+        var accepted = Assert.IsType<RepairPendingTransitionExecuted>(Execute.Execute(before, completion, ServerTick.From(66)));
+
+        Assert.Equal((LogState.QUEUED_FOR_SAW, RepairPendingTransitionFollowUp.NormalFeedPlanningEvaluationRequired, before.StateVersion.Next()), (Log(accepted.State, "log_10").State, accepted.FollowUpRequirement, accepted.State.StateVersion));
+        Assert.Null(accepted.State.ActiveConfirmationTest);
+        Assert.Same(results, accepted.State.ConfirmationResultsByLog);
+        Assert.Same(before.Line, accepted.State.Line);
+        Assert.Null(accepted.State.ActiveIntakeDeadline);
+        Assert.Null(accepted.State.PendingFeed);
+        Assert.Equal(LogState.IN_SAW, Log(accepted.State, "log_02").State);
+        Assert.True(before.ProcessedIntentIds.SetEquals(accepted.State.ProcessedIntentIds));
+    }
+
+    [Fact]
+    public void Newer_unrelated_active_confirmation_is_preserved_by_an_accepted_auto_transition()
+    {
+        var completion = IntakeAutoFeedComposition(ServerTick.From(66));
+        var unrelated = ActiveConfirmationFor("log_06", ServerTick.From(59));
+        var newer = RuntimeFixture.MoveHost(completion.State, "log_06", LogState.AT_FEED_GATE);
+        newer = RuntimeFixture.MoveHost(newer, "log_06", LogState.AT_INTAKE);
+        newer = RuntimeFixture.MoveHost(newer, "log_06", LogState.AT_PROCEDURE);
+        newer = WithActiveConfirmation(newer, unrelated);
+        var pending = Assert.IsType<PendingLineTransitionDescriptor>(completion.PendingTransition);
+
+        Assert.True(newer.StateVersion > completion.State.StateVersion);
+        Assert.Equal(LogState.AT_INTAKE, Log(newer, pending.LogId).State);
+        Assert.Equal(1, newer.GetNodeOccupancy(NodeId.INTAKE));
+        Assert.Equal(0, newer.GetNodeOccupancy(NodeId.SAW_QUEUE));
+        Assert.Null(newer.ActiveIntakeDeadline);
+        Assert.Same(unrelated, newer.ActiveConfirmationTest);
+        Assert.Equal(LogId.From("log_06"), unrelated.LogId);
+
+        var accepted = Assert.IsType<RepairPendingTransitionExecuted>(Execute.Execute(newer, completion, ServerTick.From(66)));
+
+        Assert.Equal(LogState.QUEUED_FOR_SAW, Log(accepted.State, pending.LogId).State);
+        Assert.Same(unrelated, accepted.State.ActiveConfirmationTest);
+        Assert.Same(newer.ConfirmationResultsByLog, accepted.State.ConfirmationResultsByLog);
+        Assert.Same(newer.Line, accepted.State.Line);
+        Assert.Null(accepted.State.ActiveIntakeDeadline);
+        Assert.Null(accepted.State.PendingFeed);
+    }
+
+    [Fact]
     public void Exact_due_and_late_repair_completions_are_accepted_without_starting_follow_ups()
     {
         var exact = FeedGateComposition(ServerTick.From(9));
@@ -272,6 +331,34 @@ public sealed class RepairPendingTransitionExecutionTests
         return Assert.IsType<LineRepairCompleted>(new LineRepairDueCompletionService().CompleteDue(unblocked, completedAt));
     }
 
+    private static LineRepairCompleted IntakeAutoFeedCompositionWithOwnerConfirmation(ServerTick completedAt)
+    {
+        var fixture = Fixture.LoadP0();
+        var owner = LogId.From("log_10");
+        var scheduler = fixture.Shift.Scheduler with { Capacities = fixture.Shift.Scheduler.Capacities.SetItem(NodeId.INTAKE, NodeCapacity.Limited(2)) };
+        var configuration = fixture.Shift with
+        {
+            Scheduler = scheduler,
+            Manifest = fixture.Shift.Manifest.OrderBy(log => log.Id == owner ? 0 : 1).ToImmutableArray()
+        };
+        var initial = ShiftRuntimeState.Create(configuration);
+        var planned = Assert.IsType<InitialFeedScheduled>(new InitialFeedPlanningService().Plan(initial, ServerTick.Zero, scheduler));
+        var admitted = Assert.IsType<FeedDueResolved>(new FeedDueResolutionService().Resolve(planned.State, ServerTick.Zero));
+        var deadline = Assert.IsType<IntakeDeadlineStarted>(new IntakeDeadlineStartService().Start(admitted.State, admitted, configuration.Profiles[ProfileId.From("learning")]));
+        var secondAtIntake = RuntimeFixture.MoveHost(RuntimeFixture.MoveHost(deadline.State, "log_06", LogState.AT_FEED_GATE), "log_06", LogState.AT_INTAKE);
+        var priorConfirmation = Assert.IsType<ConfirmationTestStarted>(new ConfirmationTestStartService().Start(secondAtIntake, LogId.From("log_06"), ImmutableHashSet.Create(ItemId.From("choir_cassette")), ServerTick.From(1), LineNoise.QUIET, fixture.Anomalies));
+        var completedConfirmation = Assert.IsType<ConfirmationTestDueCompleted>(new ConfirmationTestDueCompletionService().CompleteDue(priorConfirmation.State, ServerTick.From(5), fixture.Anomalies));
+        var ownerAtIntake = RuntimeFixture.MoveHost(completedConfirmation.State, "log_06", LogState.AT_PROCEDURE);
+        var ownerConfirmation = Assert.IsType<ConfirmationTestStarted>(new ConfirmationTestStartService().Start(ownerAtIntake, owner, ImmutableHashSet.Create(ItemId.From("choir_cassette")), ServerTick.From(59), LineNoise.QUIET, fixture.Anomalies));
+        var queue = RuntimeFixture.MoveHost(RuntimeFixture.MoveHost(RuntimeFixture.MoveHost(ownerConfirmation.State, "log_02", LogState.AT_FEED_GATE), "log_02", LogState.AT_INTAKE), "log_02", LogState.QUEUED_FOR_SAW);
+        var expired = Assert.IsType<IntakeDeadlineExpired>(new IntakeDeadlineExpirationService().Expire(queue, ServerTick.From(60)));
+        var blocked = Assert.IsType<DefaultIntakeAutoRouteBlocked>(new DefaultIntakeAutoRouteService().Attempt(expired.State, expired.FollowUp, ServerTick.From(60)));
+        var jam = Assert.IsType<IntakeAutoFeedJamEntered>(new IntakeAutoFeedJamDerivationService().Derive(blocked.State, blocked));
+        var repairing = Assert.IsType<LineRepairStarted>(new LineRepairStartService().Start(jam.State, ServerTick.From(60), scheduler));
+        var unblocked = RuntimeFixture.MoveHost(repairing.State, "log_02", LogState.IN_SAW);
+        return Assert.IsType<LineRepairCompleted>(new LineRepairDueCompletionService().CompleteDue(unblocked, completedAt));
+    }
+
     private static LineRepairCompleted FeedGateCompletion(ServerTick completedAt)
     {
         var initial = RuntimeFixture.MoveToIntake(RuntimeFixture.CreateInitialState(), "log_01");
@@ -313,6 +400,20 @@ public sealed class RepairPendingTransitionExecutionTests
     {
         var mutation = typeof(ShiftRuntimeState).GetMethod("WithLine", BindingFlags.Instance | BindingFlags.NonPublic)!;
         return Assert.IsType<ShiftRuntimeState>(mutation.Invoke(state, [line]));
+    }
+
+    private static ActiveConfirmationTest ActiveConfirmationFor(string logId, ServerTick tick)
+    {
+        var fixture = Fixture.LoadP0();
+        var atIntake = RuntimeFixture.MoveToIntake(ShiftRuntimeState.Create(fixture.Shift), logId);
+        var started = Assert.IsType<ConfirmationTestStarted>(new ConfirmationTestStartService().Start(atIntake, LogId.From(logId), ImmutableHashSet.Create(ItemId.From("choir_cassette")), tick, LineNoise.QUIET, fixture.Anomalies));
+        return Assert.IsType<ActiveConfirmationTest>(started.State.ActiveConfirmationTest);
+    }
+
+    private static ShiftRuntimeState WithActiveConfirmation(ShiftRuntimeState state, ActiveConfirmationTest active)
+    {
+        var mutation = typeof(ShiftRuntimeState).GetMethod("WithActiveConfirmation", BindingFlags.Instance | BindingFlags.NonPublic)!;
+        return Assert.IsType<ShiftRuntimeState>(mutation.Invoke(state, [active, null]));
     }
 
     private static void AssertAccepted(ShiftRuntimeState before, LineRepairCompleted completion, RepairPendingTransitionExecuted accepted, LogState destination, RepairPendingTransitionFollowUp followUp, ServerTick appliedAt)

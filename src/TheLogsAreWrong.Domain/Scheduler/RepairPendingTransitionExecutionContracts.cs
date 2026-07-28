@@ -196,8 +196,7 @@ public sealed class RepairPendingTransitionExecutionService
         var sourceNode = LogStateNodes.GetNode(pending.FromState);
         return sourceNode is not null &&
             state.GetNodeOccupancy(sourceNode.Value) == 1 &&
-            state.ActiveIntakeDeadline is null &&
-            (state.ActiveConfirmationTest is null || state.ActiveConfirmationTest.LogId != pending.LogId);
+            state.ActiveIntakeDeadline is null;
     }
 
     private static bool IsExactPendingMapping(PendingLineTransitionDescriptor pending)
@@ -255,7 +254,7 @@ public sealed class RepairPendingTransitionExecutionService
             !ReferenceEquals(accepted.State.Inventory, suppliedState.Inventory) ||
             !ReferenceEquals(accepted.State.ProcedureProgressByLog, suppliedState.ProcedureProgressByLog) ||
             !ReferenceEquals(accepted.State.ActiveProcedureHold, suppliedState.ActiveProcedureHold) ||
-            !ReferenceEquals(accepted.State.ActiveConfirmationTest, suppliedState.ActiveConfirmationTest) ||
+            !HasExpectedActiveConfirmation(suppliedState, pending, accepted.State) ||
             !ReferenceEquals(accepted.State.ConfirmationResultsByLog, suppliedState.ConfirmationResultsByLog) ||
             !ReferenceEquals(accepted.State.Containment, suppliedState.Containment) ||
             !ReferenceEquals(accepted.State.ActiveContainmentRitual, suppliedState.ActiveContainmentRitual) ||
@@ -287,5 +286,25 @@ public sealed class RepairPendingTransitionExecutionService
         }
 
         return true;
+    }
+
+    private static bool HasExpectedActiveConfirmation(
+        ShiftRuntimeState suppliedState,
+        PendingLineTransitionDescriptor pending,
+        ShiftRuntimeState acceptedState)
+    {
+        var supplied = suppliedState.ActiveConfirmationTest;
+        var accepted = acceptedState.ActiveConfirmationTest;
+        if (supplied is null)
+        {
+            return accepted is null;
+        }
+
+        var ownerLeavesIntake = supplied.LogId == pending.LogId &&
+            pending.FromState == LogState.AT_INTAKE &&
+            pending.ToState != LogState.AT_INTAKE;
+        return ownerLeavesIntake
+            ? accepted is null
+            : ReferenceEquals(accepted, supplied);
     }
 }
