@@ -149,6 +149,11 @@ public sealed class SawCycleCompletionService
         }
 
         var resolution = AnomalyProcessingResolver.Resolve(owner, catalog);
+        if (resolution.LogId != active.LogId || resolution.TerminalState != LogState.PROCESSED)
+        {
+            throw new InvalidOperationException("A saw completion resolution must retain the active owner and processed terminal state.");
+        }
+
         var after = state.CompleteSawCycle(active);
         return new SawCycleCompleted(after, active, resolution, currentTick, state.StateVersion, after.StateVersion);
     }
