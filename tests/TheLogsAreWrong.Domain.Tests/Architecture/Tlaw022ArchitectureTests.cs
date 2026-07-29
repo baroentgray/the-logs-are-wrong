@@ -21,6 +21,11 @@ public sealed class Tlaw022ArchitectureTests
         Assert.Contains("SawCycleCompletionService", source, StringComparison.Ordinal);
         Assert.Contains("AnomalyProcessingResolver", source, StringComparison.Ordinal);
         Assert.Contains("ProcessingResolution", source, StringComparison.Ordinal);
+        Assert.Contains("ArgumentNullException.ThrowIfNull(state)", source, StringComparison.Ordinal);
+        Assert.Contains("ArgumentNullException.ThrowIfNull(configuration)", source, StringComparison.Ordinal);
+        Assert.Contains("ArgumentNullException.ThrowIfNull(catalog)", source, StringComparison.Ordinal);
+        Assert.Contains("resolution.LogId != active.LogId || resolution.TerminalState != LogState.PROCESSED", source, StringComparison.Ordinal);
+        Assert.Contains("The active saw cycle must own the only saw occupant.", source, StringComparison.Ordinal);
         Assert.All(new[]
         {
             "InitialFeedPlanningService", "NormalFeedPlanningService", "EarlyFeedIntentHandler", "FeedDue", "IntakeDeadline",
@@ -45,6 +50,10 @@ public sealed class Tlaw022ArchitectureTests
         Assert.Equal(new[] { typeof(ShiftRuntimeState), typeof(ServerTick), typeof(AnomalyCatalog) }, completion.GetParameters().Select(parameter => parameter.ParameterType));
         Assert.DoesNotContain(typeof(ActiveSawCycle).GetProperties(BindingFlags.Public | BindingFlags.Instance), property => property.SetMethod is not null);
         Assert.Null(typeof(ShiftRuntimeState).GetProperty(nameof(ShiftRuntimeState.ActiveSawCycle))!.SetMethod);
+        Assert.All(typeof(SawCycleStartService).GetProperties(BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly), property => Assert.False(property.CanWrite));
+        Assert.All(typeof(SawCycleCompletionService).GetProperties(BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly), property => Assert.False(property.CanWrite));
+        Assert.DoesNotContain(typeof(SawCycleStartService).GetMethods(flags), method => method.Name is "Commit" or "Append" or "Dispatch");
+        Assert.DoesNotContain(typeof(SawCycleCompletionService).GetMethods(flags), method => method.Name is "Commit" or "Append" or "Dispatch");
     }
 
     private static string FindRoot()

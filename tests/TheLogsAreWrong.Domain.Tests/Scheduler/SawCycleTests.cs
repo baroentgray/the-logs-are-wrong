@@ -2,10 +2,12 @@ using System.Collections.Immutable;
 using System.Reflection;
 using TheLogsAreWrong.Domain.Anomalies;
 using TheLogsAreWrong.Domain.Configuration;
+using TheLogsAreWrong.Domain.Containment;
 using TheLogsAreWrong.Domain.Enums;
 using TheLogsAreWrong.Domain.Events;
 using TheLogsAreWrong.Domain.Identifiers;
 using TheLogsAreWrong.Domain.Journal;
+using TheLogsAreWrong.Domain.Line;
 using TheLogsAreWrong.Domain.Primitives;
 using TheLogsAreWrong.Domain.Runtime;
 using TheLogsAreWrong.Domain.Scheduler;
@@ -207,6 +209,339 @@ public sealed class SawCycleTests
         Assert.Empty(emptyJournal.Events);
     }
 
+    [Fact]
+    public void Public_input_guards_reject_before_any_state_bearing_mutation()
+    {
+        var fixture = Fixture.LoadP0();
+        var start = new SawCycleStartService();
+        var complete = new SawCycleCompletionService();
+        var queued = Queued("log_01");
+        var started = Assert.IsType<SawCycleStarted>(start.Start(queued, ServerTick.From(10), fixture.Shift.Scheduler));
+
+        Assert.Throws<ArgumentNullException>(() => start.Start(null!, ServerTick.Zero, fixture.Shift.Scheduler));
+        Assert.Throws<ArgumentNullException>(() => start.Start(queued, ServerTick.Zero, null!));
+        AssertRejectPreserves(queued, () => start.Start(queued, default, fixture.Shift.Scheduler));
+        AssertRejectPreserves(queued, () => start.Start(queued, ServerTick.Zero, fixture.Shift.Scheduler with { SawCycleSeconds = 0 }));
+        AssertRejectPreserves(queued, () => start.Start(queued, ServerTick.Zero, fixture.Shift.Scheduler with { SawCycleSeconds = -1 }));
+        AssertRejectPreserves(queued, () => start.Start(queued, ServerTick.From(long.MaxValue), fixture.Shift.Scheduler));
+
+        Assert.Throws<ArgumentNullException>(() => complete.Complete(null!, ServerTick.Zero, fixture.Anomalies));
+        Assert.Throws<ArgumentNullException>(() => complete.Complete(started.State, ServerTick.Zero, null!));
+        AssertRejectPreserves(started.State, () => complete.Complete(started.State, default, fixture.Anomalies));
+        AssertRejectPreserves(started.State, () => complete.Complete(started.State, ServerTick.From(9), fixture.Anomalies));
+    }
+
+    [Fact]
+    public void Start_preserves_clear_jammed_and_repairing_line_values_exactly()
+    {
+        var fixture = Fixture.LoadP0();
+        var clear = Queued("log_01");
+        var jammedLine = new LineRuntimeState(LineState.LINE_JAMMED, ServerTick.From(3), JamCause.FEED_GATE_BLOCKED, LogId.From("log_02"), null);
+        var repairingLine = new LineRuntimeState(
+            LineState.REPAIRING,
+            ServerTick.From(4),
+            JamCause.INTAKE_AUTOFEED_BLOCKED,
+            LogId.From("log_02"),
+            new ActiveRepairHold(ServerTick.From(4), ServerTick.From(7), SimulationDuration.FromTicks(3)));
+        var inputs = new[]
+        {
+            clear,
+            CloneWith(clear, nameof(ShiftRuntimeState.Line), jammedLine),
+            CloneWith(clear, nameof(ShiftRuntimeState.Line), repairingLine)
+        };
+
+        foreach (var before in inputs)
+        {
+            var started = Assert.IsType<SawCycleStarted>(new SawCycleStartService().Start(before, ServerTick.From(10), fixture.Shift.Scheduler));
+
+            Assert.Equal(before.Line, started.State.Line);
+            Assert.Equal((before.Line.State, before.Line.Cause, before.Line.PendingLogId, before.Line.ActiveRepairHold),
+                (started.State.Line.State, started.State.Line.Cause, started.State.Line.PendingLogId, started.State.Line.ActiveRepairHold));
+        }
+    }
+
+    [Fact]
+    public void Defensive_reflection_only_saw_shapes_fail_closed_without_mutating_the_fixture()
+    {
+        var fixture = Fixture.LoadP0();
+        var start = new SawCycleStartService();
+        var complete = new SawCycleCompletionService();
+        var queued = Queued("log_01");
+        var noActiveInSaw = RuntimeFixture.MoveHost(queued, "log_01", LogState.IN_SAW);
+        var active = Assert.IsType<SawCycleStarted>(start.Start(Queued("log_01"), ServerTick.From(10), fixture.Shift.Scheduler));
+        var ownerNotInSaw = ReplaceLogState(active.State, "log_01", LogState.QUEUED_FOR_SAW);
+        var ownerMismatch = CloneWith(active.State, nameof(ShiftRuntimeState.ActiveSawCycle), new ActiveSawCycle(LogId.From("log_02"), ServerTick.From(10), SimulationDuration.FromTicks(6)));
+        var multipleInSaw = ReplaceLogState(active.State, "log_02", LogState.IN_SAW);
+        var multipleQueued = ReplaceLogState(Queued("log_01"), "log_02", LogState.QUEUED_FOR_SAW);
+        var overCapacityQueue = ReplaceLogState(ReplaceLogState(active.State, "log_02", LogState.QUEUED_FOR_SAW), "log_03", LogState.QUEUED_FOR_SAW);
+        var missingOwner = RemoveLog(active.State, "log_01");
+
+        foreach (var malformed in new[] { noActiveInSaw, ownerNotInSaw, ownerMismatch, multipleInSaw, missingOwner })
+        {
+            AssertRejectPreserves(malformed, () => complete.Complete(malformed, ServerTick.From(16), fixture.Anomalies));
+        }
+
+        foreach (var malformed in new[] { noActiveInSaw, ownerNotInSaw, ownerMismatch, multipleInSaw, multipleQueued, overCapacityQueue, missingOwner })
+        {
+            AssertRejectPreserves(malformed, () => start.Start(malformed, ServerTick.From(16), fixture.Shift.Scheduler));
+        }
+    }
+
+    [Theory]
+    [InlineData("log_01", false)]
+    [InlineData("log_03", false)]
+    [InlineData("log_03", true)]
+    [InlineData("log_06", false)]
+    [InlineData("log_06", true)]
+    [InlineData("log_05", false)]
+    [InlineData("log_05", true)]
+    public void Completion_returns_the_established_full_processing_resolution_without_settlement_execution(string logId, bool completeProcedure)
+    {
+        var fixture = Fixture.LoadP0();
+        var before = Queued(logId);
+        if (completeProcedure)
+        {
+            var log = Log(before, logId);
+            Assert.True(new ProcedurePlanResolver(fixture.Anomalies).TryGetPlan(log, out var plan));
+            var prepared = new LogRuntimeState(log.LogId, log.TrueSpecies, log.DeclaredSpecies, log.Anomaly, log.State, plan!.GrantedFlags);
+            before = CloneWith(before, nameof(ShiftRuntimeState.Logs), before.Logs.SetItem(LogIndex(before, logId), prepared));
+        }
+
+        var expected = AnomalyProcessingResolver.Resolve(Log(before, logId), fixture.Anomalies);
+        var started = Assert.IsType<SawCycleStarted>(new SawCycleStartService().Start(before, ServerTick.From(10), fixture.Shift.Scheduler));
+        var completed = Assert.IsType<SawCycleCompleted>(new SawCycleCompletionService().Complete(started.State, started.Cycle.DueAt, fixture.Anomalies));
+
+        AssertResolution(expected, completed.Resolution);
+        Assert.True(started.State.Inventory.ValueEquals(completed.State.Inventory));
+        Assert.Equal(started.State.Containment, completed.State.Containment);
+        Assert.Equal(started.State.Line, completed.State.Line);
+        Assert.Equal(started.State.ProcessedIntentIds, completed.State.ProcessedIntentIds);
+        Assert.Equal(started.State.PendingFeed, completed.State.PendingFeed);
+        Assert.Equal(started.State.Logs.Where(log => log.LogId != LogId.From(logId)), completed.State.Logs.Where(log => log.LogId != LogId.From(logId)));
+    }
+
+    [Fact]
+    public void Start_and_completion_preserve_the_unrelated_runtime_matrix_and_retries_are_reference_no_ops()
+    {
+        var fixture = Fixture.LoadP0();
+        var state = RichQueuedState();
+        var start = new SawCycleStartService();
+        var started = Assert.IsType<SawCycleStarted>(start.Start(state, ServerTick.From(20), fixture.Shift.Scheduler));
+        AssertPreservedUnrelated(state, started.State, "log_01", expectActiveSaw: true);
+        Assert.Same(started.State, Assert.IsType<SawCycleStartAlreadyActive>(start.Start(started.State, ServerTick.From(21), fixture.Shift.Scheduler)).State);
+
+        var early = Assert.IsType<SawCycleNotDue>(new SawCycleCompletionService().Complete(started.State, ServerTick.From(25), fixture.Anomalies));
+        Assert.Same(started.State, early.State);
+        var completed = Assert.IsType<SawCycleCompleted>(new SawCycleCompletionService().Complete(started.State, ServerTick.From(26), fixture.Anomalies));
+        AssertPreservedUnrelated(started.State, completed.State, "log_01", expectActiveSaw: false);
+
+        var repeated = Assert.IsType<SawCycleNoActive>(new SawCycleCompletionService().Complete(completed.State, ServerTick.From(27), fixture.Anomalies));
+        Assert.Same(completed.State, repeated.State);
+        Assert.Null(repeated.State.ActiveSawCycle);
+    }
+
+    [Fact]
+    public void Journal_cursor_advances_once_per_start_completion_and_same_tick_next_start_only()
+    {
+        var fixture = Fixture.LoadP0();
+        var firstQueued = Queued("log_01");
+        var journal = AlignedJournal(firstQueued, ServerTick.Zero);
+        var commits = new JournaledMutationCommitService();
+        var start = Assert.IsType<SawCycleStarted>(new SawCycleStartService().Start(firstQueued, ServerTick.Zero, fixture.Shift.Scheduler));
+        var firstCommit = Commit(commits, journal, firstQueued, start.State, ServerTick.Zero, "start_one");
+        var secondQueued = CloneWith(start.State, nameof(ShiftRuntimeState.Logs), start.State.Logs.SetItem(LogIndex(start.State, "log_02"), CopyWithState(Log(start.State, "log_02"), LogState.QUEUED_FOR_SAW)));
+        var complete = Assert.IsType<SawCycleCompleted>(new SawCycleCompletionService().Complete(secondQueued, ServerTick.From(6), fixture.Anomalies));
+        var secondCommit = Commit(commits, journal, secondQueued, complete.State, ServerTick.From(6), "complete_one");
+        var next = Assert.IsType<SawCycleStarted>(new SawCycleStartService().Start(complete.State, ServerTick.From(6), fixture.Shift.Scheduler));
+        var thirdCommit = Commit(commits, journal, complete.State, next.State, ServerTick.From(6), "start_two");
+
+        Assert.Equal(new[] { firstCommit.Envelope.Sequence, secondCommit.Envelope.Sequence, thirdCommit.Envelope.Sequence }, Enumerable.Range((int)firstCommit.Envelope.Sequence.Value, 3).Select(value => EventSequence.From((long)value)));
+        Assert.Equal(new[] { firstCommit.Envelope.StateVersionAfter, secondCommit.Envelope.StateVersionAfter, thirdCommit.Envelope.StateVersionAfter }, new[] { start.State.StateVersion, complete.State.StateVersion, next.State.StateVersion });
+        Assert.Equal(new[] { ServerTick.Zero, ServerTick.From(6), ServerTick.From(6) }, new[] { firstCommit.Envelope.ServerTick, secondCommit.Envelope.ServerTick, thirdCommit.Envelope.ServerTick });
+        var cursor = (journal.LastSequence, journal.LastStateVersion, journal.Events.Count);
+        Assert.Same(next.State, Assert.IsType<SawCycleStartAlreadyActive>(new SawCycleStartService().Start(next.State, ServerTick.From(6), fixture.Shift.Scheduler)).State);
+        Assert.Same(next.State, Assert.IsType<SawCycleNotDue>(new SawCycleCompletionService().Complete(next.State, ServerTick.From(7), fixture.Anomalies)).State);
+        Assert.Equal(cursor, (journal.LastSequence, journal.LastStateVersion, journal.Events.Count));
+    }
+
+    [Fact]
+    public void Independent_runs_are_fully_equal_and_only_ticks_or_saw_seconds_change_timing()
+    {
+        var fixture = Fixture.LoadP0();
+        var start = new SawCycleStartService();
+        var completion = new SawCycleCompletionService();
+        var firstStart = Assert.IsType<SawCycleStarted>(start.Start(Queued("log_05"), ServerTick.From(10), fixture.Shift.Scheduler));
+        var secondStart = Assert.IsType<SawCycleStarted>(start.Start(Queued("log_05"), ServerTick.From(10), fixture.Shift.Scheduler));
+        var firstComplete = Assert.IsType<SawCycleCompleted>(completion.Complete(firstStart.State, firstStart.Cycle.DueAt, fixture.Anomalies));
+        var secondComplete = Assert.IsType<SawCycleCompleted>(completion.Complete(secondStart.State, secondStart.Cycle.DueAt, fixture.Anomalies));
+
+        Assert.Equal(firstStart.Cycle, secondStart.Cycle);
+        Assert.True(firstStart.State.ValueEquals(secondStart.State));
+        AssertResolution(firstComplete.Resolution, secondComplete.Resolution);
+        Assert.True(firstComplete.State.ValueEquals(secondComplete.State));
+
+        var laterStart = Assert.IsType<SawCycleStarted>(start.Start(Queued("log_05"), ServerTick.From(11), fixture.Shift.Scheduler));
+        var longerStart = Assert.IsType<SawCycleStarted>(start.Start(Queued("log_05"), ServerTick.From(10), fixture.Shift.Scheduler with { SawCycleSeconds = 9 }));
+        var lateComplete = Assert.IsType<SawCycleCompleted>(completion.Complete(firstStart.State, ServerTick.From(17), fixture.Anomalies));
+
+        Assert.Equal(firstStart.Cycle.Duration, laterStart.Cycle.Duration);
+        Assert.Equal(firstStart.Cycle.DueAt.Value + 1, laterStart.Cycle.DueAt.Value);
+        Assert.Equal((9L, ServerTick.From(19)), (longerStart.Cycle.Duration.Value, longerStart.Cycle.DueAt));
+        Assert.Equal(ServerTick.From(17), lateComplete.CompletedAt);
+        AssertResolution(firstComplete.Resolution, lateComplete.Resolution);
+    }
+
+    private static ShiftRuntimeState RichQueuedState()
+    {
+        var fixture = Fixture.LoadP0();
+        var state = RuntimeFixture.MoveToIntake(ShiftRuntimeState.Create(fixture.Shift), "log_06");
+        state = RuntimeFixture.MoveHost(state, "log_06", LogState.AT_PROCEDURE);
+        state = Assert.IsType<ProcedureActionCompletedImmediately>(new ProcedureActionStartService().Start(
+            state,
+            LogId.From("log_06"),
+            ItemId.From("salt"),
+            ServerTick.From(5),
+            fixture.Anomalies)).State;
+        state = RuntimeFixture.MoveHost(state, "log_06", LogState.AT_INTAKE);
+        state = RuntimeFixture.MoveHost(state, "log_06", LogState.QUEUED_FOR_SAW);
+        state = RuntimeFixture.MoveHost(state, "log_06", LogState.IN_SAW);
+        state = RuntimeFixture.MoveHost(state, "log_06", LogState.PROCESSED);
+
+        state = RuntimeFixture.MoveToIntake(state, "log_01");
+        state = RuntimeFixture.MoveHost(state, "log_01", LogState.QUEUED_FOR_SAW);
+
+        state = RuntimeFixture.MoveToIntake(state, "log_08");
+        state = Assert.IsType<ConfirmationTestDueCompleted>(new ConfirmationTestDueCompletionService().CompleteDue(
+            Assert.IsType<ConfirmationTestStarted>(new ConfirmationTestStartService().Start(
+                state,
+                LogId.From("log_08"),
+                ImmutableHashSet.Create(ItemId.From("sound_meter")),
+                ServerTick.From(10),
+                LineNoise.QUIET,
+                fixture.Anomalies)).State,
+            ServerTick.From(14),
+            fixture.Anomalies)).State;
+        state = RuntimeFixture.MoveHost(state, "log_08", LogState.HELD_WRITTEN_OFF);
+
+        state = RuntimeFixture.MoveToIntake(state, "log_03");
+        state = RuntimeFixture.MoveHost(state, "log_03", LogState.AT_PROCEDURE);
+        state = Assert.IsType<ProcedureActionHoldStarted>(new ProcedureActionStartService().Start(
+            state,
+            LogId.From("log_03"),
+            ItemId.From("holy_water"),
+            ServerTick.From(19),
+            fixture.Anomalies)).State;
+
+        state = RuntimeFixture.MoveToIntake(state, "log_10");
+        state = Assert.IsType<ConfirmationTestStarted>(new ConfirmationTestStartService().Start(
+            state,
+            LogId.From("log_10"),
+            ImmutableHashSet.Create(ItemId.From("choir_cassette")),
+            ServerTick.From(19),
+            LineNoise.QUIET,
+            fixture.Anomalies)).State;
+
+        state = CloneWith(state, nameof(ShiftRuntimeState.PendingFeed), new PendingFeedSchedule(LogId.From("log_02"), FeedScheduleKind.NORMAL, ServerTick.From(19), SimulationDuration.FromTicks(3), null));
+        state = CloneWith(state, nameof(ShiftRuntimeState.ProcessedIntentIds), state.ProcessedIntentIds.Add(IntentId.From("tlaw022_preserved")));
+        state = CloneWith(state, nameof(ShiftRuntimeState.ActiveIntakeDeadline), new ActiveIntakeDeadline(LogId.From("log_10"), ServerTick.From(19), SimulationDuration.FromTicks(20)));
+        state = CloneWith(state, nameof(ShiftRuntimeState.Containment), new ContainmentRuntimeState(ContainmentState.SERVICE_REQUESTED, ServerTick.From(19), ServerTick.From(30)));
+        state = CloneWith(state, nameof(ShiftRuntimeState.ActiveContainmentRitual), new ActiveContainmentRitual(ServerTick.From(19), ServerTick.From(24), SimulationDuration.FromTicks(5)));
+        return CloneWith(state, nameof(ShiftRuntimeState.Line), new LineRuntimeState(
+            LineState.REPAIRING,
+            ServerTick.From(19),
+            JamCause.INTAKE_AUTOFEED_BLOCKED,
+            LogId.From("log_02"),
+            new ActiveRepairHold(ServerTick.From(19), ServerTick.From(21), SimulationDuration.FromTicks(2))));
+    }
+
+    private static void AssertResolution(ProcessingResolution expected, ProcessingResolution actual)
+    {
+        Assert.Equal(expected.LogId, actual.LogId);
+        Assert.Equal(expected.IsAnomalous, actual.IsAnomalous);
+        Assert.Equal(expected.AllRequiredFlagsPresent, actual.AllRequiredFlagsPresent);
+        Assert.Equal(expected.TerminalState, actual.TerminalState);
+        Assert.Equal(expected.Settlement.LogId, actual.Settlement.LogId);
+        Assert.Equal(expected.Settlement.CreditedSpecies, actual.Settlement.CreditedSpecies);
+        Assert.Equal(expected.Settlement.CreditedUnits, actual.Settlement.CreditedUnits);
+        Assert.Equal(expected.Settlement.CorrectAnomalyDelta, actual.Settlement.CorrectAnomalyDelta);
+        Assert.Equal(expected.Effects, actual.Effects);
+        Assert.True(expected.ValueEquals(actual));
+    }
+
+    private static void AssertPreservedUnrelated(ShiftRuntimeState before, ShiftRuntimeState after, string owner, bool expectActiveSaw)
+    {
+        Assert.Equal(before.ShiftId, after.ShiftId);
+        Assert.Equal(before.ShiftSeed, after.ShiftSeed);
+        Assert.Equal(before.ProcessedIntentIds, after.ProcessedIntentIds);
+        Assert.Equal(before.PendingFeed, after.PendingFeed);
+        Assert.True(before.Inventory.ValueEquals(after.Inventory));
+        Assert.Equal(before.ProcedureProgressByLog, after.ProcedureProgressByLog);
+        Assert.Equal(before.ActiveProcedureHold, after.ActiveProcedureHold);
+        Assert.Equal(before.ActiveConfirmationTest, after.ActiveConfirmationTest);
+        Assert.Equal(before.ConfirmationResultsByLog, after.ConfirmationResultsByLog);
+        Assert.Equal(before.Containment, after.Containment);
+        Assert.Equal(before.ActiveContainmentRitual, after.ActiveContainmentRitual);
+        Assert.Equal(before.Line, after.Line);
+        Assert.Equal(before.ActiveIntakeDeadline, after.ActiveIntakeDeadline);
+        Assert.Equal(before.Logs.Where(log => log.LogId != LogId.From(owner)), after.Logs.Where(log => log.LogId != LogId.From(owner)));
+        if (expectActiveSaw)
+        {
+            Assert.NotNull(after.ActiveSawCycle);
+        }
+        else
+        {
+            Assert.Null(after.ActiveSawCycle);
+        }
+    }
+
+    private static void AssertRejectPreserves(ShiftRuntimeState state, Action action)
+    {
+        var version = state.StateVersion;
+        var logs = state.Logs;
+        var active = state.ActiveSawCycle;
+        var line = state.Line;
+        var inventory = state.Inventory;
+        var exception = Record.Exception(action);
+
+        Assert.NotNull(exception);
+        Assert.Equal(version, state.StateVersion);
+        Assert.Equal(logs, state.Logs);
+        Assert.Equal(active, state.ActiveSawCycle);
+        Assert.Equal(line, state.Line);
+        Assert.Same(inventory, state.Inventory);
+    }
+
+    private static ShiftRuntimeState ReplaceLogState(ShiftRuntimeState state, string logId, LogState stateValue) =>
+        CloneWith(state, nameof(ShiftRuntimeState.Logs), state.Logs.SetItem(LogIndex(state, logId), CopyWithState(Log(state, logId), stateValue)));
+
+    private static LogRuntimeState CopyWithState(LogRuntimeState log, LogState state) =>
+        new(log.LogId, log.TrueSpecies, log.DeclaredSpecies, log.Anomaly, state, log.Flags);
+
+    private static int LogIndex(ShiftRuntimeState state, string logId)
+    {
+        var id = LogId.From(logId);
+        for (var index = 0; index < state.Logs.Length; index++)
+        {
+            if (state.Logs[index].LogId == id)
+            {
+                return index;
+            }
+        }
+
+        throw new InvalidOperationException($"Missing fixture log {logId}.");
+    }
+
+    private static ShiftRuntimeState RemoveLog(ShiftRuntimeState state, string logId)
+    {
+        var id = LogId.From(logId);
+        var logs = state.Logs.RemoveAt(LogIndex(state, logId));
+        var indexes = (ImmutableDictionary<LogId, int>)FindField(typeof(ShiftRuntimeState), "_logIndexes").GetValue(state)!;
+        return CloneWith(
+            CloneWith(state, nameof(ShiftRuntimeState.Logs), logs),
+            "_logIndexes",
+            indexes.Remove(id));
+    }
+
     private static ShiftRuntimeState Queued(string logId)
     {
         var state = ShiftRuntimeState.Create(Fixture.LoadP0().Shift);
@@ -258,6 +593,15 @@ public sealed class SawCycleTests
 
         return journal;
     }
+
+    private static JournaledMutationCommitted Commit(
+        JournaledMutationCommitService commits,
+        IEventJournal journal,
+        ShiftRuntimeState before,
+        ShiftRuntimeState after,
+        ServerTick tick,
+        string id) =>
+        Assert.IsType<JournaledMutationCommitted>(commits.Commit(journal, before, after, tick, Draft(id)));
 
     private static DomainEventDraft Draft(string id) => new(EventId.From($"tlaw022_{id}"), EventTypeId.From("test.tlaw022.saw"), new SawPayload(id));
 
