@@ -86,3 +86,12 @@ here; rejected and superseded options are represented by new references rather
 than rewriting earlier entries. At most one bounded correction round is allowed.
 
 Source: [Issue #47](https://github.com/baroentgray/the-logs-are-wrong/issues/47).
+
+## D-013 — Saw completion applies quota through separate immutable state
+
+For the bounded TLAW-023 composition boundary, `ShiftRuntimeState` and
+`QuotaRuntimeState` remain separate immutable states. The host-owned boundary
+accepts completed saw evidence and applies its resolved settlement to quota; this
+does not pre-approve a generic host aggregate or dispatcher.
+
+Sources: [Issue #64](https://github.com/baroentgray/the-logs-are-wrong/issues/64) and [BAR-63](https://linear.app/baronet/issue/BAR-63/tlaw-023-apply-completed-saw-settlement-to-quota-runtime).
