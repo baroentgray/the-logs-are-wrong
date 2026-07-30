@@ -40,6 +40,26 @@ public sealed class SawQuotaApplicationTests
     }
 
     [Fact]
+    public void Apply_rejects_mismatched_settlement_identity_while_cycle_and_resolution_remain_aligned()
+    {
+        var completion = Completed("log_01");
+        var quota = QuotaRuntimeState.Create(Fixture.LoadP0().Shift);
+        var corruptedSettlement = CloneWith(completion.Resolution.Settlement, nameof(QuotaSettlement.LogId), LogId.From("log_02"));
+        var corruptedResolution = CloneWith(completion.Resolution, nameof(ProcessingResolution.Settlement), corruptedSettlement);
+        var corruptedCompletion = new SawCycleCompleted(
+            completion.State,
+            completion.Cycle,
+            corruptedResolution,
+            completion.CompletedAt,
+            completion.PriorStateVersion,
+            completion.CurrentStateVersion);
+
+        Assert.Equal(completion.Cycle.LogId, corruptedCompletion.Resolution.LogId);
+        Assert.NotEqual(corruptedCompletion.Cycle.LogId, corruptedCompletion.Resolution.Settlement.LogId);
+        AssertRejectsWithoutQuotaMutation(corruptedCompletion, quota);
+    }
+
+    [Fact]
     public void Apply_rejects_non_processed_terminal_resolution_before_mutating_quota()
     {
         var completion = Completed("log_01");
