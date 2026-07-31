@@ -9,7 +9,7 @@ namespace TheLogsAreWrong.Domain.Line;
 
 public sealed record LineNoiseSourceSnapshot
 {
-    public LineNoiseSourceSnapshot(bool sawActive, bool movementNoiseActive, bool repairActive)
+    internal LineNoiseSourceSnapshot(bool sawActive, bool movementNoiseActive, bool repairActive)
     {
         SawActive = sawActive;
         MovementNoiseActive = movementNoiseActive;

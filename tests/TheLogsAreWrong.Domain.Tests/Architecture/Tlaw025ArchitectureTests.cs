@@ -41,6 +41,9 @@ public sealed class Tlaw025ArchitectureTests
         Assert.Single(evaluates);
         Assert.Equal(typeof(LineNoiseEvaluationResult), evaluates[0].ReturnType);
         Assert.Equal(expected, evaluates[0].GetParameters().Select(parameter => parameter.ParameterType));
+        var publicSnapshotConstructors = typeof(LineNoiseSourceSnapshot).GetConstructors(BindingFlags.Public | BindingFlags.Instance);
+        Assert.DoesNotContain(publicSnapshotConstructors, constructor =>
+            constructor.GetParameters().Any(parameter => parameter.ParameterType == typeof(bool)));
         var forbidden = new[] { typeof(LineNoise), typeof(bool), typeof(int), typeof(string), typeof(object), typeof(StateVersion), typeof(TheLogsAreWrong.Domain.Time.SimulationDuration) };
         Assert.DoesNotContain(evaluates[0].GetParameters(), parameter =>
             forbidden.Contains(parameter.ParameterType) ||

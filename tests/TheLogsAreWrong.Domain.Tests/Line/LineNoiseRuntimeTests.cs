@@ -52,7 +52,7 @@ public sealed class LineNoiseRuntimeTests
         var result = Service.Evaluate(runtime, evidence.State, evidence.Movement, evidence.Tick);
 
         Assert.Equal(expected, result.State.Current);
-        Assert.Equal(new LineNoiseSourceSnapshot(saw, movement, repair), result.State.LatestSources);
+        AssertSnapshot(result.State.LatestSources, saw, movement, repair);
         if (expected == LineNoise.QUIET)
         {
             Assert.IsType<LineNoiseEvaluatedWithoutChange>(result);
@@ -77,7 +77,7 @@ public sealed class LineNoiseRuntimeTests
         Assert.True(evidence.Movement.IsActiveAt(evidence.Tick));
         Assert.False(evidence.Movement.IsActiveAt(evidence.Movement.DueAt));
         Assert.Null(evidence.State.ActiveSawCycle);
-        Assert.Equal(new LineNoiseSourceSnapshot(false, true, false), started.State.LatestSources);
+        AssertSnapshot(started.State.LatestSources, saw: false, movement: true, repair: false);
         Assert.Equal(LineNoise.LOUD, started.State.Current);
         Assert.Equal(LineNoise.QUIET, due.State.Current);
         Assert.Equal(evidence.Movement.DueAt, due.Change.ChangedAt);
@@ -95,9 +95,9 @@ public sealed class LineNoiseRuntimeTests
         var loud = Assert.IsType<LineNoiseEvaluatedWithChange>(Service.Evaluate(LineNoiseRuntimeState.Create(repairing.ShiftId), repairing, MovementNoiseRuntimeState.Create(repairing.ShiftId), lateTick));
 
         Assert.Equal(LineNoise.QUIET, quiet.State.Current);
-        Assert.Equal(new LineNoiseSourceSnapshot(false, false, false), quiet.State.LatestSources);
+        AssertSnapshot(quiet.State.LatestSources, saw: false, movement: false, repair: false);
         Assert.Equal(LineNoise.LOUD, loud.State.Current);
-        Assert.Equal(new LineNoiseSourceSnapshot(false, false, true), loud.State.LatestSources);
+        AssertSnapshot(loud.State.LatestSources, saw: false, movement: false, repair: true);
         Assert.Equal(LineState.REPAIRING, repairing.Line.State);
     }
 
@@ -112,7 +112,7 @@ public sealed class LineNoiseRuntimeTests
         var second = Assert.IsType<LineNoiseEvaluatedWithoutChange>(Service.Evaluate(first.State, movement.State, movement.Movement, movement.Tick));
 
         Assert.Equal(LineNoise.LOUD, second.State.Current);
-        Assert.Equal(new LineNoiseSourceSnapshot(false, true, false), second.State.LatestSources);
+        AssertSnapshot(second.State.LatestSources, saw: false, movement: true, repair: false);
         Assert.Equal(first.Change.ChangedAt, second.State.LastChangedAt);
     }
 
@@ -163,8 +163,10 @@ public sealed class LineNoiseRuntimeTests
     [Fact]
     public void Descriptor_rejects_equal_unknown_or_inconsistent_values_and_retains_typed_evidence()
     {
-        var sources = new LineNoiseSourceSnapshot(true, false, false);
-        var shiftId = RuntimeFixture.CreateInitialState().ShiftId;
+        var saw = SawOnly();
+        var sources = Assert.IsType<LineNoiseEvaluatedWithChange>(
+            Service.Evaluate(LineNoiseRuntimeState.Create(saw.State.ShiftId), saw.State, saw.Movement, saw.Tick)).State.LatestSources;
+        var shiftId = saw.State.ShiftId;
 
         Assert.Throws<ArgumentException>(() => new LineNoiseChanged(shiftId, LineNoise.LOUD, LineNoise.LOUD, ServerTick.From(1), sources));
         Assert.Throws<ArgumentException>(() => new LineNoiseChanged(default, LineNoise.QUIET, LineNoise.LOUD, ServerTick.From(1), sources));
@@ -307,6 +309,14 @@ public sealed class LineNoiseRuntimeTests
         Assert.Equal(evaluatedAt, runtime.LastEvaluatedAt);
         Assert.Equal(changedAt, runtime.LastChangedAt);
         Assert.Equal(sources, runtime.LatestSources);
+    }
+
+    private static void AssertSnapshot(LineNoiseSourceSnapshot snapshot, bool saw, bool movement, bool repair)
+    {
+        Assert.Equal(saw, snapshot.SawActive);
+        Assert.Equal(movement, snapshot.MovementNoiseActive);
+        Assert.Equal(repair, snapshot.RepairActive);
+        Assert.Equal(saw || movement || repair ? LineNoise.LOUD : LineNoise.QUIET, snapshot.DerivedValue);
     }
 
     private static void SetAutoProperty<T>(object instance, string propertyName, T value)
