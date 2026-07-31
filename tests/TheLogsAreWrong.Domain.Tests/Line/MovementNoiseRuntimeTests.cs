@@ -86,25 +86,33 @@ public sealed class MovementNoiseRuntimeTests
     public void Each_source_rejects_independently_corrupted_evidence_before_runtime_mutation()
     {
         var manual = ManualAccepted();
-        AssertRejectsSameRuntime(() => Service.Apply(NewRuntime(manual.State), manual with { Transition = manual.Transition with { ToState = LogState.AT_INTAKE } }, ServerTick.From(10), Configuration()), NewRuntime(manual.State));
+        var manualRuntime = NewRuntime(manual.State);
+        AssertRejectsWithoutRuntimeMutation(manualRuntime, candidate => Service.Apply(candidate, manual with { Transition = manual.Transition with { ToState = LogState.AT_INTAKE } }, ServerTick.From(10), Configuration()));
 
         var host = HostAccepted();
-        Assert.Throws<ArgumentException>(() => Service.Apply(NewRuntime(host.State), host with { Descriptor = host.Descriptor with { LogId = LogId.From("log_02") } }, ServerTick.From(11), Configuration()));
+        var hostRuntime = NewRuntime(host.State);
+        AssertRejectsWithoutRuntimeMutation(hostRuntime, candidate => Service.Apply(candidate, host with { Descriptor = host.Descriptor with { LogId = LogId.From("log_02") } }, ServerTick.From(11), Configuration()));
 
-        var feed = FeedDueAdmitted();
-        Assert.Throws<ArgumentException>(() => Service.Apply(NewRuntime(feed.State), new FeedDueResolved(feed.State, feed.ConsumedSchedule, default, feed.Disposition, feed.FollowUpRequirement, feed.PriorStateVersion, feed.CurrentStateVersion), Configuration()));
+        var feed = FeedDueAtGate();
+        var feedRuntime = NewRuntime(feed.State);
+        AssertRejectsWithoutRuntimeMutation(feedRuntime, candidate => Service.Apply(candidate, new FeedDueResolved(feed.State, feed.ConsumedSchedule, ServerTick.From(11), feed.Disposition, feed.FollowUpRequirement, feed.PriorStateVersion, feed.CurrentStateVersion), Configuration()));
 
         var defaultRoute = DefaultAutoRouteAccepted();
-        Assert.Throws<ArgumentException>(() => Service.Apply(NewRuntime(defaultRoute.State), defaultRoute with { Destination = LogState.AT_INTAKE }, Configuration()));
+        var defaultRuntime = NewRuntime(defaultRoute.State);
+        AssertRejectsWithoutRuntimeMutation(defaultRuntime, candidate => Service.Apply(candidate, defaultRoute with { Destination = LogState.AT_INTAKE }, Configuration()));
 
         var repair = RepairPendingTransitionAccepted();
-        Assert.Throws<ArgumentException>(() => Service.Apply(NewRuntime(repair.State), new RepairPendingTransitionExecuted(repair.State, repair.PendingTransition, default, repair.PriorStateVersion, repair.CurrentStateVersion, repair.FollowUpRequirement), Configuration()));
+        var repairRuntime = NewRuntime(repair.State);
+        var mismatchedPending = new PendingLineTransitionDescriptor(LogId.From("log_01"), LogState.AT_FEED_GATE, LogState.AT_INTAKE, JamCause.FEED_GATE_BLOCKED);
+        AssertRejectsWithoutRuntimeMutation(repairRuntime, candidate => Service.Apply(candidate, new RepairPendingTransitionExecuted(repair.State, mismatchedPending, repair.AppliedAt, repair.PriorStateVersion, repair.CurrentStateVersion, repair.FollowUpRequirement), Configuration()));
 
         var started = SawStarted();
-        Assert.Throws<ArgumentException>(() => Service.Apply(NewRuntime(started.State), started with { CurrentStateVersion = started.PriorStateVersion }, Configuration()));
+        var startedRuntime = NewRuntime(started.State);
+        AssertRejectsWithoutRuntimeMutation(startedRuntime, candidate => Service.Apply(candidate, started with { CurrentStateVersion = started.PriorStateVersion }, Configuration()));
 
         var completed = SawCompleted();
-        Assert.Throws<ArgumentException>(() => Service.Apply(NewRuntime(completed.State), completed with { CompletedAt = completed.Cycle.StartedAt }, Configuration()));
+        var completedRuntime = NewRuntime(completed.State);
+        AssertRejectsWithoutRuntimeMutation(completedRuntime, candidate => Service.Apply(candidate, completed with { CompletedAt = completed.Cycle.StartedAt }, Configuration()));
     }
 
     [Fact]
@@ -148,7 +156,7 @@ public sealed class MovementNoiseRuntimeTests
     }
 
     [Fact]
-    public void Exact_duplicate_is_a_typed_same_instance_no_op_and_malformed_same_version_cannot_hide_behind_it()
+    public void Exact_duplicate_is_a_typed_same_instance_no_op()
     {
         var accepted = HostAccepted();
         var first = AssertApplied(Service.Apply(NewRuntime(accepted.State), accepted, ServerTick.From(10), Configuration()));
@@ -157,13 +165,29 @@ public sealed class MovementNoiseRuntimeTests
         Assert.Same(first.State, duplicate.State);
         Assert.Equal(first.State.DueAt, duplicate.State.DueAt);
 
-        var contradictory = accepted with { Descriptor = accepted.Descriptor with { ToState = LogState.AT_INTAKE } };
-        Assert.Throws<ArgumentException>(() => Service.Apply(first.State, contradictory, ServerTick.From(10), Configuration()));
-        Assert.Same(first.State, first.State);
     }
 
     [Fact]
-    public void Cross_shift_stale_default_versions_and_non_positive_duration_fail_without_replacing_runtime()
+    public void Same_version_changed_authoritative_tick_fails_closed_without_mutating_the_active_runtime()
+    {
+        var accepted = HostAccepted();
+        var active = AssertApplied(Service.Apply(NewRuntime(accepted.State), accepted, ServerTick.From(10), Configuration())).State;
+
+        AssertRejectsWithoutRuntimeMutation(active, candidate => Service.Apply(candidate, accepted, ServerTick.From(11), Configuration()));
+    }
+
+    [Fact]
+    public void Same_version_changed_log_identity_fails_closed_without_mutating_the_active_runtime()
+    {
+        var accepted = HostAccepted();
+        var active = AssertApplied(Service.Apply(NewRuntime(accepted.State), accepted, ServerTick.From(10), Configuration())).State;
+        var changedLog = accepted with { Descriptor = accepted.Descriptor with { LogId = LogId.From("log_02") } };
+
+        AssertRejectsWithoutRuntimeMutation(active, candidate => Service.Apply(candidate, changedLog, ServerTick.From(10), Configuration()));
+    }
+
+    [Fact]
+    public void Stale_cross_shift_default_version_and_invalid_duration_evidence_fail_without_mutating_the_input_runtime()
     {
         var accepted = HostAccepted();
         var first = AssertApplied(Service.Apply(NewRuntime(accepted.State), accepted, ServerTick.From(10), Configuration())).State;
@@ -171,12 +195,12 @@ public sealed class MovementNoiseRuntimeTests
         var newer = AssertApplied(Service.Apply(first, newerAccepted, ServerTick.From(11), Configuration())).State;
         var defaultVersion = accepted with { Descriptor = accepted.Descriptor with { PriorStateVersion = default } };
 
-        Assert.Throws<ArgumentException>(() => Service.Apply(newer, accepted, ServerTick.From(10), Configuration()));
-        Assert.Throws<ArgumentException>(() => Service.Apply(first, defaultVersion, ServerTick.From(11), Configuration()));
-        Assert.ThrowsAny<ArgumentException>(() => Service.Apply(first, accepted, ServerTick.From(11), Configuration(0)));
-        Assert.Throws<ArgumentException>(() => Service.Apply(MovementNoiseRuntimeState.Create(ShiftId.From("other_shift")), accepted, ServerTick.From(10), Configuration()));
-        Assert.Same(first, first);
-        Assert.Same(newer, newer);
+        AssertRejectsWithoutRuntimeMutation(newer, candidate => Service.Apply(candidate, accepted, ServerTick.From(10), Configuration()));
+        AssertRejectsWithoutRuntimeMutation(first, candidate => Service.Apply(candidate, defaultVersion, ServerTick.From(11), Configuration()));
+        AssertRejectsWithoutRuntimeMutation(first, candidate => Service.Apply(candidate, accepted, ServerTick.From(11), Configuration(0)));
+
+        var otherShift = MovementNoiseRuntimeState.Create(ShiftId.From("other_shift"));
+        AssertRejectsWithoutRuntimeMutation(otherShift, candidate => Service.Apply(candidate, accepted, ServerTick.From(10), Configuration()));
     }
 
     [Fact]
@@ -196,52 +220,59 @@ public sealed class MovementNoiseRuntimeTests
     private static void AssertSource(ManualLogIntentAccepted accepted, MovementNoiseAcceptedSource source, ServerTick tick)
     {
         var applied = AssertApplied(Service.Apply(NewRuntime(accepted.State), accepted, tick, Configuration()));
-        Assert.Equal(source, applied.State.LastAcceptedMovement!.Source);
-        Assert.Equal(accepted.Transition.LogId, applied.State.LastAcceptedMovement!.LogId);
-        Assert.Equal(accepted.Transition.FromState, applied.State.LastAcceptedMovement!.SourceState);
-        Assert.Equal(accepted.Transition.ToState, applied.State.LastAcceptedMovement!.DestinationState);
-        Assert.Equal((accepted.Transition.PriorStateVersion, accepted.Transition.CurrentStateVersion, tick), (applied.State.LastAcceptedMovement!.PriorStateVersion, applied.State.LastAcceptedMovement!.CurrentStateVersion, applied.State.LastAcceptedMovement!.AcceptedAt));
+        AssertRetainedMovement(applied.State, source, accepted.Transition.LogId, accepted.Transition.FromState, accepted.Transition.ToState, accepted.Transition.PriorStateVersion, accepted.Transition.CurrentStateVersion, tick);
     }
 
     private static void AssertSource(HostLogTransitionAccepted accepted, MovementNoiseAcceptedSource source, ServerTick tick)
     {
         var applied = AssertApplied(Service.Apply(NewRuntime(accepted.State), accepted, tick, Configuration()));
-        Assert.Equal(source, applied.State.LastAcceptedMovement!.Source);
-        Assert.Equal(accepted.Descriptor.LogId, applied.State.LastAcceptedMovement!.LogId);
-        Assert.Equal((accepted.Descriptor.FromState, accepted.Descriptor.ToState, tick), (applied.State.LastAcceptedMovement!.SourceState, applied.State.LastAcceptedMovement!.DestinationState, applied.State.LastAcceptedMovement!.AcceptedAt));
+        AssertRetainedMovement(applied.State, source, accepted.Descriptor.LogId, accepted.Descriptor.FromState, accepted.Descriptor.ToState, accepted.Descriptor.PriorStateVersion, accepted.Descriptor.CurrentStateVersion, tick);
     }
 
     private static void AssertSource(FeedDueResolved accepted, MovementNoiseAcceptedSource source, ServerTick tick)
     {
         var applied = AssertApplied(Service.Apply(NewRuntime(accepted.State), accepted, Configuration()));
-        Assert.Equal(source, applied.State.LastAcceptedMovement!.Source);
-        Assert.Equal(accepted.ConsumedSchedule.LogId, applied.State.LastAcceptedMovement!.LogId);
-        Assert.Equal(tick, applied.State.LastAcceptedMovement!.AcceptedAt);
-        Assert.Equal(accepted.CurrentStateVersion, applied.State.LastAcceptedMovement!.CurrentStateVersion);
+        var destination = accepted.Disposition == FeedDueDisposition.AdmittedToIntake ? LogState.AT_INTAKE : LogState.AT_FEED_GATE;
+        Assert.Equal(accepted.ResolvedAt, tick);
+        AssertRetainedMovement(applied.State, source, accepted.ConsumedSchedule.LogId, LogState.SCHEDULED, destination, accepted.PriorStateVersion, accepted.CurrentStateVersion, accepted.ResolvedAt);
     }
 
     private static void AssertSource(DefaultIntakeAutoRouteApplied accepted, MovementNoiseAcceptedSource source, ServerTick tick)
     {
         var applied = AssertApplied(Service.Apply(NewRuntime(accepted.State), accepted, Configuration()));
-        Assert.Equal((source, accepted.LogId, accepted.Source, accepted.Destination, tick), (applied.State.LastAcceptedMovement!.Source, applied.State.LastAcceptedMovement!.LogId, applied.State.LastAcceptedMovement!.SourceState, applied.State.LastAcceptedMovement!.DestinationState, applied.State.LastAcceptedMovement!.AcceptedAt));
+        AssertRetainedMovement(applied.State, source, accepted.LogId, accepted.Source, accepted.Destination, accepted.PriorStateVersion, accepted.CurrentStateVersion, tick);
     }
 
     private static void AssertSource(RepairPendingTransitionExecuted accepted, MovementNoiseAcceptedSource source, ServerTick tick)
     {
         var applied = AssertApplied(Service.Apply(NewRuntime(accepted.State), accepted, Configuration()));
-        Assert.Equal((source, accepted.LogId, accepted.Source, accepted.Destination, tick), (applied.State.LastAcceptedMovement!.Source, applied.State.LastAcceptedMovement!.LogId, applied.State.LastAcceptedMovement!.SourceState, applied.State.LastAcceptedMovement!.DestinationState, applied.State.LastAcceptedMovement!.AcceptedAt));
+        AssertRetainedMovement(applied.State, source, accepted.LogId, accepted.Source, accepted.Destination, accepted.PriorStateVersion, accepted.CurrentStateVersion, tick);
     }
 
     private static void AssertSource(SawCycleStarted accepted, MovementNoiseAcceptedSource source, ServerTick tick)
     {
         var applied = AssertApplied(Service.Apply(NewRuntime(accepted.State), accepted, Configuration()));
-        Assert.Equal((source, accepted.Cycle.LogId, LogState.QUEUED_FOR_SAW, LogState.IN_SAW, tick), (applied.State.LastAcceptedMovement!.Source, applied.State.LastAcceptedMovement!.LogId, applied.State.LastAcceptedMovement!.SourceState, applied.State.LastAcceptedMovement!.DestinationState, applied.State.LastAcceptedMovement!.AcceptedAt));
+        AssertRetainedMovement(applied.State, source, accepted.Cycle.LogId, LogState.QUEUED_FOR_SAW, LogState.IN_SAW, accepted.PriorStateVersion, accepted.CurrentStateVersion, tick);
     }
 
     private static void AssertSource(SawCycleCompleted accepted, MovementNoiseAcceptedSource source, ServerTick tick)
     {
         var applied = AssertApplied(Service.Apply(NewRuntime(accepted.State), accepted, Configuration()));
-        Assert.Equal((source, accepted.Cycle.LogId, LogState.IN_SAW, LogState.PROCESSED, tick), (applied.State.LastAcceptedMovement!.Source, applied.State.LastAcceptedMovement!.LogId, applied.State.LastAcceptedMovement!.SourceState, applied.State.LastAcceptedMovement!.DestinationState, applied.State.LastAcceptedMovement!.AcceptedAt));
+        AssertRetainedMovement(applied.State, source, accepted.Cycle.LogId, LogState.IN_SAW, LogState.PROCESSED, accepted.PriorStateVersion, accepted.CurrentStateVersion, tick);
+    }
+
+    private static void AssertRetainedMovement(
+        MovementNoiseRuntimeState runtime,
+        MovementNoiseAcceptedSource source,
+        LogId logId,
+        LogState sourceState,
+        LogState destinationState,
+        StateVersion priorStateVersion,
+        StateVersion currentStateVersion,
+        ServerTick acceptedAt)
+    {
+        var retained = Assert.IsType<MovementNoiseAcceptedMovement>(runtime.LastAcceptedMovement);
+        Assert.Equal((source, logId, sourceState, destinationState, priorStateVersion, currentStateVersion, acceptedAt), (retained.Source, retained.LogId, retained.SourceState, retained.DestinationState, retained.PriorStateVersion, retained.CurrentStateVersion, retained.AcceptedAt));
     }
 
     private static MovementNoiseApplied AssertApplied(MovementNoiseApplicationResult result) => Assert.IsType<MovementNoiseApplied>(result);
@@ -314,9 +345,34 @@ public sealed class MovementNoiseRuntimeTests
         return Assert.IsType<SawCycleCompleted>(new SawCycleCompletionService().Complete(started.State, started.Cycle.DueAt, Fixture.LoadP0().Anomalies));
     }
 
-    private static void AssertRejectsSameRuntime(Action action, MovementNoiseRuntimeState runtime)
+    private static void AssertRejectsWithoutRuntimeMutation(
+        MovementNoiseRuntimeState runtime,
+        Func<MovementNoiseRuntimeState, MovementNoiseApplicationResult> apply)
     {
-        Assert.Throws<ArgumentException>(action);
-        Assert.False(runtime.HasAcceptedMovement);
+        ArgumentNullException.ThrowIfNull(runtime);
+        ArgumentNullException.ThrowIfNull(apply);
+        var shiftId = runtime.ShiftId;
+        var hasAcceptedMovement = runtime.HasAcceptedMovement;
+        var lastAcceptedMovement = runtime.LastAcceptedMovement;
+        var startedAt = runtime.StartedAt;
+        var dueAt = runtime.DueAt;
+
+        Assert.ThrowsAny<ArgumentException>(() => apply(runtime));
+
+        Assert.Equal(shiftId, runtime.ShiftId);
+        Assert.Equal(hasAcceptedMovement, runtime.HasAcceptedMovement);
+        Assert.Equal(startedAt, runtime.StartedAt);
+        Assert.Equal(dueAt, runtime.DueAt);
+        Assert.Equal(lastAcceptedMovement, runtime.LastAcceptedMovement);
+        if (lastAcceptedMovement is null)
+        {
+            Assert.False(runtime.HasAcceptedMovement);
+            Assert.Null(runtime.LastAcceptedMovement);
+        }
+        else
+        {
+            Assert.True(runtime.HasAcceptedMovement);
+            Assert.Same(lastAcceptedMovement, runtime.LastAcceptedMovement);
+        }
     }
 }
