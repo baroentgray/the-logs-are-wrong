@@ -346,10 +346,10 @@ public sealed class RepairPendingTransitionExecutionTests
         var admitted = Assert.IsType<FeedDueResolved>(new FeedDueResolutionService().Resolve(planned.State, ServerTick.Zero));
         var deadline = Assert.IsType<IntakeDeadlineStarted>(new IntakeDeadlineStartService().Start(admitted.State, admitted, configuration.Profiles[ProfileId.From("learning")]));
         var secondAtIntake = RuntimeFixture.MoveHost(RuntimeFixture.MoveHost(deadline.State, "log_06", LogState.AT_FEED_GATE), "log_06", LogState.AT_INTAKE);
-        var priorConfirmation = Assert.IsType<ConfirmationTestStarted>(new ConfirmationTestStartService().Start(secondAtIntake, LogId.From("log_06"), ImmutableHashSet.Create(ItemId.From("choir_cassette")), ServerTick.From(1), LineNoise.QUIET, fixture.Anomalies));
+        var priorConfirmation = Assert.IsType<ConfirmationTestStarted>(new ConfirmationTestStartService().Start(secondAtIntake, LogId.From("log_06"), ImmutableHashSet.Create(ItemId.From("choir_cassette")), ServerTick.From(1), LineNoiseRuntimeState.Create(secondAtIntake.ShiftId), fixture.Anomalies));
         var completedConfirmation = Assert.IsType<ConfirmationTestDueCompleted>(new ConfirmationTestDueCompletionService().CompleteDue(priorConfirmation.State, ServerTick.From(5), fixture.Anomalies));
         var ownerAtIntake = RuntimeFixture.MoveHost(completedConfirmation.State, "log_06", LogState.AT_PROCEDURE);
-        var ownerConfirmation = Assert.IsType<ConfirmationTestStarted>(new ConfirmationTestStartService().Start(ownerAtIntake, owner, ImmutableHashSet.Create(ItemId.From("choir_cassette")), ServerTick.From(59), LineNoise.QUIET, fixture.Anomalies));
+        var ownerConfirmation = Assert.IsType<ConfirmationTestStarted>(new ConfirmationTestStartService().Start(ownerAtIntake, owner, ImmutableHashSet.Create(ItemId.From("choir_cassette")), ServerTick.From(59), LineNoiseRuntimeState.Create(ownerAtIntake.ShiftId), fixture.Anomalies));
         var queue = RuntimeFixture.MoveHost(RuntimeFixture.MoveHost(RuntimeFixture.MoveHost(ownerConfirmation.State, "log_02", LogState.AT_FEED_GATE), "log_02", LogState.AT_INTAKE), "log_02", LogState.QUEUED_FOR_SAW);
         var expired = Assert.IsType<IntakeDeadlineExpired>(new IntakeDeadlineExpirationService().Expire(queue, ServerTick.From(60)));
         var blocked = Assert.IsType<DefaultIntakeAutoRouteBlocked>(new DefaultIntakeAutoRouteService().Attempt(expired.State, expired.FollowUp, ServerTick.From(60)));
@@ -406,7 +406,7 @@ public sealed class RepairPendingTransitionExecutionTests
     {
         var fixture = Fixture.LoadP0();
         var atIntake = RuntimeFixture.MoveToIntake(ShiftRuntimeState.Create(fixture.Shift), logId);
-        var started = Assert.IsType<ConfirmationTestStarted>(new ConfirmationTestStartService().Start(atIntake, LogId.From(logId), ImmutableHashSet.Create(ItemId.From("choir_cassette")), tick, LineNoise.QUIET, fixture.Anomalies));
+        var started = Assert.IsType<ConfirmationTestStarted>(new ConfirmationTestStartService().Start(atIntake, LogId.From(logId), ImmutableHashSet.Create(ItemId.From("choir_cassette")), tick, LineNoiseRuntimeState.Create(atIntake.ShiftId), fixture.Anomalies));
         return Assert.IsType<ActiveConfirmationTest>(started.State.ActiveConfirmationTest);
     }
 

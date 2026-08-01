@@ -185,7 +185,7 @@ public sealed class JamRepairLifecycleTests
     {
         var fixture = Fixture.LoadP0();
         var state = RuntimeFixture.MoveToIntake(RuntimeFixture.CreateInitialState(), "log_10");
-        var confirmationStart = Assert.IsType<ConfirmationTestStarted>(new ConfirmationTestStartService().Start(state, LogId.From("log_10"), ImmutableHashSet.Create(ItemId.From("choir_cassette")), ServerTick.From(1), LineNoise.QUIET, fixture.Anomalies));
+        var confirmationStart = Assert.IsType<ConfirmationTestStarted>(new ConfirmationTestStartService().Start(state, LogId.From("log_10"), ImmutableHashSet.Create(ItemId.From("choir_cassette")), ServerTick.From(1), LineNoiseRuntimeState.Create(state.ShiftId), fixture.Anomalies));
         var confirmationDone = Assert.IsType<ConfirmationTestDueCompleted>(new ConfirmationTestDueCompletionService().CompleteDue(confirmationStart.State, ServerTick.From(5), fixture.Anomalies));
         state = RuntimeFixture.MoveHost(confirmationDone.State, "log_10", LogState.QUEUED_FOR_SAW);
         state = RuntimeFixture.MoveToIntake(state, "log_08");
@@ -195,7 +195,7 @@ public sealed class JamRepairLifecycleTests
         var procedure = Assert.IsType<ProcedureActionHoldStarted>(new ProcedureActionStartService().Start(state, LogId.From("log_03"), ItemId.From("holy_water"), ServerTick.From(10), fixture.Anomalies));
         state = procedure.State;
         state = RuntimeFixture.MoveToIntake(state, "log_06");
-        var activeConfirmation = Assert.IsType<ConfirmationTestStarted>(new ConfirmationTestStartService().Start(state, LogId.From("log_06"), ImmutableHashSet.Create(ItemId.From("choir_cassette")), ServerTick.From(11), LineNoise.QUIET, fixture.Anomalies));
+        var activeConfirmation = Assert.IsType<ConfirmationTestStarted>(new ConfirmationTestStartService().Start(state, LogId.From("log_06"), ImmutableHashSet.Create(ItemId.From("choir_cassette")), ServerTick.From(11), LineNoiseRuntimeState.Create(state.ShiftId), fixture.Anomalies));
         state = RuntimeFixture.MoveHost(activeConfirmation.State, "log_02", LogState.AT_FEED_GATE);
         var containment = Assert.IsType<ContainmentStableIntervalArmed>(new ContainmentAdvanceService().Advance(state, ServerTick.From(12), fixture.Shift.Containment, fixture.Anomalies));
 

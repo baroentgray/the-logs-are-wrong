@@ -99,13 +99,32 @@ public sealed class LineNoiseRuntimeState
         new(ShiftId, next, evaluatedAt, sources, changedAt, evidence);
 }
 
-public abstract record LineNoiseEvaluationResult(LineNoiseRuntimeState State);
+public abstract record LineNoiseEvaluationResult
+{
+    private protected LineNoiseEvaluationResult(LineNoiseRuntimeState state)
+    {
+        ArgumentNullException.ThrowIfNull(state);
+        State = state;
+    }
 
-public sealed record LineNoiseEvaluatedWithoutChange(LineNoiseRuntimeState State) : LineNoiseEvaluationResult(State);
+    public LineNoiseRuntimeState State { get; }
+}
 
-public sealed record LineNoiseEvaluatedWithChange(LineNoiseRuntimeState State, LineNoiseChanged Change) : LineNoiseEvaluationResult(State);
+public sealed record LineNoiseEvaluatedWithoutChange : LineNoiseEvaluationResult
+{
+    internal LineNoiseEvaluatedWithoutChange(LineNoiseRuntimeState state) : base(state) { }
+}
 
-public sealed record LineNoiseAlreadyEvaluated(LineNoiseRuntimeState State) : LineNoiseEvaluationResult(State);
+public sealed record LineNoiseEvaluatedWithChange : LineNoiseEvaluationResult
+{
+    internal LineNoiseEvaluatedWithChange(LineNoiseRuntimeState state, LineNoiseChanged change) : base(state) => Change = change;
+    public LineNoiseChanged Change { get; }
+}
+
+public sealed record LineNoiseAlreadyEvaluated : LineNoiseEvaluationResult
+{
+    internal LineNoiseAlreadyEvaluated(LineNoiseRuntimeState state) : base(state) { }
+}
 
 public sealed class LineNoiseDerivationService
 {
@@ -157,7 +176,7 @@ public sealed class LineNoiseDerivationService
         return new LineNoiseEvaluatedWithChange(runtime.Apply(next, currentTick, sources, evidence, currentTick), change);
     }
 
-    private static void ValidateRuntime(LineNoiseRuntimeState runtime)
+    internal static void ValidateRuntime(LineNoiseRuntimeState runtime)
     {
         if (runtime.ShiftId.IsDefault || !Enum.IsDefined(runtime.Current) || runtime.LatestSources is null)
         {

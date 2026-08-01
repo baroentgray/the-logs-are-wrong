@@ -417,7 +417,7 @@ public sealed class SawCycleTests
                 LogId.From("log_08"),
                 ImmutableHashSet.Create(ItemId.From("sound_meter")),
                 ServerTick.From(10),
-                LineNoise.QUIET,
+                LineNoiseRuntimeState.Create(state.ShiftId),
                 fixture.Anomalies)).State,
             ServerTick.From(14),
             fixture.Anomalies)).State;
@@ -438,7 +438,7 @@ public sealed class SawCycleTests
             LogId.From("log_10"),
             ImmutableHashSet.Create(ItemId.From("choir_cassette")),
             ServerTick.From(19),
-            LineNoise.QUIET,
+            LineNoiseRuntimeState.Create(state.ShiftId),
             fixture.Anomalies)).State;
 
         state = CloneWith(state, nameof(ShiftRuntimeState.PendingFeed), new PendingFeedSchedule(LogId.From("log_02"), FeedScheduleKind.NORMAL, ServerTick.From(19), SimulationDuration.FromTicks(3), null));

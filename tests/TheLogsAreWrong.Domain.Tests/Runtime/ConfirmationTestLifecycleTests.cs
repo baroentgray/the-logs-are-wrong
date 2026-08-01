@@ -2,8 +2,10 @@ using System.Collections.Immutable;
 using TheLogsAreWrong.Domain.Anomalies;
 using TheLogsAreWrong.Domain.Enums;
 using TheLogsAreWrong.Domain.Identifiers;
+using TheLogsAreWrong.Domain.Line;
 using TheLogsAreWrong.Domain.Primitives;
 using TheLogsAreWrong.Domain.Runtime;
+using TheLogsAreWrong.Domain.Scheduler;
 using TheLogsAreWrong.Domain.Time;
 
 namespace TheLogsAreWrong.Domain.Tests.Runtime;
@@ -15,6 +17,7 @@ public sealed class ConfirmationTestLifecycleTests
     private static readonly ConfirmationTestConditionService ConditionService = new();
     private static readonly ConfirmationTestDueCompletionService DueService = new();
     private static readonly ConfirmationTestCancellationService CancellationService = new();
+    private static readonly LineNoiseDerivationService LineNoiseService = new();
 
     [Fact]
     public void Penitent_starts_at_tick_10_and_completes_only_at_exact_due_tick()
@@ -181,10 +184,10 @@ public sealed class ConfirmationTestLifecycleTests
     }
 
     private static ConfirmationTestStartResult Start(ShiftRuntimeState state, string logId, long tick, LineNoise noise, params string[] tools) =>
-        StartService.Start(state, LogId.From(logId), tools.Select(ItemId.From).ToImmutableHashSet(), ServerTick.From(tick), noise, Fixture.LoadP0().Anomalies);
+        StartService.Start(state, LogId.From(logId), tools.Select(ItemId.From).ToImmutableHashSet(), ServerTick.From(tick), RetainedNoise(state, tick, noise), Fixture.LoadP0().Anomalies);
 
     private static ConfirmationTestConditionResult Condition(ShiftRuntimeState state, long tick, LineNoise noise, params string[] tools) =>
-        ConditionService.Update(state, ServerTick.From(tick), noise, tools.Select(ItemId.From).ToImmutableHashSet(), Fixture.LoadP0().Anomalies);
+        ConditionService.Update(state, ServerTick.From(tick), Evaluation(state, tick, noise), tools.Select(ItemId.From).ToImmutableHashSet(), Fixture.LoadP0().Anomalies);
 
     private static ConfirmationTestDueCompletionResult Due(ShiftRuntimeState state, long tick) =>
         DueService.CompleteDue(state, ServerTick.From(tick), Fixture.LoadP0().Anomalies);
@@ -199,6 +202,36 @@ public sealed class ConfirmationTestLifecycleTests
     {
         state = RuntimeFixture.MoveToIntake(state, logId);
         return RuntimeFixture.MoveHost(state, logId, LogState.AT_PROCEDURE);
+    }
+
+    private static LineNoiseRuntimeState RetainedNoise(ShiftRuntimeState state, long tick, LineNoise noise) => Evaluation(state, tick, noise).State;
+
+    private static LineNoiseEvaluationResult Evaluation(ShiftRuntimeState state, long tick, LineNoise noise)
+    {
+        var currentTick = ServerTick.From(tick);
+        if (noise == LineNoise.QUIET)
+        {
+            return LineNoiseService.Evaluate(
+                LineNoiseRuntimeState.Create(state.ShiftId),
+                state,
+                MovementNoiseRuntimeState.Create(state.ShiftId),
+                currentTick);
+        }
+
+        var loudSource = LoudSource(currentTick);
+        Assert.Equal(state.ShiftId, loudSource.ShiftId);
+        return LineNoiseService.Evaluate(
+            LineNoiseRuntimeState.Create(loudSource.ShiftId),
+            loudSource,
+            MovementNoiseRuntimeState.Create(loudSource.ShiftId),
+            currentTick);
+    }
+
+    private static ShiftRuntimeState LoudSource(ServerTick tick)
+    {
+        var state = RuntimeFixture.MoveToIntake(ShiftRuntimeState.Create(Fixture.LoadP0().Shift), "log_01");
+        state = RuntimeFixture.MoveHost(state, "log_01", LogState.QUEUED_FOR_SAW);
+        return Assert.IsType<SawCycleStarted>(new SawCycleStartService().Start(state, tick, Fixture.LoadP0().Shift.Scheduler)).State;
     }
 
     private static void AssertStartRejected(ConfirmationTestStartResult result, ConfirmationTestStartRejectionReason reason, ShiftRuntimeState state)

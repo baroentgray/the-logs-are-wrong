@@ -249,13 +249,13 @@ public sealed class FeedGateJamDerivationTests
 
         state = RuntimeFixture.MoveToIntake(state, "log_08");
         var completedConfirmation = Assert.IsType<ConfirmationTestDueCompleted>(new ConfirmationTestDueCompletionService().CompleteDue(
-            Assert.IsType<ConfirmationTestStarted>(new ConfirmationTestStartService().Start(state, LogId.From("log_08"), ImmutableHashSet.Create(ItemId.From("sound_meter")), ServerTick.From(11), LineNoise.QUIET, fixture.Anomalies)).State,
+            Assert.IsType<ConfirmationTestStarted>(new ConfirmationTestStartService().Start(state, LogId.From("log_08"), ImmutableHashSet.Create(ItemId.From("sound_meter")), ServerTick.From(11), LineNoiseRuntimeState.Create(state.ShiftId), fixture.Anomalies)).State,
             ServerTick.From(15), fixture.Anomalies));
         state = RuntimeFixture.MoveHost(completedConfirmation.State, "log_08", LogState.HELD_WRITTEN_OFF);
         state = Assert.IsType<ContainmentStableIntervalArmed>(new ContainmentAdvanceService().Advance(state, ServerTick.From(16), fixture.Shift.Containment, fixture.Anomalies)).State;
 
         state = RuntimeFixture.MoveToIntake(state, "log_06");
-        state = Assert.IsType<ConfirmationTestStarted>(new ConfirmationTestStartService().Start(state, LogId.From("log_06"), ImmutableHashSet.Create(ItemId.From("choir_cassette")), ServerTick.From(16), LineNoise.QUIET, fixture.Anomalies)).State;
+        state = Assert.IsType<ConfirmationTestStarted>(new ConfirmationTestStartService().Start(state, LogId.From("log_06"), ImmutableHashSet.Create(ItemId.From("choir_cassette")), ServerTick.From(16), LineNoiseRuntimeState.Create(state.ShiftId), fixture.Anomalies)).State;
         return RuntimeFixture.MoveHost(state, "log_02", LogState.AT_FEED_GATE);
     }
 

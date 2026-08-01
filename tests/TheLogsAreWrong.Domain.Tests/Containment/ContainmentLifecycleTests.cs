@@ -3,6 +3,7 @@ using TheLogsAreWrong.Domain.Configuration;
 using TheLogsAreWrong.Domain.Containment;
 using TheLogsAreWrong.Domain.Enums;
 using TheLogsAreWrong.Domain.Identifiers;
+using TheLogsAreWrong.Domain.Line;
 using TheLogsAreWrong.Domain.Primitives;
 using TheLogsAreWrong.Domain.Runtime;
 using TheLogsAreWrong.Domain.Tests.Runtime;
@@ -207,7 +208,7 @@ public sealed class ContainmentLifecycleTests
     {
         var fixture = Fixture.LoadP0();
         var state = RuntimeFixture.MoveToIntake(RuntimeFixture.CreateInitialState(), "log_10");
-        var completedConfirmationStart = Assert.IsType<ConfirmationTestStarted>(new ConfirmationTestStartService().Start(state, LogId.From("log_10"), ImmutableHashSet.Create(ItemId.From("choir_cassette")), ServerTick.From(1), LineNoise.QUIET, fixture.Anomalies));
+        var completedConfirmationStart = Assert.IsType<ConfirmationTestStarted>(new ConfirmationTestStartService().Start(state, LogId.From("log_10"), ImmutableHashSet.Create(ItemId.From("choir_cassette")), ServerTick.From(1), LineNoiseRuntimeState.Create(state.ShiftId), fixture.Anomalies));
         var completedConfirmation = Assert.IsType<ConfirmationTestDueCompleted>(new ConfirmationTestDueCompletionService().CompleteDue(completedConfirmationStart.State, ServerTick.From(5), fixture.Anomalies));
         state = RuntimeFixture.MoveHost(completedConfirmation.State, "log_10", LogState.QUEUED_FOR_SAW);
         state = WriteOff(state, "log_08");
@@ -216,7 +217,7 @@ public sealed class ContainmentLifecycleTests
         var procedure = Assert.IsType<ProcedureActionHoldStarted>(new ProcedureActionStartService().Start(state, LogId.From("log_03"), ItemId.From("holy_water"), ServerTick.From(10), fixture.Anomalies));
         state = procedure.State;
         state = RuntimeFixture.MoveToIntake(state, "log_06");
-        var confirmation = Assert.IsType<ConfirmationTestStarted>(new ConfirmationTestStartService().Start(state, LogId.From("log_06"), ImmutableHashSet.Create(ItemId.From("choir_cassette")), ServerTick.From(11), LineNoise.QUIET, fixture.Anomalies));
+        var confirmation = Assert.IsType<ConfirmationTestStarted>(new ConfirmationTestStartService().Start(state, LogId.From("log_06"), ImmutableHashSet.Create(ItemId.From("choir_cassette")), ServerTick.From(11), LineNoiseRuntimeState.Create(state.ShiftId), fixture.Anomalies));
 
         var armed = Arm(confirmation.State, fixture);
         Assert.Equal(procedure.Hold, armed.ActiveProcedureHold);
