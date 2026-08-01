@@ -101,6 +101,76 @@ public sealed class ConfirmationTestLineNoiseIntegrationTests
         Assert.Equal(ServerTick.From(14), started.ActiveConfirmationTest!.DueAt);
     }
 
+    [Fact]
+    public void Same_tick_service_produced_loud_noise_pauses_a_new_penitent_without_counting_an_interval()
+    {
+        var intake = AtIntake("log_03");
+        var started = Assert.IsType<ConfirmationTestStarted>(Start(intake, "log_03", 10, LineNoiseRuntimeState.Create(intake.ShiftId), "sound_meter")).State;
+        var loud = Assert.IsType<LineNoiseEvaluatedWithChange>(EvaluateSawNoise(10));
+
+        var paused = Assert.IsType<ConfirmationTestConditionUpdated>(Update(started, 10, loud, "sound_meter")).State;
+        var active = Assert.IsType<ActiveConfirmationTest>(paused.ActiveConfirmationTest);
+
+        Assert.Equal(LineNoise.LOUD, loud.State.Current);
+        Assert.False(active.IsRunning);
+        Assert.Equal(SimulationDuration.Zero, active.AccumulatedValidDuration);
+        Assert.Null(active.SegmentStartedAt);
+        Assert.Null(active.DueAt);
+    }
+
+    [Fact]
+    public void Remaining_loud_after_a_service_produced_source_composition_change_does_not_reset_penitent_twice()
+    {
+        var intake = AtIntake("log_03");
+        var started = Assert.IsType<ConfirmationTestStarted>(Start(intake, "log_03", 10, EvaluateQuiet(intake, 10).State, "sound_meter")).State;
+        var firstLoud = Assert.IsType<LineNoiseEvaluatedWithChange>(EvaluateSawNoise(12));
+        var paused = Assert.IsType<ConfirmationTestConditionUpdated>(Update(started, 12, firstLoud, "sound_meter")).State;
+        var compositionChanged = Assert.IsType<LineNoiseEvaluatedWithoutChange>(EvaluateSawWithMovement(firstLoud.State, 13));
+
+        var noChange = Assert.IsType<ConfirmationTestConditionNoChange>(Update(paused, 13, compositionChanged, "sound_meter"));
+
+        Assert.True(firstLoud.State.LatestSources.SawActive);
+        Assert.False(firstLoud.State.LatestSources.MovementNoiseActive);
+        Assert.True(compositionChanged.State.LatestSources.SawActive);
+        Assert.True(compositionChanged.State.LatestSources.MovementNoiseActive);
+        Assert.Equal(LineNoise.LOUD, compositionChanged.State.Current);
+        Assert.Same(paused, noChange.State);
+        Assert.Equal(SimulationDuration.Zero, Assert.IsType<ActiveConfirmationTest>(paused.ActiveConfirmationTest).AccumulatedValidDuration);
+    }
+
+    [Fact]
+    public void Quiet_to_quiet_service_history_preserves_running_penitent_timing_without_a_duplicate_mutation()
+    {
+        var intake = AtIntake("log_03");
+        var quietAtTen = Assert.IsType<LineNoiseEvaluatedWithoutChange>(EvaluateQuiet(intake, 10));
+        var started = Assert.IsType<ConfirmationTestStarted>(Start(intake, "log_03", 10, quietAtTen.State, "sound_meter")).State;
+        var quietAtEleven = Assert.IsType<LineNoiseEvaluatedWithoutChange>(EvaluateQuiet(quietAtTen.State, started, 11));
+
+        var noChange = Assert.IsType<ConfirmationTestConditionNoChange>(Update(started, 11, quietAtEleven, "sound_meter"));
+
+        Assert.Same(started, noChange.State);
+        Assert.True(Assert.IsType<ActiveConfirmationTest>(started.ActiveConfirmationTest).IsRunning);
+        Assert.Equal(ServerTick.From(14), started.ActiveConfirmationTest!.DueAt);
+    }
+
+    [Fact]
+    public void Condition_rejects_distinct_service_produced_cross_shift_and_future_evidence_before_mutation()
+    {
+        var intake = AtIntake("log_03");
+        var started = Assert.IsType<ConfirmationTestStarted>(Start(intake, "log_03", 10, EvaluateQuiet(intake, 10).State, "sound_meter")).State;
+        var otherShift = ShiftRuntimeState.Create(Fixture.LoadP0().Shift with { ShiftId = ShiftId.From("another_shift") });
+        var crossShift = EvaluateQuiet(otherShift, 12);
+        var future = EvaluateQuiet(started, 13);
+        var active = started.ActiveConfirmationTest;
+        var version = started.StateVersion;
+
+        Assert.Throws<ArgumentException>(() => Update(started, 12, crossShift, "sound_meter"));
+        Assert.Throws<ArgumentException>(() => Update(started, 12, future, "sound_meter"));
+
+        Assert.Same(active, started.ActiveConfirmationTest);
+        Assert.Equal(version, started.StateVersion);
+    }
+
     private static ConfirmationTestStartResult Start(ShiftRuntimeState state, string logId, long tick, LineNoiseRuntimeState runtime, params string[] tools) =>
         StartService.Start(state, LogId.From(logId), tools.Select(ItemId.From).ToImmutableHashSet(), ServerTick.From(tick), runtime, Fixture.LoadP0().Anomalies);
 
@@ -110,14 +180,29 @@ public sealed class ConfirmationTestLineNoiseIntegrationTests
     private static ShiftRuntimeState AtIntake(string logId) => RuntimeFixture.MoveToIntake(RuntimeFixture.CreateInitialState(), logId);
 
     private static LineNoiseEvaluationResult EvaluateQuiet(ShiftRuntimeState state, long tick) =>
-        LineNoiseService.Evaluate(LineNoiseRuntimeState.Create(state.ShiftId), state, MovementNoiseRuntimeState.Create(state.ShiftId), ServerTick.From(tick));
+        EvaluateQuiet(LineNoiseRuntimeState.Create(state.ShiftId), state, tick);
+
+    private static LineNoiseEvaluationResult EvaluateQuiet(LineNoiseRuntimeState runtime, ShiftRuntimeState state, long tick) =>
+        LineNoiseService.Evaluate(runtime, state, MovementNoiseRuntimeState.Create(state.ShiftId), ServerTick.From(tick));
 
     private static LineNoiseEvaluationResult EvaluateSawNoise(long tick)
     {
+        var saw = StartSaw(tick);
+        return LineNoiseService.Evaluate(LineNoiseRuntimeState.Create(saw.State.ShiftId), saw.State, MovementNoiseRuntimeState.Create(saw.State.ShiftId), ServerTick.From(tick));
+    }
+
+    private static LineNoiseEvaluationResult EvaluateSawWithMovement(LineNoiseRuntimeState runtime, long tick)
+    {
+        var saw = StartSaw(tick);
+        var movement = Assert.IsType<MovementNoiseApplied>(new MovementNoiseApplicationService().Apply(MovementNoiseRuntimeState.Create(saw.State.ShiftId), saw, Fixture.LoadP0().Shift.Scheduler)).State;
+        return LineNoiseService.Evaluate(runtime, saw.State, movement, ServerTick.From(tick));
+    }
+
+    private static SawCycleStarted StartSaw(long tick)
+    {
         var source = RuntimeFixture.MoveToIntake(RuntimeFixture.CreateInitialState(), "log_01");
         source = RuntimeFixture.MoveHost(source, "log_01", LogState.QUEUED_FOR_SAW);
-        source = Assert.IsType<SawCycleStarted>(new SawCycleStartService().Start(source, ServerTick.From(tick), Fixture.LoadP0().Shift.Scheduler)).State;
-        return LineNoiseService.Evaluate(LineNoiseRuntimeState.Create(source.ShiftId), source, MovementNoiseRuntimeState.Create(source.ShiftId), ServerTick.From(tick));
+        return Assert.IsType<SawCycleStarted>(new SawCycleStartService().Start(source, ServerTick.From(tick), Fixture.LoadP0().Shift.Scheduler));
     }
 
     private static void SetAutoProperty<T>(object instance, string propertyName, T value)

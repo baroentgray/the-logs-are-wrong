@@ -99,7 +99,16 @@ public sealed class LineNoiseRuntimeState
         new(ShiftId, next, evaluatedAt, sources, changedAt, evidence);
 }
 
-public abstract record LineNoiseEvaluationResult(LineNoiseRuntimeState State);
+public abstract record LineNoiseEvaluationResult
+{
+    private protected LineNoiseEvaluationResult(LineNoiseRuntimeState state)
+    {
+        ArgumentNullException.ThrowIfNull(state);
+        State = state;
+    }
+
+    public LineNoiseRuntimeState State { get; }
+}
 
 public sealed record LineNoiseEvaluatedWithoutChange : LineNoiseEvaluationResult
 {

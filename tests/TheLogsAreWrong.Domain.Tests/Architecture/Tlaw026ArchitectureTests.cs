@@ -52,17 +52,35 @@ public sealed class Tlaw026ArchitectureTests
     [Fact]
     public void Public_line_noise_result_types_are_observable_but_cannot_be_constructed_or_fabricated_by_callers()
     {
+        var baseType = typeof(LineNoiseEvaluationResult);
         var resultTypes = new[]
         {
             typeof(LineNoiseEvaluatedWithoutChange),
             typeof(LineNoiseEvaluatedWithChange),
             typeof(LineNoiseAlreadyEvaluated)
         };
-        var flags = BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly;
+        var publicInstanceFlags = BindingFlags.Public | BindingFlags.Instance;
+        var state = baseType.GetProperty(nameof(LineNoiseEvaluationResult.State), publicInstanceFlags);
+        var stateConstructor = Assert.Single(baseType.GetConstructors(BindingFlags.NonPublic | BindingFlags.Instance), constructor =>
+            constructor.GetParameters().Select(parameter => parameter.ParameterType).SequenceEqual(new[] { typeof(LineNoiseRuntimeState) }));
 
-        Assert.All(resultTypes, type => Assert.Empty(type.GetConstructors(BindingFlags.Public | BindingFlags.Instance)));
-        Assert.All(resultTypes, type => Assert.All(type.GetProperties(flags), property => Assert.Null(property.SetMethod)));
-        Assert.Single(typeof(LineNoiseDerivationService).GetMethods(flags), method => method.Name == "Evaluate");
-        Assert.DoesNotContain(typeof(LineNoiseDerivationService).GetMethods(flags), method => method.Name is "Create" or "From" or "WithChange" or "WithoutChange");
+        Assert.True(baseType.IsPublic);
+        Assert.True(baseType.IsAbstract);
+        Assert.Empty(baseType.GetConstructors(publicInstanceFlags));
+        Assert.True(stateConstructor.IsFamilyAndAssembly);
+        Assert.NotNull(state);
+        Assert.Equal(typeof(LineNoiseRuntimeState), state!.PropertyType);
+        Assert.True(state.CanRead);
+        Assert.False(state.CanWrite);
+        Assert.Null(state.SetMethod);
+        Assert.All(resultTypes, type => Assert.Empty(type.GetConstructors(publicInstanceFlags)));
+        Assert.All(resultTypes, type => Assert.All(type.GetProperties(publicInstanceFlags), property => Assert.Null(property.SetMethod)));
+        var change = typeof(LineNoiseEvaluatedWithChange).GetProperty(nameof(LineNoiseEvaluatedWithChange.Change), publicInstanceFlags);
+        Assert.NotNull(change);
+        Assert.True(change!.CanRead);
+        Assert.False(change.CanWrite);
+        Assert.Null(change.SetMethod);
+        Assert.Single(typeof(LineNoiseDerivationService).GetMethods(publicInstanceFlags), method => method.Name == "Evaluate");
+        Assert.DoesNotContain(typeof(LineNoiseDerivationService).GetMethods(publicInstanceFlags), method => method.Name is "Create" or "From" or "WithChange" or "WithoutChange");
     }
 }
