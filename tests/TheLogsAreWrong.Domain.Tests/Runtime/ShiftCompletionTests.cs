@@ -231,7 +231,7 @@ public sealed class ShiftCompletionTests
         var changedDeadline = configuration with { Profiles = configuration.Profiles.SetItem(ProfileId.From("learning"), new ShiftProfile(60, 841)) };
 
         Assert.Throws<InvalidOperationException>(() => Service.Evaluate(lifecycle, shift, quota, ServerTick.Zero, otherConfiguration));
-        Assert.Throws<InvalidOperationException>(() => Service.Evaluate(lifecycle, shift, quota, ServerTick.Zero, removedProfile));
+        Assert.Throws<ArgumentException>(() => Service.Evaluate(lifecycle, shift, quota, ServerTick.Zero, removedProfile));
         Assert.Throws<InvalidOperationException>(() => Service.Evaluate(lifecycle, shift, quota, ServerTick.Zero, changedDeadline));
         Assert.False(lifecycle.IsCompleted);
         Assert.Same(shift, shift);
