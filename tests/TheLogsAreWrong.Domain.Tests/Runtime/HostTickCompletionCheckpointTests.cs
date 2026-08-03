@@ -103,6 +103,73 @@ public sealed class HostTickCompletionCheckpointTests
     }
 
     [Fact]
+    public void Zero_to_one_to_two_advances_with_exactly_one_step_each()
+    {
+        var configuration = Fixture.LoadP0().Shift;
+        var lifecycle = ShiftLifecycleRuntimeState.Create(configuration, ProfileId.From("learning"));
+        var shift = ShiftRuntimeState.Create(configuration);
+        var quota = QuotaRuntimeState.Create(configuration);
+
+        var zero = Advance(HostTickProgressionEvidence.Create(configuration.ShiftId), lifecycle, shift, quota, ServerTick.Zero, configuration);
+        var one = Advance(zero.Progression, zero.Receipt.Lifecycle, zero.Receipt.ShiftState, zero.Receipt.QuotaState, ServerTick.From(1), configuration);
+        var two = Advance(one.Progression, one.Receipt.Lifecycle, one.Receipt.ShiftState, one.Receipt.QuotaState, ServerTick.From(2), configuration);
+
+        Assert.Equal(ServerTick.Zero, zero.Progression.LastCompletedTick);
+        Assert.Equal(ServerTick.From(1), one.Progression.LastCompletedTick);
+        Assert.Equal(ServerTick.From(2), two.Progression.LastCompletedTick);
+        Assert.Same(zero.Progression, one.OriginalProgression);
+        Assert.Same(one.Progression, two.OriginalProgression);
+    }
+
+    [Fact]
+    public void Next_tick_overflow_fails_before_receipt_or_progression_publication()
+    {
+        var configuration = Fixture.LoadP0().Shift;
+        var progression = HostTickProgressionEvidence.Create(configuration.ShiftId);
+        var nextTick = Assert.Single(typeof(HostTickCompletionCheckpointService).GetMethods(BindingFlags.Static | BindingFlags.NonPublic), method => method.Name == "NextTick");
+
+        var exception = Assert.Throws<TargetInvocationException>(() => nextTick.Invoke(null, new object[] { ServerTick.From(long.MaxValue) }));
+
+        Assert.IsType<OverflowException>(exception.InnerException);
+        Assert.False(progression.HasCompletedTick);
+        Assert.Null(progression.LastReceipt);
+    }
+
+    [Fact]
+    public void Stale_lifecycle_on_new_tick_fails_before_publication()
+    {
+        var configuration = Fixture.LoadP0().Shift;
+        var lifecycle = ShiftLifecycleRuntimeState.Create(configuration, ProfileId.From("learning"));
+        var shift = ShiftRuntimeState.Create(configuration);
+        var quota = QuotaRuntimeState.Create(configuration);
+        var zero = Advance(HostTickProgressionEvidence.Create(configuration.ShiftId), lifecycle, shift, quota, ServerTick.Zero, configuration);
+        var staleLifecycle = CloneWith(zero.Receipt.Lifecycle, nameof(ShiftLifecycleRuntimeState.Completion), zero.Receipt.Lifecycle.Completion);
+
+        Assert.Throws<InvalidOperationException>(() => Service.Complete(zero.Progression, staleLifecycle, zero.Receipt.ShiftState, zero.Receipt.QuotaState, ServerTick.From(1), configuration));
+
+        Assert.Equal(ServerTick.Zero, zero.Progression.LastCompletedTick);
+        Assert.Same(zero.Receipt, zero.Progression.LastReceipt);
+    }
+
+    [Fact]
+    public void Cross_context_identity_mismatch_fails_before_publication()
+    {
+        var configuration = Fixture.LoadP0().Shift;
+        var otherConfiguration = configuration with { ShiftId = ShiftId.From("other-shift") };
+        var lifecycle = ShiftLifecycleRuntimeState.Create(configuration, ProfileId.From("learning"));
+        var shift = ShiftRuntimeState.Create(configuration);
+        var quota = QuotaRuntimeState.Create(configuration);
+        var progression = HostTickProgressionEvidence.Create(configuration.ShiftId);
+
+        Assert.Throws<InvalidOperationException>(() => Service.Complete(progression, ShiftLifecycleRuntimeState.Create(otherConfiguration, ProfileId.From("learning")), shift, quota, ServerTick.Zero, configuration));
+        Assert.Throws<InvalidOperationException>(() => Service.Complete(progression, lifecycle, ShiftRuntimeState.Create(otherConfiguration), quota, ServerTick.Zero, configuration));
+        Assert.Throws<InvalidOperationException>(() => Service.Complete(progression, lifecycle, shift, quota, ServerTick.Zero, otherConfiguration));
+
+        Assert.False(progression.HasCompletedTick);
+        Assert.Null(progression.LastReceipt);
+    }
+
+    [Fact]
     public void Exact_same_tick_replay_returns_the_original_progression_and_receipt()
     {
         var configuration = Fixture.LoadP0().Shift;
@@ -173,6 +240,68 @@ public sealed class HostTickCompletionCheckpointTests
     }
 
     [Fact]
+    public void Exact_deadline_post_settlement_combines_reason_and_preserves_exact_quota()
+    {
+        var configuration = Fixture.LoadP0().Shift;
+        var lifecycle = ShiftLifecycleRuntimeState.Create(configuration, ProfileId.From("pressure"));
+        var initialShift = ShiftRuntimeState.Create(configuration);
+        var initialQuota = QuotaRuntimeState.Create(configuration);
+        var beforeDeadline = AdvanceThrough(HostTickProgressionEvidence.Create(configuration.ShiftId), lifecycle, initialShift, initialQuota, 599, configuration);
+        var finalShift = WithAllStates(configuration, LogState.PROCESSED);
+        var finalQuota = SettleProcessed(configuration, finalShift, objectivesSatisfied: true);
+
+        var deadline = Advance(beforeDeadline.Progression, beforeDeadline.Receipt.Lifecycle, finalShift, finalQuota, ServerTick.From(600), configuration);
+        var completion = Assert.IsType<ShiftCompletionNewlyCompleted>(deadline.Receipt.Evaluation).Completion;
+
+        Assert.Equal(ShiftCompletionReason.AllLogsTerminalAtHardDeadline, completion.Reason);
+        Assert.True(completion.AllLogsTerminal);
+        Assert.True(completion.HardDeadlineReached);
+        Assert.True(completion.ObjectivesSatisfied);
+        Assert.Same(finalShift, deadline.Receipt.ShiftState);
+        Assert.Same(finalQuota, deadline.Receipt.QuotaState);
+        Assert.Same(finalQuota, completion.FinalQuotaState);
+    }
+
+    [Fact]
+    public void Post_settlement_deadline_success_and_failure_are_derived_from_quota()
+    {
+        var successful = Assert.IsType<ShiftCompletionNewlyCompleted>(CompletePressureDeadline(objectivesSatisfied: true).Receipt.Evaluation).Completion;
+        var unsuccessful = Assert.IsType<ShiftCompletionNewlyCompleted>(CompletePressureDeadline(objectivesSatisfied: false).Receipt.Evaluation).Completion;
+
+        Assert.True(successful.AllLogsTerminal);
+        Assert.True(successful.HardDeadlineReached);
+        Assert.True(successful.ObjectivesSatisfied);
+        Assert.True(unsuccessful.AllLogsTerminal);
+        Assert.True(unsuccessful.HardDeadlineReached);
+        Assert.False(unsuccessful.ObjectivesSatisfied);
+    }
+
+    [Fact]
+    public void Independent_equivalent_sequences_return_value_equivalent_retained_evidence()
+    {
+        var first = CompletePressureDeadline(objectivesSatisfied: true);
+        var second = CompletePressureDeadline(objectivesSatisfied: true);
+        var firstCompletion = Assert.IsType<ShiftCompletionNewlyCompleted>(first.Receipt.Evaluation).Completion;
+        var secondCompletion = Assert.IsType<ShiftCompletionNewlyCompleted>(second.Receipt.Evaluation).Completion;
+
+        Assert.Equal(first.Progression.LastCompletedTick, second.Progression.LastCompletedTick);
+        Assert.Equal(first.Receipt.CompletedTick, second.Receipt.CompletedTick);
+        Assert.True(first.Receipt.Lifecycle.ValueEquals(second.Receipt.Lifecycle));
+        Assert.True(first.Receipt.ShiftState.ValueEquals(second.Receipt.ShiftState));
+        Assert.True(first.Receipt.QuotaState.ValueEquals(second.Receipt.QuotaState));
+        Assert.Equal(firstCompletion.CompletedAt, secondCompletion.CompletedAt);
+        Assert.Equal(firstCompletion.HardDeadlineAt, secondCompletion.HardDeadlineAt);
+        Assert.Equal(firstCompletion.Reason, secondCompletion.Reason);
+        Assert.Equal(firstCompletion.AllLogsTerminal, secondCompletion.AllLogsTerminal);
+        Assert.Equal(firstCompletion.HardDeadlineReached, secondCompletion.HardDeadlineReached);
+        Assert.Equal(firstCompletion.ObjectivesSatisfied, secondCompletion.ObjectivesSatisfied);
+        Assert.Equal(firstCompletion.ProcessedCount, secondCompletion.ProcessedCount);
+        Assert.Equal(firstCompletion.WrittenOffCount, secondCompletion.WrittenOffCount);
+        Assert.True(firstCompletion.FinalShiftState.ValueEquals(secondCompletion.FinalShiftState));
+        Assert.True(firstCompletion.FinalQuotaState.ValueEquals(secondCompletion.FinalQuotaState));
+    }
+
+    [Fact]
     public void Early_completion_replays_exactly_and_blocks_all_later_ticks()
     {
         var configuration = Fixture.LoadP0().Shift;
@@ -236,6 +365,19 @@ public sealed class HostTickCompletionCheckpointTests
         }
 
         return latest ?? throw new InvalidOperationException("At least one checkpoint must be advanced.");
+    }
+
+    private static HostTickCheckpointAdvanced CompletePressureDeadline(bool objectivesSatisfied)
+    {
+        var configuration = Fixture.LoadP0().Shift;
+        var lifecycle = ShiftLifecycleRuntimeState.Create(configuration, ProfileId.From("pressure"));
+        var initialShift = ShiftRuntimeState.Create(configuration);
+        var initialQuota = QuotaRuntimeState.Create(configuration);
+        var beforeDeadline = AdvanceThrough(HostTickProgressionEvidence.Create(configuration.ShiftId), lifecycle, initialShift, initialQuota, 599, configuration);
+        var finalShift = WithAllStates(configuration, LogState.PROCESSED);
+        var finalQuota = SettleProcessed(configuration, finalShift, objectivesSatisfied);
+
+        return Advance(beforeDeadline.Progression, beforeDeadline.Receipt.Lifecycle, finalShift, finalQuota, ServerTick.From(600), configuration);
     }
 
     private static ShiftRuntimeState WithAllStates(ShiftConfiguration configuration, LogState state) =>

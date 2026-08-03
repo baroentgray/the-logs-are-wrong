@@ -145,9 +145,14 @@ public sealed class HostTickCompletionReceipt
     }
 }
 
-public abstract record HostTickCheckpointResult;
+public abstract class HostTickCheckpointResult
+{
+    private protected HostTickCheckpointResult()
+    {
+    }
+}
 
-public sealed record HostTickCheckpointAdvanced : HostTickCheckpointResult
+public sealed class HostTickCheckpointAdvanced : HostTickCheckpointResult
 {
     internal HostTickCheckpointAdvanced(
         HostTickProgressionEvidence originalProgression,
@@ -164,7 +169,7 @@ public sealed record HostTickCheckpointAdvanced : HostTickCheckpointResult
     public HostTickCompletionReceipt Receipt { get; }
 }
 
-public sealed record HostTickCheckpointReplayed : HostTickCheckpointResult
+public sealed class HostTickCheckpointReplayed : HostTickCheckpointResult
 {
     internal HostTickCheckpointReplayed(HostTickProgressionEvidence progression, HostTickCompletionReceipt receipt)
     {
@@ -176,7 +181,7 @@ public sealed record HostTickCheckpointReplayed : HostTickCheckpointResult
     public HostTickCompletionReceipt Receipt { get; }
 }
 
-public sealed record HostTickCheckpointRejected : HostTickCheckpointResult
+public sealed class HostTickCheckpointRejected : HostTickCheckpointResult
 {
     internal HostTickCheckpointRejected(
         HostTickProgressionEvidence progression,

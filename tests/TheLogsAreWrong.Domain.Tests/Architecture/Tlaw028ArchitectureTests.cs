@@ -76,4 +76,30 @@ public sealed class Tlaw028ArchitectureTests
             new[] { typeof(HostTickProgressionEvidence), typeof(HostTickCompletionReceipt), typeof(HostTickCheckpointResult) }.Concat(resultTypes),
             type => Assert.All(type.GetProperties(publicInstance), property => Assert.Null(property.SetMethod)));
     }
+
+    [Fact]
+    public void Result_base_constructors_are_private_protected_so_external_assemblies_cannot_add_a_kind()
+    {
+        var root = typeof(HostTickCheckpointResult);
+        var publicInstance = BindingFlags.Public | BindingFlags.Instance;
+        var resultTypes = new[] { typeof(HostTickCheckpointAdvanced), typeof(HostTickCheckpointReplayed), typeof(HostTickCheckpointRejected) };
+        var constructor = Assert.Single(root.GetConstructors(BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.DeclaredOnly));
+
+        Assert.True(root.IsClass);
+        Assert.True(root.IsAbstract);
+        Assert.False(root.IsSealed);
+        Assert.Empty(constructor.GetParameters());
+        Assert.True(constructor.IsFamilyAndAssembly);
+        Assert.False(constructor.IsFamily);
+        Assert.False(constructor.IsPublic);
+        Assert.All(resultTypes, type =>
+        {
+            Assert.True(type.IsClass);
+            Assert.True(type.IsPublic);
+            Assert.True(type.IsSealed);
+            Assert.Same(root, type.BaseType);
+            Assert.Empty(type.GetConstructors(publicInstance));
+            Assert.All(type.GetProperties(publicInstance), property => Assert.Null(property.SetMethod));
+        });
+    }
 }

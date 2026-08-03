@@ -28,8 +28,17 @@ jobs:
       - name: Fetch main for base evidence
         run: git fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main
 
+      - name: Resolve exact verification base
+        id: verification-base
+        shell: bash
+        run: |
+          base="$(git merge-base HEAD origin/main)"
+          test -n "$base"
+          test "${#base}" -eq 40
+          echo "sha=$base" >> "$GITHUB_OUTPUT"
+
       - name: Verify repository
-        run: dotnet run --configuration Release --project tools/Tlaw.Verify -- --expected-head "${{ github.event.pull_request.head.sha || github.sha }}" --allow-detached-head
+        run: dotnet run --configuration Release --project tools/Tlaw.Verify -- --expected-head "${{ github.event.pull_request.head.sha || github.sha }}" --expected-base "${{ steps.verification-base.outputs.sha }}" --allow-detached-head
 
       - name: Upload verification evidence
         if: always()
