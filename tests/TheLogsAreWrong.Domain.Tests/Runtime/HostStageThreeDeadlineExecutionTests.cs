@@ -6,6 +6,7 @@ using TheLogsAreWrong.Domain.Identifiers;
 using TheLogsAreWrong.Domain.Primitives;
 using TheLogsAreWrong.Domain.Runtime;
 using TheLogsAreWrong.Domain.Scheduler;
+using TheLogsAreWrong.Domain.Time;
 
 namespace TheLogsAreWrong.Domain.Tests.Runtime;
 
@@ -224,6 +225,70 @@ public sealed class HostStageThreeDeadlineExecutionTests
         Assert.Null(final.PendingFeed);
         Assert.Equal(LineState.LINE_CLEAR, final.Line.State);
         Assert.Equal(mixed.StateVersion.Next().Next(), final.StateVersion);
+    }
+
+    // ----- Active ritual before due -----
+
+    [Fact]
+    public void Active_ritual_before_due_leaves_containment_and_ritual_unchanged_through_the_stage()
+    {
+        var request = ToRequest();
+        var started = Assert.IsType<ContainmentRitualStarted>(new ContainmentRitualStartService().Start(
+            request, ServerTick.From(110), Fx.Shift.Containment));
+        var state = started.State;
+        Assert.Equal(ServerTick.From(114), started.Ritual.DueAt);
+
+        // Stage-3 execution at tick 113, before the ritual is due at 114.
+        var execution = Execute(state, ServerTick.From(113));
+
+        // Both stage-3 families are still evaluated.
+        Assert.IsType<IntakeDeadlineNoActiveDeadline>(execution.IntakeDeadline.Result);
+        Assert.IsType<ContainmentAdvanceNoChange>(execution.Containment.Result);
+        // The exact active ritual is retained; it is neither completed nor cleared.
+        Assert.Same(started.Ritual, execution.FinalState.ActiveContainmentRitual);
+        // Containment state and deadline remain unchanged.
+        Assert.Equal(ContainmentState.SERVICE_REQUESTED, execution.FinalState.Containment.State);
+        Assert.Equal(state.Containment.EnteredAt, execution.FinalState.Containment.EnteredAt);
+        Assert.Equal(state.Containment.DeadlineAt, execution.FinalState.Containment.DeadlineAt);
+        // Final state is the exact existing returned state (the no-op passes the same reference through).
+        Assert.Same(state, execution.Containment.AfterState);
+        Assert.Same(state, execution.FinalState);
+        Assert.Equal(state.StateVersion, execution.FinalState.StateVersion);
+        // No incident, effect, route, feed, saw, noise, or event work occurs.
+        Assert.Equal(LineState.LINE_CLEAR, execution.FinalState.Line.State);
+        Assert.Null(execution.FinalState.PendingFeed);
+        Assert.Null(execution.FinalState.ActiveSawCycle);
+    }
+
+    // ----- Exact incident descriptor -----
+
+    [Fact]
+    public void Incident_retains_exact_descriptor_values_and_incident_runtime()
+    {
+        var overdue = ToOverdue();
+
+        var execution = Execute(overdue, ServerTick.From(130));
+
+        var incident = Assert.IsType<ContainmentIncidentEntered>(execution.Containment.Result);
+        // Exact established descriptor values.
+        Assert.Equal(Fx.Shift.Containment.PrototypeIncident.Type, incident.Descriptor.Type);
+        Assert.Equal(SimulationDuration.FromTicks(Fx.Shift.Containment.PrototypeIncident.DurationSeconds), incident.Descriptor.Duration);
+        Assert.Equal(ServerTick.From(130), incident.Descriptor.TriggeredAt);
+        // Exact resulting containment runtime.
+        Assert.Equal(ContainmentState.INCIDENT, execution.FinalState.Containment.State);
+        Assert.Equal(incident.Descriptor.TriggeredAt, execution.FinalState.Containment.EnteredAt);
+        Assert.Null(execution.FinalState.Containment.DeadlineAt);
+        // The exact result is retained and the final state is exactly its state.
+        Assert.Same(incident.State, execution.FinalState);
+        Assert.Same(execution.Containment.AfterState, execution.FinalState);
+        // The descriptor is data only: no forced line pause or effect execution; line stays exactly clear.
+        Assert.Equal(LineState.LINE_CLEAR, execution.FinalState.Line.State);
+        Assert.Same(overdue.Line, execution.FinalState.Line);
+        // Unrelated shift runtime state is preserved.
+        Assert.Equal(overdue.PendingFeed, execution.FinalState.PendingFeed);
+        Assert.Null(execution.FinalState.ActiveSawCycle);
+        Assert.True(execution.FinalState.ProcessedIntentIds.SetEquals(overdue.ProcessedIntentIds));
+        Assert.Equal(LogState.HELD_WRITTEN_OFF, Log(execution.FinalState, "log_03").State);
     }
 
     // ----- Helpers -----
