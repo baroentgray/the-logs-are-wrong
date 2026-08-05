@@ -271,6 +271,41 @@ public sealed class HostStageOneCompletionExecutionTests
         Assert.Equal(mixed.StateVersion.Next().Next(), final.StateVersion);
     }
 
+    // ----- Typed-failure continuation -----
+
+    [Fact]
+    public void Procedure_typed_failure_continues_later_families_with_exact_failure_state()
+    {
+        var (held, due) = ProcedureHold(20);
+        var emptyCatalog = new AnomalyCatalog(ImmutableDictionary<AnomalyId, AnomalyDefinition>.Empty);
+
+        // The empty catalog makes the due procedure hold fail to resolve its plan, without mutating state.
+        var execution = Executor.Execute(held, due, emptyCatalog, Fx.Shift.Containment);
+
+        var failed = Assert.IsType<ProcedureActionDueCompletionFailed>(execution.Procedure.Result);
+        Assert.Equal(ProcedureActionDueCompletionFailureReason.NoProcedurePlan, failed.Reason);
+        Assert.Null(failed.CompletionRejection);
+        Assert.Same(held, failed.State);
+        Assert.Same(held, execution.Procedure.BeforeState);
+        Assert.Same(held, execution.Procedure.AfterState);
+
+        // The typed failure does not stop the stage: the later three families still execute in fixed order.
+        Assert.IsType<ConfirmationTestNoActive>(execution.Confirmation.Result);
+        Assert.IsType<ContainmentRitualNoActive>(execution.ContainmentRitual.Result);
+        Assert.IsType<LineRepairNoActive>(execution.LineRepair.Result);
+
+        // Every later no-op retains the exact original held-state reference.
+        Assert.Same(held, execution.Confirmation.BeforeState);
+        Assert.Same(held, execution.Confirmation.AfterState);
+        Assert.Same(held, execution.ContainmentRitual.BeforeState);
+        Assert.Same(held, execution.ContainmentRitual.AfterState);
+        Assert.Same(held, execution.LineRepair.BeforeState);
+        Assert.Same(held, execution.LineRepair.AfterState);
+
+        Assert.Same(held, execution.FinalState);
+        Assert.Equal(held.StateVersion, execution.FinalState.StateVersion);
+    }
+
     // ----- Helpers -----
 
     private static HostStageOneCompletionExecution Execute(ShiftRuntimeState state, ServerTick tick) =>
