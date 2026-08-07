@@ -46,6 +46,13 @@ public sealed class IntakeAutoFeedJamStageStep
             throw new ArgumentException("An intake-auto-feed jam step must retain a result exactly when it retains its triggering source.");
         }
 
+        // The conditional family exists only for a blocked default route whose retained follow-up actually
+        // requires this derivation; an ExistingLineConditionRetained source can never be an executed step.
+        if (source is not null && source.FollowUp != DefaultIntakeAutoRouteFollowUp.IntakeAutoFeedJamDerivationRequired)
+        {
+            throw new ArgumentException("An executed intake-auto-feed jam step requires a source whose follow-up is IntakeAutoFeedJamDerivationRequired.");
+        }
+
         BeforeShiftState = beforeShiftState;
         Source = source;
         Result = result;
@@ -186,6 +193,8 @@ public sealed class HostStageSixDerivedExecution
     internal HostStageSixDerivedExecution(
         ShiftRuntimeState initialShiftState,
         MovementNoiseRuntimeState initialMovementNoise,
+        LineNoiseRuntimeState initialLineNoise,
+        QuotaRuntimeState quotaState,
         ImmutableArray<MovementNoiseApplicationStageStep> movementSteps,
         IntakeAutoFeedJamStageStep intakeAutoFeedJamStep,
         FeedGateJamStageStep feedGateJamStep,
@@ -199,6 +208,8 @@ public sealed class HostStageSixDerivedExecution
     {
         ArgumentNullException.ThrowIfNull(initialShiftState);
         ArgumentNullException.ThrowIfNull(initialMovementNoise);
+        ArgumentNullException.ThrowIfNull(initialLineNoise);
+        ArgumentNullException.ThrowIfNull(quotaState);
         ArgumentNullException.ThrowIfNull(intakeAutoFeedJamStep);
         ArgumentNullException.ThrowIfNull(feedGateJamStep);
         ArgumentNullException.ThrowIfNull(lineNoiseStep);
@@ -242,14 +253,28 @@ public sealed class HostStageSixDerivedExecution
             throw new ArgumentException("Line-noise derivation must consume the exact final movement-noise runtime.");
         }
 
+        // Line-noise derivation must start from the exact retained initial line-noise runtime.
+        if (!ReferenceEquals(lineNoiseStep.BeforeState, initialLineNoise))
+        {
+            throw new ArgumentException("Line-noise derivation must start from the exact retained initial line-noise runtime.");
+        }
+
         // Confirmation must consume the exact same line-noise result instance line-noise derivation produced.
         if (!ReferenceEquals(confirmationStep.ConsumedLineNoise, lineNoiseStep.Result))
         {
             throw new ArgumentException("Confirmation-condition handling must consume the exact retained line-noise result.");
         }
 
+        // Stage 6 never mutates quota: the checkpoint must receive the exact retained quota reference.
+        if (!ReferenceEquals(checkpointStep.PostStageQuota, quotaState))
+        {
+            throw new ArgumentException("The checkpoint must receive the exact retained stage-four final quota reference.");
+        }
+
         InitialShiftState = initialShiftState;
         InitialMovementNoise = initialMovementNoise;
+        InitialLineNoise = initialLineNoise;
+        InitialQuotaState = quotaState;
         MovementSteps = movementSteps;
         FinalMovementNoise = finalMovementNoise;
         IntakeAutoFeedJamStep = intakeAutoFeedJamStep;
@@ -268,6 +293,15 @@ public sealed class HostStageSixDerivedExecution
 
     /// <summary>The exact movement-noise runtime retained from the preceding published tick.</summary>
     public MovementNoiseRuntimeState InitialMovementNoise { get; }
+
+    /// <summary>The exact line-noise runtime retained from the preceding published tick.</summary>
+    public LineNoiseRuntimeState InitialLineNoise { get; }
+
+    /// <summary>The exact quota state stage 6 observed, always <c>stageFour.FinalQuotaState</c>. Stage 6 never settles quota.</summary>
+    public QuotaRuntimeState InitialQuotaState { get; }
+
+    /// <summary>The exact final quota state, always the same reference as <see cref="InitialQuotaState"/>.</summary>
+    public QuotaRuntimeState FinalQuotaState => InitialQuotaState;
 
     /// <summary>The exact ordered movement-application trace, one step per accepted evidence item in frozen host order.</summary>
     public ImmutableArray<MovementNoiseApplicationStageStep> MovementSteps { get; }
@@ -325,8 +359,8 @@ public sealed class HostStageSixDerivedExecution
     /// <summary>The exact final stage-6 shift state, always the confirmation step's after-state (the checkpoint's exact post-stage input).</summary>
     public ShiftRuntimeState FinalShiftState => ConfirmationStep.AfterShiftState;
 
-    /// <summary>The exact quota state stage 6 observed and forwarded to the checkpoint, always <c>stageFour.FinalQuotaState</c>.</summary>
-    public QuotaRuntimeState QuotaState => CheckpointStep.PostStageQuota;
+    /// <summary>The exact final line-noise runtime, always the line-noise step's after-state by reference.</summary>
+    public LineNoiseRuntimeState FinalLineNoise => LineNoiseStep.AfterState;
 }
 
 /// <summary>
@@ -500,6 +534,8 @@ public sealed class HostStageSixDerivedExecutor
         return new HostStageSixDerivedExecution(
             initialShiftState,
             initialMovementNoise,
+            initialLineNoise,
+            stageFour.FinalQuotaState,
             movementSteps.ToImmutable(),
             intakeAutoFeedJamStep,
             feedGateJamStep,
