@@ -3,6 +3,7 @@ using TheLogsAreWrong.Domain.Anomalies;
 using TheLogsAreWrong.Domain.Configuration;
 using TheLogsAreWrong.Domain.Enums;
 using TheLogsAreWrong.Domain.Identifiers;
+using TheLogsAreWrong.Domain.Line;
 using TheLogsAreWrong.Domain.Primitives;
 using TheLogsAreWrong.Domain.Quota;
 using TheLogsAreWrong.Domain.Runtime;
@@ -263,6 +264,81 @@ public sealed class HostStageFourSawExecutionTests
         Assert.Equal(shift.StateVersion.Next().Next(), execution.FinalShiftState.StateVersion);
     }
 
+    // ----- Automatic start across line states (start ownership remains with the existing service) -----
+
+    [Fact]
+    public void Queued_owner_starts_while_line_is_jammed_and_jam_state_is_preserved()
+    {
+        var shift = AutoFeedJammed();
+        var quota = FreshQuota();
+        Assert.Equal(LineState.LINE_JAMMED, shift.Line.State);
+        var tick = ServerTick.From(12);
+
+        var execution = Execute(shift, quota, tick);
+
+        Assert.IsType<SawCycleNoActive>(execution.Completion.Result);
+        Assert.False(execution.Quota.WasRequired);
+        Assert.Null(execution.Quota.Result);
+        Assert.Same(quota, execution.FinalQuotaState);
+
+        var started = Assert.IsType<SawCycleStarted>(execution.Start.Result);
+        Assert.Equal(LogId.From("log_02"), started.Cycle.LogId);
+        Assert.Equal(tick, started.Cycle.StartedAt);
+        Assert.Equal(LogState.IN_SAW, Log(execution.FinalShiftState, "log_02").State);
+        Assert.Same(started.Cycle, execution.FinalShiftState.ActiveSawCycle);
+
+        // Stage 4 added no line-clear precondition and altered no jam state: the exact line runtime is preserved.
+        Assert.Equal(LineState.LINE_JAMMED, execution.FinalShiftState.Line.State);
+        Assert.Same(shift.Line, execution.FinalShiftState.Line);
+        Assert.Equal(JamCause.INTAKE_AUTOFEED_BLOCKED, execution.FinalShiftState.Line.Cause);
+        Assert.Equal(LogId.From("log_01"), execution.FinalShiftState.Line.PendingLogId);
+        Assert.Null(execution.FinalShiftState.Line.ActiveRepairHold);
+
+        Assert.Equal(shift.StateVersion.Next(), execution.FinalShiftState.StateVersion);
+
+        // Exact completion → start reference chain.
+        Assert.Same(shift, execution.Completion.BeforeShiftState);
+        Assert.Same(execution.Completion.Result.State, execution.Completion.AfterShiftState);
+        Assert.Same(execution.Completion.AfterShiftState, execution.Start.BeforeShiftState);
+        Assert.Same(execution.Start.Result.State, execution.FinalShiftState);
+    }
+
+    [Fact]
+    public void Queued_owner_starts_while_line_is_repairing_and_repair_state_is_preserved()
+    {
+        var repairing = Assert.IsType<LineRepairStarted>(
+            new LineRepairStartService().Start(AutoFeedJammed(), ServerTick.From(10), Fx.Shift.Scheduler)).State;
+        var quota = FreshQuota();
+        Assert.Equal(LineState.REPAIRING, repairing.Line.State);
+        Assert.NotNull(repairing.Line.ActiveRepairHold);
+        var tick = ServerTick.From(15);
+
+        var execution = Execute(repairing, quota, tick);
+
+        Assert.IsType<SawCycleNoActive>(execution.Completion.Result);
+        Assert.False(execution.Quota.WasRequired);
+        Assert.Null(execution.Quota.Result);
+        Assert.Same(quota, execution.FinalQuotaState);
+
+        var started = Assert.IsType<SawCycleStarted>(execution.Start.Result);
+        Assert.Equal(LogId.From("log_02"), started.Cycle.LogId);
+        Assert.Equal(tick, started.Cycle.StartedAt);
+        Assert.Equal(LogState.IN_SAW, Log(execution.FinalShiftState, "log_02").State);
+        Assert.Same(started.Cycle, execution.FinalShiftState.ActiveSawCycle);
+
+        // Repair evidence remains: stage 4 does not complete, clear, or advance the repair.
+        Assert.Equal(LineState.REPAIRING, execution.FinalShiftState.Line.State);
+        Assert.Same(repairing.Line, execution.FinalShiftState.Line);
+        Assert.Same(repairing.Line.ActiveRepairHold, execution.FinalShiftState.Line.ActiveRepairHold);
+
+        Assert.Equal(repairing.StateVersion.Next(), execution.FinalShiftState.StateVersion);
+
+        Assert.Same(repairing, execution.Completion.BeforeShiftState);
+        Assert.Same(execution.Completion.Result.State, execution.Completion.AfterShiftState);
+        Assert.Same(execution.Completion.AfterShiftState, execution.Start.BeforeShiftState);
+        Assert.Same(execution.Start.Result.State, execution.FinalShiftState);
+    }
+
     // ----- Continuation and failures -----
 
     [Fact]
@@ -350,6 +426,15 @@ public sealed class HostStageFourSawExecutionTests
         var started = StartCycle(Queued(Create(), "log_01"), 10);
         var withSuccessor = Queued(started.State, "log_02");
         return (withSuccessor, started.Cycle.DueAt);
+    }
+
+    private static ShiftRuntimeState AutoFeedJammed()
+    {
+        // Auto-feed-blocked jam via the existing public line service: one queued saw owner, one intake log, no cycle.
+        var state = RuntimeFixture.MoveToIntake(Create(), "log_02");
+        state = RuntimeFixture.MoveHost(state, "log_02", LogState.QUEUED_FOR_SAW);
+        state = RuntimeFixture.MoveToIntake(state, "log_01");
+        return Assert.IsType<LineJamEntered>(new LineJamEntryService().Enter(state, JamCause.INTAKE_AUTOFEED_BLOCKED, ServerTick.From(10))).State;
     }
 
     private static ShiftRuntimeState PreparedPenitentQueued()
