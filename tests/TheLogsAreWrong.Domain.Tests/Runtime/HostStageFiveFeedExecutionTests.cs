@@ -104,6 +104,135 @@ public sealed class HostStageFiveFeedExecutionTests
         Assert.Same(execution.OrdinaryDeadlineStart!.State, execution.FinalState);
         Assert.Equal(LogState.AT_INTAKE, Log(execution.FinalState, "log_01").State);
         Assert.NotNull(execution.FinalState.ActiveIntakeDeadline);
+        // Exact state-version progression: initial planning, feed-due resolution, deadline start (three existing services).
+        Assert.Equal(StateVersion.Zero, execution.InitialState.StateVersion);
+        Assert.Equal(execution.InitialState.StateVersion.Next().Next().Next(), execution.FinalState.StateVersion);
+    }
+
+    // ----- MEDIUM 1: self-defending closed trace -----
+
+    [Fact]
+    public void Executor_trace_satisfies_the_exact_before_after_reference_chain()
+    {
+        var e = Stage5(PristineChain(ServerTick.Zero), ServerTick.Zero);
+
+        Assert.Same(e.InitialState, e.InitialFeedPlanningStep.BeforeState);
+        Assert.Same(e.InitialFeedPlanningStep.AfterState, e.RepairStep.BeforeState);
+        Assert.Same(e.RepairStep.AfterState, e.RepairFollowUpStep.BeforeState);
+        Assert.Same(e.RepairFollowUpStep.AfterState, e.DefaultRouteStep.BeforeState);
+        Assert.Same(e.DefaultRouteStep.AfterState, e.GenericNormalPlanningStep.BeforeState);
+        Assert.Same(e.GenericNormalPlanningStep.AfterState, e.FeedDueStep.BeforeState);
+        Assert.Same(e.FeedDueStep.AfterState, e.OrdinaryDeadlineStartStep.BeforeState);
+        Assert.Same(e.OrdinaryDeadlineStartStep.AfterState, e.FinalState);
+        // Conditional steps that did not execute pass their exact before-state through.
+        Assert.Same(e.RepairStep.BeforeState, e.RepairStep.AfterState);
+        Assert.Same(e.RepairFollowUpStep.BeforeState, e.RepairFollowUpStep.AfterState);
+        Assert.Same(e.DefaultRouteStep.BeforeState, e.DefaultRouteStep.AfterState);
+        // Executed steps derive their after-state only from the result state.
+        Assert.Same(e.InitialFeedPlanningStep.Result.State, e.InitialFeedPlanningStep.AfterState);
+        Assert.Same(e.FeedDueStep.Result.State, e.FeedDueStep.AfterState);
+        Assert.Same(e.OrdinaryDeadlineStartStep.Result!.State, e.OrdinaryDeadlineStartStep.AfterState);
+    }
+
+    [Fact]
+    public void Stage_execution_rejects_a_value_equivalent_but_non_reference_equal_step_chain()
+    {
+        var a = Stage5(PristineChain(ServerTick.Zero), ServerTick.Zero);
+        var b = Stage5(PristineChain(ServerTick.Zero), ServerTick.Zero);
+        var constructor = typeof(HostStageFiveFeedExecution).GetConstructors(BindingFlags.NonPublic | BindingFlags.Instance).Single();
+        var valid = new object?[]
+        {
+            a.InitialState, a.LineRepairSource, a.IntakeExpirationSource,
+            a.InitialFeedPlanningStep, a.RepairStep, a.RepairFollowUpStep, a.DefaultRouteStep,
+            a.GenericNormalPlanningStep, a.FeedDueStep, a.OrdinaryDeadlineStartStep
+        };
+
+        // The exact valid trace reconstructs.
+        Assert.NotNull(constructor.Invoke(valid));
+
+        // Substituting B's value-equivalent-but-non-reference-equal feed-due step breaks the exact chain.
+        var broken = (object?[])valid.Clone();
+        broken[8] = b.FeedDueStep;
+        Assert.True(a.GenericNormalPlanningStep.AfterState.ValueEquals(b.FeedDueStep.BeforeState));
+        Assert.False(ReferenceEquals(a.GenericNormalPlanningStep.AfterState, b.FeedDueStep.BeforeState));
+        var exception = Assert.Throws<TargetInvocationException>(() => constructor.Invoke(broken));
+        Assert.IsType<ArgumentException>(exception.InnerException);
+    }
+
+    [Fact]
+    public void Stage_steps_reject_internally_contradictory_shapes()
+    {
+        var before = RuntimeFixture.CreateInitialState();
+        var deadlineResult = Stage5(PristineChain(ServerTick.Zero), ServerTick.Zero).OrdinaryDeadlineStart!;
+        var vacancyChain = BuildChain(
+            RuntimeFixture.MoveToIntake(RuntimeFixture.CreateInitialState(), "log_01"), ServerTick.From(10), FreshQuota(),
+            one => RouteBatch(one.FinalState, ServerTick.From(10), "log_01", LogIntentActions.RouteToProcedure));
+        var normalResult = Stage5(vacancyChain, ServerTick.From(10)).GenericNormalPlanning!;
+
+        var followUpConstructor = typeof(RepairFollowUpStageStep).GetConstructors(BindingFlags.NonPublic | BindingFlags.Instance).Single();
+        AssertConstructorThrows(followUpConstructor, new object?[] { before, deadlineResult, normalResult });
+
+        var genericConstructor = typeof(GenericNormalFeedPlanningStageStep).GetConstructors(BindingFlags.NonPublic | BindingFlags.Instance).Single();
+        AssertConstructorThrows(genericConstructor, new object?[] { before, true, null });
+        AssertConstructorThrows(genericConstructor, new object?[] { before, false, normalResult });
+    }
+
+    // ----- MEDIUM 2: same-tick expiration routes owner before an independently due feed -----
+
+    [Fact]
+    public void Same_tick_deadline_expiration_routes_owner_before_due_feed_admission()
+    {
+        var s0 = ExpiringDeadlineWithIndependentDueFeed(out var dueTick);
+        var chain = BuildChain(s0, dueTick, FreshQuota());
+
+        Assert.IsType<IntakeDeadlineExpired>(chain.Three.IntakeDeadline.Result);
+
+        var e = Stage5(chain, dueTick);
+
+        Assert.Same(chain.Four.FinalShiftState, e.InitialState);
+        // The route runs before feed-due resolution and vacates intake.
+        Assert.IsType<DefaultIntakeAutoRouteApplied>(e.DefaultRoute);
+        Assert.NotEqual(LogState.AT_INTAKE, Log(e.DefaultRouteStep.AfterState, "log_01").State);
+        Assert.Same(e.DefaultRouteStep.AfterState, e.GenericNormalPlanningStep.BeforeState);
+        // The pre-existing pending feed remains owned by the existing planner (a no-op that does not consume it).
+        Assert.True(e.GenericNormalPlanningRequired);
+        Assert.IsType<NormalFeedPlanningNoOp>(e.GenericNormalPlanning);
+        // Feed-due sees the post-route state and admits the distinct pending owner directly to intake.
+        var resolved = Assert.IsType<FeedDueResolved>(e.FeedDue);
+        Assert.Equal(FeedDueDisposition.AdmittedToIntake, resolved.Disposition);
+        Assert.Equal("log_02", resolved.ConsumedSchedule.LogId.ToString());
+        Assert.Equal(LogState.AT_INTAKE, Log(e.FinalState, "log_02").State);
+        Assert.IsType<IntakeDeadlineStarted>(e.OrdinaryDeadlineStart);
+        // No stale feed-gate placement.
+        Assert.NotEqual(FeedDueDisposition.PlacedAtFeedGate, resolved.Disposition);
+    }
+
+    // ----- MEDIUM 3: blocked default route -----
+
+    [Fact]
+    public void Blocked_default_route_is_retained_without_jam_or_generic_vacancy_trigger()
+    {
+        var scheduler = Fx.Shift.Scheduler with { SawCycleSeconds = 200 };
+        var s0 = ExpiringDeadlineWithBlockedSawQueue(scheduler, out var dueTick);
+        var chain = BuildChain(s0, dueTick, FreshQuota(), scheduler: scheduler);
+
+        Assert.IsType<IntakeDeadlineExpired>(chain.Three.IntakeDeadline.Result);
+        Assert.IsType<SawCycleNotDue>(chain.Four.Completion.Result);
+        Assert.IsType<SawCycleStartAlreadyActive>(chain.Four.Start.Result);
+
+        var e = Stage5(chain, dueTick, scheduler);
+
+        var blocked = Assert.IsType<DefaultIntakeAutoRouteBlocked>(e.DefaultRoute);
+        Assert.Equal(DefaultIntakeAutoRouteBlockReason.SawQueueOccupied, blocked.Reason);
+        Assert.Equal(LogState.AT_INTAKE, Log(e.FinalState, "log_01").State);
+        // A blocked route is not a vacancy trigger.
+        Assert.False(e.GenericNormalPlanningRequired);
+        Assert.Null(e.GenericNormalPlanning);
+        // Stage 5 derives no jam; line remains unchanged and clear.
+        Assert.Equal(LineState.LINE_CLEAR, e.FinalState.Line.State);
+        Assert.Null(e.FinalState.Line.Cause);
+        // Feed-due still runs per existing rules.
+        Assert.IsType<FeedDueNoPendingFeed>(e.FeedDue);
     }
 
     // ----- Feed due paths -----
@@ -322,20 +451,22 @@ public sealed class HostStageFiveFeedExecutionTests
 
     private static QuotaRuntimeState FreshQuota() => QuotaRuntimeState.Create(Fx.Shift);
 
-    private static HostStageFiveFeedExecution Stage5(StageChain chain, ServerTick tick) =>
-        new HostStageFiveFeedExecutor().Execute(chain.One, chain.Two, chain.Three, chain.Four, tick, Fx.Shift.Scheduler, Learning);
+    private static HostStageFiveFeedExecution Stage5(StageChain chain, ServerTick tick, SchedulerConfiguration? scheduler = null) =>
+        new HostStageFiveFeedExecutor().Execute(chain.One, chain.Two, chain.Three, chain.Four, tick, scheduler ?? Fx.Shift.Scheduler, Learning);
 
     private static StageChain BuildChain(
         ShiftRuntimeState initialShiftState,
         ServerTick tick,
         QuotaRuntimeState quota,
-        Func<HostStageOneCompletionExecution, AcceptedIntentTickBatch>? batchFactory = null)
+        Func<HostStageOneCompletionExecution, AcceptedIntentTickBatch>? batchFactory = null,
+        SchedulerConfiguration? scheduler = null)
     {
+        var sched = scheduler ?? Fx.Shift.Scheduler;
         var one = new HostStageOneCompletionExecutor().Execute(initialShiftState, tick, Fx.Anomalies, Fx.Shift.Containment);
         var batch = batchFactory is null ? EmptyBatch(one.FinalState.ShiftId, tick) : batchFactory(one);
-        var two = new AcceptedIntentStageExecutor().Execute(one.FinalState, batch, Fx.Shift.Scheduler);
+        var two = new AcceptedIntentStageExecutor().Execute(one.FinalState, batch, sched);
         var three = new HostStageThreeDeadlineExecutor().Execute(two.FinalState, tick, Fx.Shift.Containment, Fx.Anomalies);
-        var four = new HostStageFourSawExecutor().Execute(three.FinalState, quota, tick, Fx.Shift.Scheduler, Fx.Anomalies);
+        var four = new HostStageFourSawExecutor().Execute(three.FinalState, quota, tick, sched, Fx.Anomalies);
         return new StageChain(one, two, three, four);
     }
 
@@ -438,6 +569,45 @@ public sealed class HostStageFiveFeedExecutionTests
         unblocked = RuntimeFixture.MoveHost(unblocked, "log_01", LogState.HELD_WRITTEN_OFF);
         dueTick = repairing.Hold.DueAt;
         return unblocked;
+    }
+
+    private static ShiftRuntimeState ExpiringDeadlineWithIndependentDueFeed(out ServerTick dueTick)
+    {
+        // log_01 admitted to intake with a deadline due at 60, plus an independent early feed for log_02 due at 60.
+        var planned = Assert.IsType<InitialFeedScheduled>(new InitialFeedPlanningService().Plan(
+            RuntimeFixture.CreateInitialState(), ServerTick.Zero, Fx.Shift.Scheduler));
+        var admission = Assert.IsType<FeedDueResolved>(new FeedDueResolutionService().Resolve(planned.State, ServerTick.Zero));
+        var started = Assert.IsType<IntakeDeadlineStarted>(new IntakeDeadlineStartService().Start(admission.State, admission, Learning));
+        var intent = new IntentEnvelope(
+            started.State.ShiftId, IntentId.From("independent_early"), ActorId.From("hint"), FeedPlanningTargets.FeedGate,
+            FeedPlanningIntentActions.RequestEarlyFeed, started.State.StateVersion, ServerTick.Zero, NoIntentParameters.Instance);
+        var early = Assert.IsType<EarlyFeedScheduled>(new EarlyFeedIntentHandler().Handle(
+            started.State, intent, RuntimeFixture.BoundActor, ServerTick.From(58), Fx.Shift.Scheduler));
+        Assert.Equal(started.Deadline.DueAt, early.Schedule.DueAt);
+        dueTick = started.Deadline.DueAt;
+        return early.State;
+    }
+
+    private static ShiftRuntimeState ExpiringDeadlineWithBlockedSawQueue(SchedulerConfiguration scheduler, out ServerTick dueTick)
+    {
+        // Active saw cycle (log_03) not due at T, a queued owner (log_02) behind it, and log_01 at intake with an expiring deadline.
+        var state = RuntimeFixture.MoveToIntake(RuntimeFixture.CreateInitialState(), "log_03");
+        state = RuntimeFixture.MoveHost(state, "log_03", LogState.QUEUED_FOR_SAW);
+        state = Assert.IsType<SawCycleStarted>(new SawCycleStartService().Start(state, ServerTick.From(10), scheduler)).State;
+        state = RuntimeFixture.MoveToIntake(state, "log_02");
+        state = RuntimeFixture.MoveHost(state, "log_02", LogState.QUEUED_FOR_SAW);
+        var planned = Assert.IsType<NormalFeedScheduled>(new NormalFeedPlanningService().Plan(state, ServerTick.From(20), scheduler));
+        var admission = Assert.IsType<FeedDueResolved>(new FeedDueResolutionService().Resolve(planned.State, planned.Schedule.DueAt));
+        Assert.Equal("log_01", admission.ConsumedSchedule.LogId.ToString());
+        var started = Assert.IsType<IntakeDeadlineStarted>(new IntakeDeadlineStartService().Start(admission.State, admission, Learning));
+        dueTick = started.Deadline.DueAt;
+        return started.State;
+    }
+
+    private static void AssertConstructorThrows(ConstructorInfo constructor, object?[] arguments)
+    {
+        var exception = Assert.Throws<TargetInvocationException>(() => constructor.Invoke(arguments));
+        Assert.IsType<ArgumentException>(exception.InnerException);
     }
 
     private static LogRuntimeState Log(ShiftRuntimeState state, string logId)

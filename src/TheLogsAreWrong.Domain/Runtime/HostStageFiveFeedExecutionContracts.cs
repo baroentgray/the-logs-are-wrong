@@ -7,132 +7,253 @@ using TheLogsAreWrong.Domain.Scheduler;
 
 namespace TheLogsAreWrong.Domain.Runtime;
 
+/// <summary>Step 1: the always-executed initial-feed planning family.</summary>
+public sealed class InitialFeedPlanningStageStep
+{
+    internal InitialFeedPlanningStageStep(ShiftRuntimeState beforeState, InitialFeedPlanningResult result)
+    {
+        ArgumentNullException.ThrowIfNull(beforeState);
+        ArgumentNullException.ThrowIfNull(result);
+        BeforeState = beforeState;
+        Result = result;
+    }
+
+    public ShiftRuntimeState BeforeState { get; }
+    public InitialFeedPlanningResult Result { get; }
+    public ShiftRuntimeState AfterState => Result.State;
+}
+
+/// <summary>Step 2: the conditional repair pending-transition execution family.</summary>
+public sealed class RepairPendingTransitionStageStep
+{
+    internal RepairPendingTransitionStageStep(ShiftRuntimeState beforeState, RepairPendingTransitionExecutionResult? result)
+    {
+        ArgumentNullException.ThrowIfNull(beforeState);
+        BeforeState = beforeState;
+        Result = result;
+    }
+
+    public ShiftRuntimeState BeforeState { get; }
+    public RepairPendingTransitionExecutionResult? Result { get; }
+    public ShiftRuntimeState AfterState => Result?.State ?? BeforeState;
+}
+
+/// <summary>Step 3: the conditional source-bound repaired follow-up family (at most one service).</summary>
+public sealed class RepairFollowUpStageStep
+{
+    internal RepairFollowUpStageStep(
+        ShiftRuntimeState beforeState,
+        IntakeDeadlineStartResult? deadlineStart,
+        NormalFeedPlanningResult? normalPlanning)
+    {
+        ArgumentNullException.ThrowIfNull(beforeState);
+        if (deadlineStart is not null && normalPlanning is not null)
+        {
+            throw new ArgumentException("A repaired follow-up cannot use both service families at once.");
+        }
+
+        BeforeState = beforeState;
+        DeadlineStart = deadlineStart;
+        NormalPlanning = normalPlanning;
+    }
+
+    public ShiftRuntimeState BeforeState { get; }
+    public IntakeDeadlineStartResult? DeadlineStart { get; }
+    public NormalFeedPlanningResult? NormalPlanning { get; }
+    public ShiftRuntimeState AfterState => DeadlineStart?.State ?? NormalPlanning?.State ?? BeforeState;
+}
+
+/// <summary>Step 4: the conditional default intake auto-route family.</summary>
+public sealed class DefaultIntakeAutoRouteStageStep
+{
+    internal DefaultIntakeAutoRouteStageStep(ShiftRuntimeState beforeState, DefaultIntakeAutoRouteResult? result)
+    {
+        ArgumentNullException.ThrowIfNull(beforeState);
+        BeforeState = beforeState;
+        Result = result;
+    }
+
+    public ShiftRuntimeState BeforeState { get; }
+    public DefaultIntakeAutoRouteResult? Result { get; }
+    public ShiftRuntimeState AfterState => Result?.State ?? BeforeState;
+}
+
+/// <summary>Step 5: the evidence-triggered generic normal-feed planning family.</summary>
+public sealed class GenericNormalFeedPlanningStageStep
+{
+    internal GenericNormalFeedPlanningStageStep(ShiftRuntimeState beforeState, bool required, NormalFeedPlanningResult? result)
+    {
+        ArgumentNullException.ThrowIfNull(beforeState);
+        if (required != (result is not null))
+        {
+            throw new ArgumentException("A generic normal-planning result must be present exactly when the derived trigger required it.");
+        }
+
+        BeforeState = beforeState;
+        Required = required;
+        Result = result;
+    }
+
+    public ShiftRuntimeState BeforeState { get; }
+    public bool Required { get; }
+    public NormalFeedPlanningResult? Result { get; }
+    public ShiftRuntimeState AfterState => Result?.State ?? BeforeState;
+}
+
+/// <summary>Step 6: the always-executed feed-due resolution family.</summary>
+public sealed class FeedDueResolutionStageStep
+{
+    internal FeedDueResolutionStageStep(ShiftRuntimeState beforeState, FeedDueResolutionResult result)
+    {
+        ArgumentNullException.ThrowIfNull(beforeState);
+        ArgumentNullException.ThrowIfNull(result);
+        BeforeState = beforeState;
+        Result = result;
+    }
+
+    public ShiftRuntimeState BeforeState { get; }
+    public FeedDueResolutionResult Result { get; }
+    public ShiftRuntimeState AfterState => Result.State;
+}
+
+/// <summary>Step 7: the conditional ordinary intake-deadline start family.</summary>
+public sealed class OrdinaryIntakeDeadlineStartStageStep
+{
+    internal OrdinaryIntakeDeadlineStartStageStep(ShiftRuntimeState beforeState, IntakeDeadlineStartResult? result)
+    {
+        ArgumentNullException.ThrowIfNull(beforeState);
+        BeforeState = beforeState;
+        Result = result;
+    }
+
+    public ShiftRuntimeState BeforeState { get; }
+    public IntakeDeadlineStartResult? Result { get; }
+    public ShiftRuntimeState AfterState => Result?.State ?? BeforeState;
+}
+
 /// <summary>
-/// The immutable result of executing frozen host stage 5 (<c>feed_and_auto_routes</c>) over one exact tick. It retains
-/// the exact stage-5 initial state, every exact typed result from the bounded stage-5 order, the retained stage-1 and
-/// stage-3 source evidence used to guard the conditional steps, the derived generic-normal-planning trigger, and the
-/// exact final state derived only from the last executed step.
+/// The immutable, self-defending result of executing frozen host stage 5 (<c>feed_and_auto_routes</c>) over one exact
+/// tick. It retains the exact stage-1 and stage-3 source evidence and the seven ordered stage steps, and its constructor
+/// rejects any trace whose exact before/result/after reference chain, conditional source/kind guards, or final-state
+/// derivation is not internally consistent.
 /// </summary>
 public sealed class HostStageFiveFeedExecution
 {
     internal HostStageFiveFeedExecution(
         ShiftRuntimeState initialState,
-        InitialFeedPlanningResult initialFeedPlanning,
         LineRepairDueCompletionResult lineRepairSource,
-        RepairPendingTransitionExecutionResult? repairExecution,
-        IntakeDeadlineStartResult? repairedDeadlineStart,
-        NormalFeedPlanningResult? repairedNormalPlanning,
         IntakeDeadlineExpirationResult intakeExpirationSource,
-        DefaultIntakeAutoRouteResult? defaultRoute,
-        bool genericNormalPlanningRequired,
-        NormalFeedPlanningResult? genericNormalPlanning,
-        FeedDueResolutionResult feedDue,
-        IntakeDeadlineStartResult? ordinaryDeadlineStart)
+        InitialFeedPlanningStageStep initialFeedPlanning,
+        RepairPendingTransitionStageStep repair,
+        RepairFollowUpStageStep repairFollowUp,
+        DefaultIntakeAutoRouteStageStep defaultRoute,
+        GenericNormalFeedPlanningStageStep genericNormalPlanning,
+        FeedDueResolutionStageStep feedDue,
+        OrdinaryIntakeDeadlineStartStageStep ordinaryDeadlineStart)
     {
         ArgumentNullException.ThrowIfNull(initialState);
-        ArgumentNullException.ThrowIfNull(initialFeedPlanning);
         ArgumentNullException.ThrowIfNull(lineRepairSource);
         ArgumentNullException.ThrowIfNull(intakeExpirationSource);
+        ArgumentNullException.ThrowIfNull(initialFeedPlanning);
+        ArgumentNullException.ThrowIfNull(repair);
+        ArgumentNullException.ThrowIfNull(repairFollowUp);
+        ArgumentNullException.ThrowIfNull(defaultRoute);
+        ArgumentNullException.ThrowIfNull(genericNormalPlanning);
         ArgumentNullException.ThrowIfNull(feedDue);
+        ArgumentNullException.ThrowIfNull(ordinaryDeadlineStart);
+
+        // Exact ordered before/after reference chain — the closed trace defends itself.
+        if (!ReferenceEquals(initialFeedPlanning.BeforeState, initialState) ||
+            !ReferenceEquals(repair.BeforeState, initialFeedPlanning.AfterState) ||
+            !ReferenceEquals(repairFollowUp.BeforeState, repair.AfterState) ||
+            !ReferenceEquals(defaultRoute.BeforeState, repairFollowUp.AfterState) ||
+            !ReferenceEquals(genericNormalPlanning.BeforeState, defaultRoute.AfterState) ||
+            !ReferenceEquals(feedDue.BeforeState, genericNormalPlanning.AfterState) ||
+            !ReferenceEquals(ordinaryDeadlineStart.BeforeState, feedDue.AfterState))
+        {
+            throw new ArgumentException("Stage-5 steps must form the exact ordered before/after reference chain.");
+        }
 
         // Repair-execution presence must match the stage-1 line-repair source.
-        if ((lineRepairSource is LineRepairCompleted) != (repairExecution is not null))
+        if ((lineRepairSource is LineRepairCompleted) != (repair.Result is not null))
         {
             throw new ArgumentException("A repair-execution result must be present exactly when stage-1 evidence is LineRepairCompleted.");
         }
 
         // Repaired follow-up presence/kind must match the executed repair transition.
-        if (repairedDeadlineStart is not null && repairedNormalPlanning is not null)
-        {
-            throw new ArgumentException("A repaired follow-up cannot use both service families at once.");
-        }
-
-        if (repairExecution is RepairPendingTransitionExecuted executed)
+        if (repair.Result is RepairPendingTransitionExecuted executed)
         {
             var deadlineExpected = executed.FollowUpRequirement == RepairPendingTransitionFollowUp.IntakeDeadlineStartRequired;
-            if (deadlineExpected != (repairedDeadlineStart is not null) || deadlineExpected == (repairedNormalPlanning is not null))
+            if (deadlineExpected != (repairFollowUp.DeadlineStart is not null) || deadlineExpected == (repairFollowUp.NormalPlanning is not null))
             {
                 throw new ArgumentException("The repaired follow-up kind must match the executed follow-up requirement.");
             }
         }
-        else if (repairedDeadlineStart is not null || repairedNormalPlanning is not null)
+        else if (repairFollowUp.DeadlineStart is not null || repairFollowUp.NormalPlanning is not null)
         {
             throw new ArgumentException("A repaired follow-up requires an executed repair transition.");
         }
 
         // Default-route presence must match the stage-3 intake-expiration source.
-        if ((intakeExpirationSource is IntakeDeadlineExpired) != (defaultRoute is not null))
+        if ((intakeExpirationSource is IntakeDeadlineExpired) != (defaultRoute.Result is not null))
         {
             throw new ArgumentException("A default-route result must be present exactly when stage-3 evidence is IntakeDeadlineExpired.");
         }
 
-        // Generic normal-planning presence must match the derived trigger.
-        if (genericNormalPlanningRequired != (genericNormalPlanning is not null))
-        {
-            throw new ArgumentException("A generic normal-planning result must be present exactly when the derived trigger required it.");
-        }
-
         // Ordinary deadline-start presence must match an admitted-to-intake resolved feed.
-        var ordinaryExpected = feedDue is FeedDueResolved resolved &&
+        var ordinaryExpected = feedDue.Result is FeedDueResolved resolved &&
             resolved.Disposition == FeedDueDisposition.AdmittedToIntake &&
             resolved.FollowUpRequirement == FeedDueFollowUpRequirement.IntakeDeadlineStartRequired;
-        if (ordinaryExpected != (ordinaryDeadlineStart is not null))
+        if (ordinaryExpected != (ordinaryDeadlineStart.Result is not null))
         {
             throw new ArgumentException("An ordinary intake-deadline start must be present exactly for an admitted-to-intake resolved feed.");
         }
 
         InitialState = initialState;
-        InitialFeedPlanning = initialFeedPlanning;
         LineRepairSource = lineRepairSource;
-        RepairExecution = repairExecution;
-        RepairedDeadlineStart = repairedDeadlineStart;
-        RepairedNormalPlanning = repairedNormalPlanning;
         IntakeExpirationSource = intakeExpirationSource;
-        DefaultRoute = defaultRoute;
-        GenericNormalPlanningRequired = genericNormalPlanningRequired;
-        GenericNormalPlanning = genericNormalPlanning;
-        FeedDue = feedDue;
-        OrdinaryDeadlineStart = ordinaryDeadlineStart;
+        InitialFeedPlanningStep = initialFeedPlanning;
+        RepairStep = repair;
+        RepairFollowUpStep = repairFollowUp;
+        DefaultRouteStep = defaultRoute;
+        GenericNormalPlanningStep = genericNormalPlanning;
+        FeedDueStep = feedDue;
+        OrdinaryDeadlineStartStep = ordinaryDeadlineStart;
     }
 
     /// <summary>The exact stage-5 initial state (<c>stageFour.FinalShiftState</c>).</summary>
     public ShiftRuntimeState InitialState { get; }
 
-    /// <summary>Step 1: the exact initial-feed planning result.</summary>
-    public InitialFeedPlanningResult InitialFeedPlanning { get; }
-
     /// <summary>The retained stage-1 line-repair source evidence guarding the repair-execution step.</summary>
     public LineRepairDueCompletionResult LineRepairSource { get; }
-
-    /// <summary>Step 2: the exact repair pending-transition execution result, present only for a LineRepairCompleted source.</summary>
-    public RepairPendingTransitionExecutionResult? RepairExecution { get; }
-
-    /// <summary>Step 3a: the exact repaired FEED_GATE intake-deadline start result, present only for that executed branch.</summary>
-    public IntakeDeadlineStartResult? RepairedDeadlineStart { get; }
-
-    /// <summary>Step 3b: the exact repaired INTAKE auto-feed normal-planning result, present only for that executed branch.</summary>
-    public NormalFeedPlanningResult? RepairedNormalPlanning { get; }
 
     /// <summary>The retained stage-3 intake-expiration source evidence guarding the default-route step.</summary>
     public IntakeDeadlineExpirationResult IntakeExpirationSource { get; }
 
-    /// <summary>Step 4: the exact default intake auto-route result, present only for an IntakeDeadlineExpired source.</summary>
-    public DefaultIntakeAutoRouteResult? DefaultRoute { get; }
+    // ----- Ordered closed trace -----
 
-    /// <summary>Whether generic normal-feed planning was required, derived only from the closed current-tick evidence.</summary>
-    public bool GenericNormalPlanningRequired { get; }
+    public InitialFeedPlanningStageStep InitialFeedPlanningStep { get; }
+    public RepairPendingTransitionStageStep RepairStep { get; }
+    public RepairFollowUpStageStep RepairFollowUpStep { get; }
+    public DefaultIntakeAutoRouteStageStep DefaultRouteStep { get; }
+    public GenericNormalFeedPlanningStageStep GenericNormalPlanningStep { get; }
+    public FeedDueResolutionStageStep FeedDueStep { get; }
+    public OrdinaryIntakeDeadlineStartStageStep OrdinaryDeadlineStartStep { get; }
 
-    /// <summary>Step 5: the exact generic normal-feed planning result, present only when the derived trigger required it.</summary>
-    public NormalFeedPlanningResult? GenericNormalPlanning { get; }
+    // ----- Convenience projections onto the retained step results -----
 
-    /// <summary>Step 6: the exact feed-due resolution result (always evaluated).</summary>
-    public FeedDueResolutionResult FeedDue { get; }
+    public InitialFeedPlanningResult InitialFeedPlanning => InitialFeedPlanningStep.Result;
+    public RepairPendingTransitionExecutionResult? RepairExecution => RepairStep.Result;
+    public IntakeDeadlineStartResult? RepairedDeadlineStart => RepairFollowUpStep.DeadlineStart;
+    public NormalFeedPlanningResult? RepairedNormalPlanning => RepairFollowUpStep.NormalPlanning;
+    public DefaultIntakeAutoRouteResult? DefaultRoute => DefaultRouteStep.Result;
+    public bool GenericNormalPlanningRequired => GenericNormalPlanningStep.Required;
+    public NormalFeedPlanningResult? GenericNormalPlanning => GenericNormalPlanningStep.Result;
+    public FeedDueResolutionResult FeedDue => FeedDueStep.Result;
+    public IntakeDeadlineStartResult? OrdinaryDeadlineStart => OrdinaryDeadlineStartStep.Result;
 
-    /// <summary>Step 7: the exact ordinary intake-deadline start result, present only for an admitted-to-intake resolved feed.</summary>
-    public IntakeDeadlineStartResult? OrdinaryDeadlineStart { get; }
-
-    /// <summary>The exact final stage-5 state, derived only from the last executed step.</summary>
-    public ShiftRuntimeState FinalState => OrdinaryDeadlineStart?.State ?? FeedDue.State;
+    /// <summary>The exact final stage-5 state, always the last (ordinary deadline-start) step's after-state.</summary>
+    public ShiftRuntimeState FinalState => OrdinaryDeadlineStartStep.AfterState;
 }
 
 /// <summary>
@@ -197,91 +318,100 @@ public sealed class HostStageFiveFeedExecutor
             throw new ArgumentException("The accepted-intent batch tick must equal the stage-5 current tick.", nameof(currentTick));
         }
 
-        var currentState = stageFour.FinalShiftState;
+        var initialState = stageFour.FinalShiftState;
 
         // Step 1 — initial feed planning.
-        var initialFeedPlanning = _initialFeedPlanningService.Plan(currentState, currentTick, schedulerConfiguration);
-        currentState = initialFeedPlanning.State;
+        var initialResult = _initialFeedPlanningService.Plan(initialState, currentTick, schedulerConfiguration);
+        var initialStep = new InitialFeedPlanningStageStep(initialState, initialResult);
 
         // Step 2 — repair pending-transition execution (only for a LineRepairCompleted stage-1 source).
         var lineRepairSource = stageOne.LineRepair.Result;
-        RepairPendingTransitionExecutionResult? repairExecution = null;
+        var beforeRepair = initialStep.AfterState;
+        RepairPendingTransitionExecutionResult? repairResult = null;
         if (lineRepairSource is LineRepairCompleted completion)
         {
-            repairExecution = _repairPendingTransitionExecutionService.Execute(currentState, completion, currentTick);
-            currentState = repairExecution.State;
+            repairResult = _repairPendingTransitionExecutionService.Execute(beforeRepair, completion, currentTick);
         }
 
+        var repairStep = new RepairPendingTransitionStageStep(beforeRepair, repairResult);
+
         // Step 3 — exact source-bound repaired follow-up (only when the repair transition executed).
+        var beforeFollowUp = repairStep.AfterState;
         IntakeDeadlineStartResult? repairedDeadlineStart = null;
         NormalFeedPlanningResult? repairedNormalPlanning = null;
-        if (repairExecution is RepairPendingTransitionExecuted executed)
+        if (repairResult is RepairPendingTransitionExecuted executed)
         {
             if (executed.FollowUpRequirement == RepairPendingTransitionFollowUp.IntakeDeadlineStartRequired)
             {
-                repairedDeadlineStart = _repairFeedGateIntakeDeadlineStartService.Start(currentState, executed, selectedProfile);
-                currentState = repairedDeadlineStart.State;
+                repairedDeadlineStart = _repairFeedGateIntakeDeadlineStartService.Start(beforeFollowUp, executed, selectedProfile);
             }
             else
             {
-                repairedNormalPlanning = _repairAutoFeedNormalFeedPlanningService.Plan(currentState, executed, schedulerConfiguration);
-                currentState = repairedNormalPlanning.State;
+                repairedNormalPlanning = _repairAutoFeedNormalFeedPlanningService.Plan(beforeFollowUp, executed, schedulerConfiguration);
             }
         }
 
+        var repairFollowUpStep = new RepairFollowUpStageStep(beforeFollowUp, repairedDeadlineStart, repairedNormalPlanning);
+
         // Step 4 — conditional default intake auto-route (only for an IntakeDeadlineExpired stage-3 source).
         var intakeExpirationSource = stageThree.IntakeDeadline.Result;
-        DefaultIntakeAutoRouteResult? defaultRoute = null;
+        var beforeDefault = repairFollowUpStep.AfterState;
+        DefaultIntakeAutoRouteResult? defaultResult = null;
         if (intakeExpirationSource is IntakeDeadlineExpired expired)
         {
-            defaultRoute = _defaultIntakeAutoRouteService.Attempt(currentState, expired.FollowUp, currentTick);
-            currentState = defaultRoute.State;
+            defaultResult = _defaultIntakeAutoRouteService.Attempt(beforeDefault, expired.FollowUp, currentTick);
         }
 
+        var defaultStep = new DefaultIntakeAutoRouteStageStep(beforeDefault, defaultResult);
+
         // Step 5 — evidence-triggered generic normal-feed planning.
+        var beforeGeneric = defaultStep.AfterState;
         var stage2VacatedIntake = stageTwo.Steps.Any(step =>
             step.Outcome is ManualRoutingIntentStageOutcome manualRouting &&
             manualRouting.Result is ManualLogIntentAccepted accepted &&
             accepted.Transition.FromState == LogState.AT_INTAKE &&
             accepted.Transition.ToState != LogState.AT_INTAKE);
         var lineRepairCompleted = lineRepairSource is LineRepairCompleted;
-        var defaultRouteVacatedIntake = defaultRoute is DefaultIntakeAutoRouteApplied;
+        var defaultRouteVacatedIntake = defaultResult is DefaultIntakeAutoRouteApplied;
         var repairedAutoFeedPlannerAlreadyRan = repairedNormalPlanning is not null;
         var genericNormalPlanningRequired =
             (stage2VacatedIntake || lineRepairCompleted || defaultRouteVacatedIntake) &&
             !repairedAutoFeedPlannerAlreadyRan;
-        NormalFeedPlanningResult? genericNormalPlanning = null;
+        NormalFeedPlanningResult? genericResult = null;
         if (genericNormalPlanningRequired)
         {
-            genericNormalPlanning = _normalFeedPlanningService.Plan(currentState, currentTick, schedulerConfiguration);
-            currentState = genericNormalPlanning.State;
+            genericResult = _normalFeedPlanningService.Plan(beforeGeneric, currentTick, schedulerConfiguration);
         }
 
+        var genericStep = new GenericNormalFeedPlanningStageStep(beforeGeneric, genericNormalPlanningRequired, genericResult);
+
         // Step 6 — feed-due resolution (always).
-        var feedDue = _feedDueResolutionService.Resolve(currentState, currentTick);
-        currentState = feedDue.State;
+        var beforeFeedDue = genericStep.AfterState;
+        var feedDueResult = _feedDueResolutionService.Resolve(beforeFeedDue, currentTick);
+        var feedDueStep = new FeedDueResolutionStageStep(beforeFeedDue, feedDueResult);
 
         // Step 7 — ordinary intake-deadline start (only for an admitted-to-intake resolved feed).
-        IntakeDeadlineStartResult? ordinaryDeadlineStart = null;
-        if (feedDue is FeedDueResolved resolved &&
+        var beforeOrdinary = feedDueStep.AfterState;
+        IntakeDeadlineStartResult? ordinaryResult = null;
+        if (feedDueResult is FeedDueResolved resolved &&
             resolved.Disposition == FeedDueDisposition.AdmittedToIntake &&
             resolved.FollowUpRequirement == FeedDueFollowUpRequirement.IntakeDeadlineStartRequired)
         {
-            ordinaryDeadlineStart = _intakeDeadlineStartService.Start(currentState, resolved, selectedProfile);
+            ordinaryResult = _intakeDeadlineStartService.Start(beforeOrdinary, resolved, selectedProfile);
         }
 
+        var ordinaryStep = new OrdinaryIntakeDeadlineStartStageStep(beforeOrdinary, ordinaryResult);
+
         return new HostStageFiveFeedExecution(
-            stageFour.FinalShiftState,
-            initialFeedPlanning,
+            initialState,
             lineRepairSource,
-            repairExecution,
-            repairedDeadlineStart,
-            repairedNormalPlanning,
             intakeExpirationSource,
-            defaultRoute,
-            genericNormalPlanningRequired,
-            genericNormalPlanning,
-            feedDue,
-            ordinaryDeadlineStart);
+            initialStep,
+            repairStep,
+            repairFollowUpStep,
+            defaultStep,
+            genericStep,
+            feedDueStep,
+            ordinaryStep);
     }
 }
