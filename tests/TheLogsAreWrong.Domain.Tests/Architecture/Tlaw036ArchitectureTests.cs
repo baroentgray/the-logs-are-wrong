@@ -49,6 +49,9 @@ public sealed class Tlaw036ArchitectureTests
         Assert.True(typeof(HostStageSevenSawCompletedPayload).IsSealed);
         Assert.True(typeof(HostStageSevenShiftCompletedPayload).IsSealed);
         Assert.True(typeof(HostStageSevenNoNewPublication).IsSealed);
+        Assert.Equal(typeof(ServerTick), typeof(HostStageSevenAutoRoutePayload).GetProperty(nameof(HostStageSevenAutoRoutePayload.AttemptedAt))!.PropertyType);
+        Assert.Equal(typeof(System.Collections.Immutable.ImmutableDictionary<SpeciesId, int>), typeof(HostStageSevenShiftCompletedPayload).GetProperty(nameof(HostStageSevenShiftCompletedPayload.TargetBySpecies))!.PropertyType);
+        Assert.Equal(typeof(System.Collections.Immutable.ImmutableDictionary<SpeciesId, int>), typeof(HostStageSevenShiftCompletedPayload).GetProperty(nameof(HostStageSevenShiftCompletedPayload.CreditedBySpecies))!.PropertyType);
 
         var sourceRoot = Path.Combine(AppContext.BaseDirectory, "DomainSources");
         var source = File.ReadAllText(Directory.GetFiles(sourceRoot, "HostStageSevenEventExecutionContracts.cs", SearchOption.AllDirectories).Single());
@@ -56,6 +59,15 @@ public sealed class Tlaw036ArchitectureTests
         Assert.Contains("CommitObservation", source, StringComparison.Ordinal);
         Assert.Contains("RequireNoNewPublicationCursor", source, StringComparison.Ordinal);
         Assert.Contains("HasExactPayloadSemantics", source, StringComparison.Ordinal);
+        Assert.Contains("HostStageSevenSawQuotaOutcome", source, StringComparison.Ordinal);
+        Assert.Contains("DuplicateQuotaSettlementLogId", source, StringComparison.Ordinal);
+        Assert.Contains("ValidateSequenceCapacity", source, StringComparison.Ordinal);
+        Assert.Contains("left.QuotaApplicationOutcome == right.QuotaApplicationOutcome", source, StringComparison.Ordinal);
+        Assert.Contains("left.DuplicateQuotaSettlementLogId == right.DuplicateQuotaSettlementLogId", source, StringComparison.Ordinal);
+        Assert.Contains("left.AttemptedAt == right.AttemptedAt", source, StringComparison.Ordinal);
+        Assert.Contains("SameSpeciesValues(left.TargetBySpecies, right.TargetBySpecies)", source, StringComparison.Ordinal);
+        Assert.Contains("SameSpeciesValues(left.CreditedBySpecies, right.CreditedBySpecies)", source, StringComparison.Ordinal);
+        Assert.DoesNotContain("DefaultIntakeAutoRouteContracts", source, StringComparison.Ordinal);
         Assert.DoesNotContain("Guid.", source, StringComparison.Ordinal);
         Assert.DoesNotContain("Random", source, StringComparison.Ordinal);
         Assert.DoesNotContain("HostStageOneCompletionExecutor", source, StringComparison.Ordinal);

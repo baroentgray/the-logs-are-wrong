@@ -110,26 +110,31 @@ public enum HostStageSevenAutoRouteOutcome { Applied, Blocked, OwnerMissing, NoL
 
 public sealed class HostStageSevenAutoRoutePayload : HostStageSevenVersionedPayload
 {
-    internal HostStageSevenAutoRoutePayload(DefaultIntakeAutoRouteResult result, StateVersion prior, StateVersion current)
+    internal HostStageSevenAutoRoutePayload(DefaultIntakeAutoRouteResult result, ServerTick currentTick, StateVersion prior, StateVersion current)
         : base(prior, current)
     {
         ArgumentNullException.ThrowIfNull(result);
+        if (currentTick.IsDefault) throw new ArgumentException("The authoritative stage-seven tick must be initialized.", nameof(currentTick));
         switch (result)
         {
             case DefaultIntakeAutoRouteApplied applied:
+                if (applied.AttemptedAt != currentTick) throw new InvalidOperationException("Applied auto-route evidence must agree with the authoritative stage-seven tick.");
                 LogId = applied.LogId; AttemptedAt = applied.AttemptedAt; Outcome = HostStageSevenAutoRouteOutcome.Applied;
                 Source = applied.Source; Destination = applied.Destination; BlockReason = null; FollowUp = null;
                 break;
             case DefaultIntakeAutoRouteBlocked blocked:
+                if (blocked.AttemptedAt != currentTick) throw new InvalidOperationException("Blocked auto-route evidence must agree with the authoritative stage-seven tick.");
                 LogId = blocked.LogId; AttemptedAt = blocked.AttemptedAt; Outcome = HostStageSevenAutoRouteOutcome.Blocked;
                 Source = null; Destination = null; BlockReason = blocked.Reason; FollowUp = blocked.FollowUp;
                 break;
             case DefaultIntakeAutoRouteOwnerMissing missing:
-                LogId = missing.LogId; AttemptedAt = default; Outcome = HostStageSevenAutoRouteOutcome.OwnerMissing;
+                // A frozen stage-five trace normally cannot reach this after exact expiration evidence, but preserve the host tick if established evidence is supplied.
+                LogId = missing.LogId; AttemptedAt = currentTick; Outcome = HostStageSevenAutoRouteOutcome.OwnerMissing;
                 Source = null; Destination = null; BlockReason = null; FollowUp = null;
                 break;
             case DefaultIntakeAutoRouteNoLongerApplicable inapplicable:
-                LogId = inapplicable.LogId; AttemptedAt = default; Outcome = HostStageSevenAutoRouteOutcome.NoLongerApplicable;
+                // A frozen stage-five trace normally cannot reach this after exact expiration evidence, but preserve the host tick if established evidence is supplied.
+                LogId = inapplicable.LogId; AttemptedAt = currentTick; Outcome = HostStageSevenAutoRouteOutcome.NoLongerApplicable;
                 Source = null; Destination = null; BlockReason = null; FollowUp = null;
                 break;
             default:
@@ -137,7 +142,7 @@ public sealed class HostStageSevenAutoRoutePayload : HostStageSevenVersionedPayl
         }
     }
     public LogId LogId { get; }
-    public ServerTick? AttemptedAt { get; }
+    public ServerTick AttemptedAt { get; }
     public HostStageSevenAutoRouteOutcome Outcome { get; }
     public LogState? Source { get; }
     public LogState? Destination { get; }
@@ -203,17 +208,45 @@ public sealed class HostStageSevenSawCompletedPayload : HostStageSevenVersionedP
         : base(completed.PriorStateVersion, completed.CurrentStateVersion)
     {
         ArgumentNullException.ThrowIfNull(completed); ArgumentNullException.ThrowIfNull(quota);
-        Cycle = completed.Cycle; Resolution = completed.Resolution; CompletedAt = completed.CompletedAt; QuotaSettlement = completed.Resolution.Settlement;
-        QuotaWasApplied = quota is SawQuotaApplicationAccepted;
-        QuotaSettlementDescriptor = quota is SawQuotaApplicationAccepted accepted ? accepted.AcceptedSettlement.Descriptor : null;
+        if (quota.CompletedLogId != completed.Cycle.LogId || !ReferenceEquals(quota.Resolution, completed.Resolution))
+        {
+            throw new InvalidOperationException("Saw quota evidence must retain the exact completed cycle and processing resolution.");
+        }
+
+        Cycle = completed.Cycle;
+        Resolution = completed.Resolution;
+        CompletedAt = completed.CompletedAt;
+        QuotaSettlement = completed.Resolution.Settlement;
+        QuotaApplicationLogId = quota.CompletedLogId;
+        switch (quota)
+        {
+            case SawQuotaApplicationAccepted accepted:
+                QuotaApplicationOutcome = HostStageSevenSawQuotaOutcome.Accepted;
+                AcceptedQuotaSettlement = accepted.AcceptedSettlement.Descriptor;
+                DuplicateQuotaSettlementLogId = null;
+                break;
+            case SawQuotaApplicationAlreadyApplied duplicate:
+                QuotaApplicationOutcome = HostStageSevenSawQuotaOutcome.AlreadyApplied;
+                AcceptedQuotaSettlement = null;
+                DuplicateQuotaSettlementLogId = duplicate.DuplicateSettlement.LogId;
+                break;
+            default:
+                throw new ArgumentException("Unsupported saw quota application evidence.", nameof(quota));
+        }
     }
     public ActiveSawCycle Cycle { get; }
     public ProcessingResolution Resolution { get; }
     public ServerTick CompletedAt { get; }
     public QuotaSettlement QuotaSettlement { get; }
-    public bool QuotaWasApplied { get; }
-    public QuotaSettlementDescriptor? QuotaSettlementDescriptor { get; }
+    public LogId QuotaApplicationLogId { get; }
+    public HostStageSevenSawQuotaOutcome QuotaApplicationOutcome { get; }
+    public QuotaSettlementDescriptor? AcceptedQuotaSettlement { get; }
+    public LogId? DuplicateQuotaSettlementLogId { get; }
+    public bool QuotaWasApplied => QuotaApplicationOutcome == HostStageSevenSawQuotaOutcome.Accepted;
+    public QuotaSettlementDescriptor? QuotaSettlementDescriptor => AcceptedQuotaSettlement;
 }
+
+public enum HostStageSevenSawQuotaOutcome { Accepted, AlreadyApplied }
 
 public sealed class HostStageSevenLineJamPayload : HostStageSevenVersionedPayload
 {
@@ -250,6 +283,8 @@ public sealed class HostStageSevenShiftCompletedPayload : HostStageSevenVersione
         ProcessedCount = completion.ProcessedCount; WrittenOffCount = completion.WrittenOffCount;
         TargetTotal = completion.Quota.TargetTotal; TotalCreditedUnits = completion.Quota.TotalCreditedUnits;
         MinimumCorrectlyProcessedAnomalies = completion.Quota.MinimumCorrectlyProcessedAnomalies; CorrectlyProcessedAnomalies = completion.Quota.CorrectlyProcessedAnomalies;
+        TargetBySpecies = completion.Quota.TargetBySpecies;
+        CreditedBySpecies = completion.Quota.CreditedBySpecies;
     }
     public ServerTick CompletedAt { get; }
     public ServerTick HardDeadlineAt { get; }
@@ -263,6 +298,8 @@ public sealed class HostStageSevenShiftCompletedPayload : HostStageSevenVersione
     public int TotalCreditedUnits { get; }
     public int MinimumCorrectlyProcessedAnomalies { get; }
     public int CorrectlyProcessedAnomalies { get; }
+    public ImmutableDictionary<SpeciesId, int> TargetBySpecies { get; }
+    public ImmutableDictionary<SpeciesId, int> CreditedBySpecies { get; }
 }
 
 public enum HostStageSevenPublicationKind { StateChanging, Observational }
@@ -405,6 +442,8 @@ public sealed class HostStageSevenEventExecutor
             throw new ArgumentException("Journal cursor must align with the exact stage-one initial state before new publication.", nameof(journal));
         }
 
+        ValidateSequenceCapacity(journal.LastSequence, plan.Count);
+
         var publications = ImmutableArray.CreateBuilder<HostStageSevenPublication>(plan.Count);
         for (var index = 0; index < plan.Count; index++)
         {
@@ -488,7 +527,7 @@ public sealed class HostStageSevenEventExecutor
     private static List<PlannedPublication> BuildPlan(HostStageOneCompletionExecution one, AcceptedIntentStageExecution two, HostStageThreeDeadlineExecution three, HostStageFourSawExecution four, HostStageFiveFeedExecution five, HostStageSixDerivedExecution six, ServerTick tick, out ImmutableArray<RejectionEvent> rejections)
     {
         var plan = new List<PlannedPublication>(); var rejectionBuilder = ImmutableArray.CreateBuilder<RejectionEvent>();
-        PlanStageOne(plan, one); PlanStageTwo(plan, two, tick, rejectionBuilder); PlanStageThree(plan, three); PlanStageFour(plan, four); PlanStageFive(plan, five); PlanStageSix(plan, six);
+        PlanStageOne(plan, one); PlanStageTwo(plan, two, tick, rejectionBuilder); PlanStageThree(plan, three); PlanStageFour(plan, four); PlanStageFive(plan, five, tick); PlanStageSix(plan, six);
         rejections = rejectionBuilder.ToImmutable(); return plan;
     }
 
@@ -565,21 +604,21 @@ public sealed class HostStageSevenEventExecutor
         if (stage.Start.Result is SawCycleStarted started) AddMutation(plan, HostStageSevenEventTypes.SawCycleStarted, new HostStageSevenSawStartedPayload(started), null, stage.Start.BeforeShiftState, started.State); else RequireNoMutation(stage.Start.BeforeShiftState, stage.Start.AfterShiftState);
     }
 
-    private static void PlanStageFive(List<PlannedPublication> plan, HostStageFiveFeedExecution stage)
+    private static void PlanStageFive(List<PlannedPublication> plan, HostStageFiveFeedExecution stage, ServerTick currentTick)
     {
         PlanFeedSchedule(plan, stage.InitialFeedPlanning, stage.InitialFeedPlanningStep.BeforeState);
         if (stage.RepairExecution is RepairPendingTransitionExecuted repair)
         {
             var type = repair.Cause == JamCause.FEED_GATE_BLOCKED ? HostStageSevenEventTypes.LogAdmittedToIntake : HostStageSevenEventTypes.AutoRouteAttempted;
             if (type == HostStageSevenEventTypes.AutoRouteAttempted)
-                AddMutation(plan, type, new HostStageSevenAutoRoutePayload(new DefaultIntakeAutoRouteApplied(repair.State, repair.LogId, repair.AppliedAt, repair.Source, repair.Destination, repair.PriorStateVersion, repair.CurrentStateVersion), repair.PriorStateVersion, repair.CurrentStateVersion), null, stage.RepairStep.BeforeState, repair.State);
+                AddMutation(plan, type, new HostStageSevenAutoRoutePayload(new DefaultIntakeAutoRouteApplied(repair.State, repair.LogId, repair.AppliedAt, repair.Source, repair.Destination, repair.PriorStateVersion, repair.CurrentStateVersion), currentTick, repair.PriorStateVersion, repair.CurrentStateVersion), null, stage.RepairStep.BeforeState, repair.State);
             else AddMutation(plan, type, new HostStageSevenLogTransitionPayload(repair.LogId, repair.Source, repair.Destination, repair.PriorStateVersion, repair.CurrentStateVersion), null, stage.RepairStep.BeforeState, repair.State);
         }
         else RequireNoMutation(stage.RepairStep.BeforeState, stage.RepairStep.AfterState);
         if (stage.RepairedDeadlineStart is IntakeDeadlineStarted repairedDeadline) AddMutation(plan, HostStageSevenEventTypes.IntakeDeadlineStarted, new HostStageSevenIntakeDeadlinePayload(repairedDeadline.Deadline, repairedDeadline.Deadline.StartedAt, repairedDeadline.PriorStateVersion, repairedDeadline.CurrentStateVersion), null, stage.RepairFollowUpStep.BeforeState, repairedDeadline.State);
         else if (stage.RepairedNormalPlanning is { } repairedNormal) PlanFeedSchedule(plan, repairedNormal, stage.RepairFollowUpStep.BeforeState);
         else RequireNoMutation(stage.RepairFollowUpStep.BeforeState, stage.RepairFollowUpStep.AfterState);
-        if (stage.DefaultRoute is { } route) PlanAutoRoute(plan, route, stage.DefaultRouteStep.BeforeState); else RequireNoMutation(stage.DefaultRouteStep.BeforeState, stage.DefaultRouteStep.AfterState);
+        if (stage.DefaultRoute is { } route) PlanAutoRoute(plan, route, currentTick, stage.DefaultRouteStep.BeforeState); else RequireNoMutation(stage.DefaultRouteStep.BeforeState, stage.DefaultRouteStep.AfterState);
         if (stage.GenericNormalPlanning is { } normal) PlanFeedSchedule(plan, normal, stage.GenericNormalPlanningStep.BeforeState); else RequireNoMutation(stage.GenericNormalPlanningStep.BeforeState, stage.GenericNormalPlanningStep.AfterState);
         if (stage.FeedDue is FeedDueResolved feed)
         {
@@ -604,10 +643,10 @@ public sealed class HostStageSevenEventExecutor
     {
         if (result is NormalFeedScheduled scheduled) AddMutation(plan, HostStageSevenEventTypes.FeedScheduled, new HostStageSevenFeedSchedulePayload(scheduled.Schedule, scheduled.PriorStateVersion, scheduled.CurrentStateVersion), null, before, scheduled.State); else RequireNoMutation(before, result.State);
     }
-    private static void PlanAutoRoute(List<PlannedPublication> plan, DefaultIntakeAutoRouteResult result, ShiftRuntimeState before)
+    private static void PlanAutoRoute(List<PlannedPublication> plan, DefaultIntakeAutoRouteResult result, ServerTick currentTick, ShiftRuntimeState before)
     {
         var changing = result is DefaultIntakeAutoRouteApplied;
-        var payload = new HostStageSevenAutoRoutePayload(result, before.StateVersion, result.State.StateVersion);
+        var payload = new HostStageSevenAutoRoutePayload(result, currentTick, before.StateVersion, result.State.StateVersion);
         if (changing) AddMutation(plan, HostStageSevenEventTypes.AutoRouteAttempted, payload, null, before, result.State); else AddObservation(plan, HostStageSevenEventTypes.AutoRouteAttempted, payload, null, before);
     }
 
@@ -652,9 +691,16 @@ public sealed class HostStageSevenEventExecutor
                 throw new InvalidOperationException("Planned observation must retain the exact currently reached state version.");
         }
         if (reached != final.StateVersion) throw new InvalidOperationException("The planned journal state version must equal the exact final stage-six state.");
-        var sequence = journal.LastSequence;
-        for (var index = 0; index < plan.Count; index++) if (!sequence.TryNext(out sequence)) throw new OverflowException("The journal sequence cannot advance through the complete publication plan.");
         if (tick < journal.LastTick) throw new ArgumentException("Journal tick cannot be later than the current host tick.", nameof(journal));
+    }
+
+    private static void ValidateSequenceCapacity(EventSequence lastSequence, int count)
+    {
+        var sequence = lastSequence;
+        for (var index = 0; index < count; index++)
+        {
+            if (!sequence.TryNext(out sequence)) throw new OverflowException("The journal sequence cannot advance through the complete publication plan.");
+        }
     }
 
     private static void RequirePublishedCursor(IEventJournal journal, ShiftRuntimeState finalState, ServerTick tick, string source)
@@ -720,7 +766,7 @@ public sealed class HostStageSevenEventExecutor
             (HostStageSevenSawStartedPayload left, HostStageSevenSawStartedPayload right) =>
                 SameVersions(left, right) && left.Cycle == right.Cycle,
             (HostStageSevenSawCompletedPayload left, HostStageSevenSawCompletedPayload right) =>
-                SameVersions(left, right) && left.Cycle == right.Cycle && left.Resolution == right.Resolution && left.CompletedAt == right.CompletedAt && left.QuotaSettlement == right.QuotaSettlement && left.QuotaWasApplied == right.QuotaWasApplied && left.QuotaSettlementDescriptor == right.QuotaSettlementDescriptor,
+                SameVersions(left, right) && left.Cycle == right.Cycle && left.Resolution == right.Resolution && left.CompletedAt == right.CompletedAt && left.QuotaSettlement == right.QuotaSettlement && left.QuotaApplicationLogId == right.QuotaApplicationLogId && left.QuotaApplicationOutcome == right.QuotaApplicationOutcome && left.AcceptedQuotaSettlement == right.AcceptedQuotaSettlement && left.DuplicateQuotaSettlementLogId == right.DuplicateQuotaSettlementLogId,
             (HostStageSevenLineJamPayload left, HostStageSevenLineJamPayload right) =>
                 SameVersions(left, right) && left.LogId == right.LogId && left.Cause == right.Cause && left.EnteredAt == right.EnteredAt,
             (HostStageSevenLineNoisePayload left, HostStageSevenLineNoisePayload right) =>
@@ -728,12 +774,23 @@ public sealed class HostStageSevenEventExecutor
             (HostStageSevenConfirmationConditionPayload left, HostStageSevenConfirmationConditionPayload right) =>
                 SameVersions(left, right) && left.Prior == right.Prior && left.Current == right.Current,
             (HostStageSevenShiftCompletedPayload left, HostStageSevenShiftCompletedPayload right) =>
-                SameVersions(left, right) && left.CompletedAt == right.CompletedAt && left.HardDeadlineAt == right.HardDeadlineAt && left.Reason == right.Reason && left.AllLogsTerminal == right.AllLogsTerminal && left.HardDeadlineReached == right.HardDeadlineReached && left.ObjectivesSatisfied == right.ObjectivesSatisfied && left.ProcessedCount == right.ProcessedCount && left.WrittenOffCount == right.WrittenOffCount && left.TargetTotal == right.TargetTotal && left.TotalCreditedUnits == right.TotalCreditedUnits && left.MinimumCorrectlyProcessedAnomalies == right.MinimumCorrectlyProcessedAnomalies && left.CorrectlyProcessedAnomalies == right.CorrectlyProcessedAnomalies,
+                SameVersions(left, right) && left.CompletedAt == right.CompletedAt && left.HardDeadlineAt == right.HardDeadlineAt && left.Reason == right.Reason && left.AllLogsTerminal == right.AllLogsTerminal && left.HardDeadlineReached == right.HardDeadlineReached && left.ObjectivesSatisfied == right.ObjectivesSatisfied && left.ProcessedCount == right.ProcessedCount && left.WrittenOffCount == right.WrittenOffCount && left.TargetTotal == right.TargetTotal && left.TotalCreditedUnits == right.TotalCreditedUnits && left.MinimumCorrectlyProcessedAnomalies == right.MinimumCorrectlyProcessedAnomalies && left.CorrectlyProcessedAnomalies == right.CorrectlyProcessedAnomalies && SameSpeciesValues(left.TargetBySpecies, right.TargetBySpecies) && SameSpeciesValues(left.CreditedBySpecies, right.CreditedBySpecies),
             _ => false
         };
 
     private static bool SameVersions(HostStageSevenVersionedPayload left, HostStageSevenVersionedPayload right) =>
         left.PriorStateVersion == right.PriorStateVersion && left.CurrentStateVersion == right.CurrentStateVersion;
+
+    private static bool SameSpeciesValues(ImmutableDictionary<SpeciesId, int> left, ImmutableDictionary<SpeciesId, int> right)
+    {
+        if (left.Count != right.Count) return false;
+        foreach (var entry in left)
+        {
+            if (!right.TryGetValue(entry.Key, out var value) || value != entry.Value) return false;
+        }
+
+        return true;
+    }
 
     private sealed record PlannedPublication(EventTypeId EventType, HostStageSevenEventPayload Payload, IntentId? CausedByIntentId, HostStageSevenPublicationKind Kind, ShiftRuntimeState BeforeState, ShiftRuntimeState CurrentState);
 }
