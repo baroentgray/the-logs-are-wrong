@@ -48,11 +48,14 @@ public sealed class Tlaw036ArchitectureTests
         Assert.True(typeof(HostStageSevenFeedSchedulePayload).IsSealed);
         Assert.True(typeof(HostStageSevenSawCompletedPayload).IsSealed);
         Assert.True(typeof(HostStageSevenShiftCompletedPayload).IsSealed);
+        Assert.True(typeof(HostStageSevenNoNewPublication).IsSealed);
 
         var sourceRoot = Path.Combine(AppContext.BaseDirectory, "DomainSources");
         var source = File.ReadAllText(Directory.GetFiles(sourceRoot, "HostStageSevenEventExecutionContracts.cs", SearchOption.AllDirectories).Single());
         Assert.Contains("JournaledMutationCommitService", source, StringComparison.Ordinal);
         Assert.Contains("CommitObservation", source, StringComparison.Ordinal);
+        Assert.Contains("RequireNoNewPublicationCursor", source, StringComparison.Ordinal);
+        Assert.Contains("HasExactPayloadSemantics", source, StringComparison.Ordinal);
         Assert.DoesNotContain("Guid.", source, StringComparison.Ordinal);
         Assert.DoesNotContain("Random", source, StringComparison.Ordinal);
         Assert.DoesNotContain("HostStageOneCompletionExecutor", source, StringComparison.Ordinal);
@@ -62,5 +65,7 @@ public sealed class Tlaw036ArchitectureTests
         Assert.DoesNotContain(".Sort(", source, StringComparison.Ordinal);
         Assert.DoesNotContain("Unity", source, StringComparison.Ordinal);
         Assert.DoesNotContain("FishNet", source, StringComparison.Ordinal);
+        Assert.DoesNotContain("Json", source, StringComparison.Ordinal);
+        Assert.DoesNotContain("GetHashCode", source, StringComparison.Ordinal);
     }
 }

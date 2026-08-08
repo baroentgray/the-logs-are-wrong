@@ -342,6 +342,20 @@ public sealed class HostStageSevenAlreadyPublished : HostStageSevenEventExecutio
     public ImmutableArray<EventId> AssignedEventIds { get; }
 }
 
+/// <summary>Stage seven accepted a valid trace that has no journal event to append; its cursor remains unchanged.</summary>
+public sealed class HostStageSevenNoNewPublication : HostStageSevenEventExecution
+{
+    internal HostStageSevenNoNewPublication(HostStageOneCompletionExecution one, AcceptedIntentStageExecution two, HostStageThreeDeadlineExecution three, HostStageFourSawExecution four, HostStageFiveFeedExecution five, HostStageSixDerivedExecution six, ServerTick tick, HostStageSevenJournalCursor cursor, ImmutableArray<RejectionEvent> rejections, ImmutableArray<EventId> eventIds)
+        : base(one, two, three, four, five, six, tick, cursor, cursor)
+    {
+        Rejections = rejections;
+        AssignedEventIds = eventIds;
+    }
+
+    public ImmutableArray<RejectionEvent> Rejections { get; }
+    public ImmutableArray<EventId> AssignedEventIds { get; }
+}
+
 public sealed class HostStageSevenEventExecutor
 {
     private readonly JournaledMutationCommitService _mutations = new();
@@ -366,6 +380,12 @@ public sealed class HostStageSevenEventExecutor
 
         var plan = BuildPlan(stageOne, stageTwo, stageThree, stageFour, stageFive, stageSix, currentTick, out var rejections);
         ValidatePlan(plan, eventIds, stageOne.InitialState, stageSix.FinalShiftState, journal, currentTick);
+
+        if (plan.Count == 0)
+        {
+            RequireNoNewPublicationCursor(journal, stageSix.FinalShiftState, currentTick, "Zero-event publication");
+            return new HostStageSevenNoNewPublication(stageOne, stageTwo, stageThree, stageFour, stageFive, stageSix, currentTick, beforeCursor, rejections, eventIds);
+        }
 
         if (stageSix.Checkpoint is HostTickCheckpointReplayed)
         {
@@ -642,6 +662,15 @@ public sealed class HostStageSevenEventExecutor
         if (journal.LastStateVersion != finalState.StateVersion || journal.LastTick != tick) throw new InvalidOperationException($"{source} contradicts the current journal cursor.");
     }
 
+    private static void RequireNoNewPublicationCursor(IEventJournal journal, ShiftRuntimeState finalState, ServerTick tick, string source)
+    {
+        if (journal.LastStateVersion != finalState.StateVersion ||
+            (journal.Count != 0 && journal.LastTick == tick))
+        {
+            throw new InvalidOperationException($"{source} contradicts the unchanged journal cursor.");
+        }
+    }
+
     private static void ValidatePublishedPlan(IEventJournal journal, List<PlannedPublication> plan, ImmutableArray<EventId> eventIds, ServerTick tick)
     {
         if (plan.Count == 0)
@@ -661,12 +690,50 @@ public sealed class HostStageSevenEventExecutor
             var planned = plan[index];
             if (envelope.EventId != eventIds[index] || envelope.EventType != planned.EventType ||
                 envelope.CausedByIntentId != planned.CausedByIntentId || envelope.ServerTick != tick ||
-                envelope.StateVersionAfter != planned.CurrentState.StateVersion)
+                envelope.StateVersionAfter != planned.CurrentState.StateVersion ||
+                !HasExactPayloadSemantics(envelope.Payload, planned.Payload))
             {
                 throw new InvalidOperationException("The aligned journal cursor contradicts the exact stage-seven publication plan.");
             }
         }
     }
+
+    private static bool HasExactPayloadSemantics(IDomainEventPayload actual, HostStageSevenEventPayload expected) =>
+        (actual, expected) switch
+        {
+            (HostStageSevenLogTransitionPayload left, HostStageSevenLogTransitionPayload right) =>
+                SameVersions(left, right) && left.LogId == right.LogId && left.FromState == right.FromState && left.ToState == right.ToState,
+            (HostStageSevenFeedSchedulePayload left, HostStageSevenFeedSchedulePayload right) =>
+                SameVersions(left, right) && left.LogId == right.LogId && left.Kind == right.Kind && left.ScheduledAt == right.ScheduledAt && left.DueAt == right.DueAt && left.Delay == right.Delay && left.CausedByIntentId == right.CausedByIntentId,
+            (HostStageSevenIntakeDeadlinePayload left, HostStageSevenIntakeDeadlinePayload right) =>
+                SameVersions(left, right) && left.LogId == right.LogId && left.StartedAt == right.StartedAt && left.DueAt == right.DueAt && left.Duration == right.Duration && left.OccurredAt == right.OccurredAt,
+            (HostStageSevenAutoRoutePayload left, HostStageSevenAutoRoutePayload right) =>
+                SameVersions(left, right) && left.LogId == right.LogId && left.AttemptedAt == right.AttemptedAt && left.Outcome == right.Outcome && left.Source == right.Source && left.Destination == right.Destination && left.BlockReason == right.BlockReason && left.FollowUp == right.FollowUp,
+            (HostStageSevenProcedurePayload left, HostStageSevenProcedurePayload right) =>
+                SameVersions(left, right) && left.Descriptor == right.Descriptor,
+            (HostStageSevenConfirmationPayload left, HostStageSevenConfirmationPayload right) =>
+                SameVersions(left, right) && left.Result == right.Result,
+            (HostStageSevenContainmentPayload left, HostStageSevenContainmentPayload right) =>
+                SameVersions(left, right) && left.PriorContainment == right.PriorContainment && left.CurrentContainment == right.CurrentContainment && left.Ritual == right.Ritual && left.Incident == right.Incident,
+            (HostStageSevenRepairPayload left, HostStageSevenRepairPayload right) =>
+                SameVersions(left, right) && left.PriorLine == right.PriorLine && left.CurrentLine == right.CurrentLine && left.PendingTransition == right.PendingTransition,
+            (HostStageSevenSawStartedPayload left, HostStageSevenSawStartedPayload right) =>
+                SameVersions(left, right) && left.Cycle == right.Cycle,
+            (HostStageSevenSawCompletedPayload left, HostStageSevenSawCompletedPayload right) =>
+                SameVersions(left, right) && left.Cycle == right.Cycle && left.Resolution == right.Resolution && left.CompletedAt == right.CompletedAt && left.QuotaSettlement == right.QuotaSettlement && left.QuotaWasApplied == right.QuotaWasApplied && left.QuotaSettlementDescriptor == right.QuotaSettlementDescriptor,
+            (HostStageSevenLineJamPayload left, HostStageSevenLineJamPayload right) =>
+                SameVersions(left, right) && left.LogId == right.LogId && left.Cause == right.Cause && left.EnteredAt == right.EnteredAt,
+            (HostStageSevenLineNoisePayload left, HostStageSevenLineNoisePayload right) =>
+                SameVersions(left, right) && left.Change == right.Change,
+            (HostStageSevenConfirmationConditionPayload left, HostStageSevenConfirmationConditionPayload right) =>
+                SameVersions(left, right) && left.Prior == right.Prior && left.Current == right.Current,
+            (HostStageSevenShiftCompletedPayload left, HostStageSevenShiftCompletedPayload right) =>
+                SameVersions(left, right) && left.CompletedAt == right.CompletedAt && left.HardDeadlineAt == right.HardDeadlineAt && left.Reason == right.Reason && left.AllLogsTerminal == right.AllLogsTerminal && left.HardDeadlineReached == right.HardDeadlineReached && left.ObjectivesSatisfied == right.ObjectivesSatisfied && left.ProcessedCount == right.ProcessedCount && left.WrittenOffCount == right.WrittenOffCount && left.TargetTotal == right.TargetTotal && left.TotalCreditedUnits == right.TotalCreditedUnits && left.MinimumCorrectlyProcessedAnomalies == right.MinimumCorrectlyProcessedAnomalies && left.CorrectlyProcessedAnomalies == right.CorrectlyProcessedAnomalies,
+            _ => false
+        };
+
+    private static bool SameVersions(HostStageSevenVersionedPayload left, HostStageSevenVersionedPayload right) =>
+        left.PriorStateVersion == right.PriorStateVersion && left.CurrentStateVersion == right.CurrentStateVersion;
 
     private sealed record PlannedPublication(EventTypeId EventType, HostStageSevenEventPayload Payload, IntentId? CausedByIntentId, HostStageSevenPublicationKind Kind, ShiftRuntimeState BeforeState, ShiftRuntimeState CurrentState);
 }
