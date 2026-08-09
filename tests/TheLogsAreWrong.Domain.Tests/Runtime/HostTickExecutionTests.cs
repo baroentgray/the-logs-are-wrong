@@ -155,6 +155,22 @@ public sealed class HostTickExecutionTests
     }
 
     [Fact]
+    public void Due_stage_one_repair_is_visible_to_stage_five_follow_up_and_stage_six_movement_in_the_same_tick()
+    {
+        var (state, dueTick) = RepairingFeedGateWithUnblockedIntake();
+        var inputs = CreateInputs(dueTick, initialShiftState: state, eventIds: ImmutableArray<EventId>.Empty);
+
+        var blocked = Assert.IsType<HostStageSevenBlocked>(Execute(inputs));
+
+        var repair = Assert.IsType<LineRepairCompleted>(blocked.StageOne.LineRepair.Result);
+        Assert.Same(repair, blocked.StageFive.LineRepairSource);
+        Assert.IsType<RepairPendingTransitionExecuted>(blocked.StageFive.RepairExecution);
+        Assert.Same(blocked.StageFive.FinalState, blocked.StageSix.InitialShiftState);
+        Assert.NotEmpty(blocked.StageSix.MovementSteps);
+        Assert.Equal(0, inputs.Journal.Count);
+    }
+
+    [Fact]
     public void Saw_quota_settlement_and_stage_five_jam_consequences_flow_to_stage_six_before_publication()
     {
         var (sawState, sawTick) = DueSawCycleWithSuccessor();
@@ -352,6 +368,18 @@ public sealed class HostTickExecutionTests
         var state = QueueForSaw(RuntimeFixture.CreateInitialState(), "log_01");
         var started = Assert.IsType<SawCycleStarted>(new SawCycleStartService().Start(state, ServerTick.From(10), Fx.Shift.Scheduler));
         return (QueueForSaw(started.State, "log_02"), started.Cycle.DueAt);
+    }
+
+    private static (ShiftRuntimeState State, ServerTick DueTick) RepairingFeedGateWithUnblockedIntake()
+    {
+        var state = RuntimeFixture.MoveToIntake(RuntimeFixture.CreateInitialState(), "log_01");
+        state = RuntimeFixture.MoveHost(state, "log_02", LogState.AT_FEED_GATE);
+        var jammed = Assert.IsType<LineJamEntered>(new LineJamEntryService().Enter(
+            state, JamCause.FEED_GATE_BLOCKED, ServerTick.From(10)));
+        var repairing = Assert.IsType<LineRepairStarted>(new LineRepairStartService().Start(
+            jammed.State, ServerTick.From(10), Fx.Shift.Scheduler));
+        var unblocked = RuntimeFixture.MoveHost(repairing.State, "log_01", LogState.QUEUED_FOR_SAW);
+        return (unblocked, repairing.Hold.DueAt);
     }
 
     private static (ShiftRuntimeState State, ServerTick DueTick) ExpiringDeadlineWithBlockedSawQueue(SchedulerConfiguration scheduler)
