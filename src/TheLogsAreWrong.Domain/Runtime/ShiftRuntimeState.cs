@@ -620,8 +620,19 @@ public sealed class ShiftRuntimeState
     }
 
     internal ShiftRuntimeState WithContainment(ContainmentRuntimeState containment, ActiveContainmentRitual? activeContainmentRitual)
+        => WithContainmentAndProcessedIntent(containment, activeContainmentRitual, null);
+
+    internal ShiftRuntimeState WithContainmentAndProcessedIntent(
+        ContainmentRuntimeState containment,
+        ActiveContainmentRitual? activeContainmentRitual,
+        IntentId? processedIntentId)
     {
         ArgumentNullException.ThrowIfNull(containment);
+        if (processedIntentId is { } intentId && intentId.IsDefault)
+        {
+            throw new ArgumentException("A processed intent identifier must be initialized.", nameof(processedIntentId));
+        }
+
         return new ShiftRuntimeState(
             ShiftId,
             ShiftSeed,
@@ -629,7 +640,7 @@ public sealed class ShiftRuntimeState
             Logs,
             _logIndexes,
             _capacities,
-            ProcessedIntentIds,
+            processedIntentId is { } acceptedIntentId ? ProcessedIntentIds.Add(acceptedIntentId) : ProcessedIntentIds,
             PendingFeed,
             Inventory,
             ProcedureProgressByLog,

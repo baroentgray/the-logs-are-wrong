@@ -70,13 +70,13 @@ public sealed class Tlaw038ArchitectureTests
     {
         var execute = Assert.Single(typeof(AcceptedIntentStageExecutor).GetMethods(BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly), method => method.Name == "Execute");
         Assert.Equal(
-            new[] { typeof(ShiftRuntimeState), typeof(AcceptedIntentTickBatch), typeof(SchedulerConfiguration), typeof(ImmutableHashSet<ItemId>), typeof(LineNoiseRuntimeState), typeof(AnomalyCatalog) },
+            new[] { typeof(ShiftRuntimeState), typeof(AcceptedIntentTickBatch), typeof(SchedulerConfiguration), typeof(ImmutableHashSet<ItemId>), typeof(LineNoiseRuntimeState), typeof(AnomalyCatalog), typeof(ContainmentConfiguration) },
             execute.GetParameters().Select(parameter => parameter.ParameterType));
         Assert.DoesNotContain(execute.GetParameters(), parameter =>
             parameter.ParameterType == typeof(object) || typeof(Delegate).IsAssignableFrom(parameter.ParameterType));
 
         var source = ReadSource("HostTickExecutionContracts.cs");
-        Assert.Contains("_stageTwo.Execute(stageOne.FinalState, acceptedIntents, schedulerConfiguration, activeTools, initialLineNoise, anomalyCatalog)", source, StringComparison.Ordinal);
+        Assert.Contains("_stageTwo.Execute(stageOne.FinalState, acceptedIntents, schedulerConfiguration, activeTools, initialLineNoise, anomalyCatalog, containmentConfiguration)", source, StringComparison.Ordinal);
         Assert.DoesNotContain("ProcedureActionStartService", source, StringComparison.Ordinal);
         Assert.DoesNotContain("Dictionary<", source, StringComparison.Ordinal);
         Assert.DoesNotContain("Registry", source, StringComparison.Ordinal);

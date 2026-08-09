@@ -83,7 +83,8 @@ public sealed class AcceptedLineRepairIntentStageTests
             Fx.Shift.Scheduler,
             ImmutableHashSet<ItemId>.Empty,
             LineNoiseRuntimeState.Create(state.ShiftId),
-            Fx.Anomalies);
+            Fx.Anomalies,
+            Fx.Shift.Containment);
 
     private static AuthoritativeAcceptedIntent Receipt(IntentEnvelope envelope, long sequence) =>
         new(envelope, RuntimeFixture.BoundActor, ServerTick.From(10), ServerReceiveSequence.From(sequence));

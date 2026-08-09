@@ -90,7 +90,8 @@ public sealed class AcceptedConfirmationTestStageTests
             Fx.Shift.Scheduler,
             activeTools,
             retainedNoise,
-            Fx.Anomalies);
+            Fx.Anomalies,
+            Fx.Shift.Containment);
 
     private static AuthoritativeAcceptedIntent Receipt(IntentEnvelope intent, long sequence) =>
         new(intent, RuntimeFixture.BoundActor, ServerTick.From(10), ServerReceiveSequence.From(sequence));

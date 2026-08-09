@@ -71,7 +71,17 @@ public sealed class LineRepairIntentStageOutcome : AcceptedIntentStageOutcome
     public LineRepairIntentResult Result { get; }
 }
 
-/// <summary>An action outside the eight owned stage-2 action IDs, retained without invoking any handler.</summary>
+/// <summary>A receipt owned by <see cref="ContainmentRitualIntentHandler"/> retaining its exact returned result.</summary>
+public sealed class ContainmentRitualIntentStageOutcome : AcceptedIntentStageOutcome
+{
+    internal ContainmentRitualIntentStageOutcome(ContainmentRitualIntentResult result)
+        : base(result.State) => Result = result;
+
+    /// <summary>The exact <see cref="ContainmentRitualIntentResult"/> returned by the containment-ritual handler.</summary>
+    public ContainmentRitualIntentResult Result { get; }
+}
+
+/// <summary>An action outside the nine owned stage-2 action IDs, retained without invoking any handler.</summary>
 public sealed class UnsupportedIntentStageOutcome : AcceptedIntentStageOutcome
 {
     internal UnsupportedIntentStageOutcome(ShiftRuntimeState state, IntentActionId action)
@@ -151,6 +161,7 @@ public sealed class AcceptedIntentStageExecutor
     private readonly ProcedureActionIntentHandler _procedureActionHandler = new();
     private readonly ConfirmationTestIntentHandler _confirmationTestHandler = new();
     private readonly LineRepairIntentHandler _lineRepairHandler = new();
+    private readonly ContainmentRitualIntentHandler _containmentRitualHandler = new();
 
     /// <summary>
     /// Executes stage 2 over <paramref name="batch"/> starting from <paramref name="initialState"/>. The batch must
@@ -162,7 +173,8 @@ public sealed class AcceptedIntentStageExecutor
         SchedulerConfiguration schedulerConfiguration,
         ImmutableHashSet<ItemId> activeTools,
         LineNoiseRuntimeState initialLineNoise,
-        AnomalyCatalog anomalyCatalog)
+        AnomalyCatalog anomalyCatalog,
+        ContainmentConfiguration containmentConfiguration)
     {
         ArgumentNullException.ThrowIfNull(initialState);
         ArgumentNullException.ThrowIfNull(batch);
@@ -170,6 +182,7 @@ public sealed class AcceptedIntentStageExecutor
         ArgumentNullException.ThrowIfNull(activeTools);
         ArgumentNullException.ThrowIfNull(initialLineNoise);
         ArgumentNullException.ThrowIfNull(anomalyCatalog);
+        ArgumentNullException.ThrowIfNull(containmentConfiguration);
         if (batch.ShiftId != initialState.ShiftId)
         {
             throw new ArgumentException(
@@ -182,7 +195,7 @@ public sealed class AcceptedIntentStageExecutor
         foreach (var receipt in batch.Intents)
         {
             var beforeState = currentState;
-            var outcome = EvaluateReceipt(beforeState, receipt, batch.CurrentTick, schedulerConfiguration, activeTools, initialLineNoise, anomalyCatalog);
+            var outcome = EvaluateReceipt(beforeState, receipt, batch.CurrentTick, schedulerConfiguration, activeTools, initialLineNoise, anomalyCatalog, containmentConfiguration);
             steps.Add(new AcceptedIntentStageStep(receipt, beforeState, outcome));
             currentState = outcome.State;
         }
@@ -197,7 +210,8 @@ public sealed class AcceptedIntentStageExecutor
         SchedulerConfiguration schedulerConfiguration,
         ImmutableHashSet<ItemId> activeTools,
         LineNoiseRuntimeState initialLineNoise,
-        AnomalyCatalog anomalyCatalog)
+        AnomalyCatalog anomalyCatalog,
+        ContainmentConfiguration containmentConfiguration)
     {
         var envelope = receipt.Envelope;
         var action = envelope.Action;
@@ -229,6 +243,12 @@ public sealed class AcceptedIntentStageExecutor
         {
             return new LineRepairIntentStageOutcome(
                 _lineRepairHandler.Handle(state, envelope, receipt.AuthoritativeActor, currentTick, schedulerConfiguration));
+        }
+
+        if (action == ContainmentRitualIntentActions.StartContainmentRitual)
+        {
+            return new ContainmentRitualIntentStageOutcome(
+                _containmentRitualHandler.Handle(state, envelope, receipt.AuthoritativeActor, currentTick, containmentConfiguration));
         }
 
         return new UnsupportedIntentStageOutcome(state, action);

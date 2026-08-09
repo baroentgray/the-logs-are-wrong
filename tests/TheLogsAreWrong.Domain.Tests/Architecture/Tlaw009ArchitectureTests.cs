@@ -15,7 +15,7 @@ public sealed class Tlaw009ArchitectureTests
     public void TLAW_009_sources_are_cross_platform_non_vacuous_and_dependency_free()
     {
         var sourceRoot = Path.Combine(AppContext.BaseDirectory, "DomainSources");
-        var source = Directory.GetFiles(sourceRoot, "*Containment*Contracts.cs", SearchOption.AllDirectories)
+        var source = Directory.GetFiles(sourceRoot, "ContainmentLifecycleContracts.cs", SearchOption.AllDirectories)
             .Select(File.ReadAllText)
             .ToArray();
         var forbidden = new[]

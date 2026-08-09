@@ -1,5 +1,6 @@
 using TheLogsAreWrong.Domain.Configuration;
 using TheLogsAreWrong.Domain.Enums;
+using TheLogsAreWrong.Domain.Identifiers;
 using TheLogsAreWrong.Domain.Primitives;
 using TheLogsAreWrong.Domain.Runtime;
 using TheLogsAreWrong.Domain.Time;
@@ -213,6 +214,28 @@ public sealed record ContainmentRitualStartRejected(ShiftRuntimeState State, Con
 public sealed class ContainmentRitualStartService
 {
     public ContainmentRitualStartResult Start(ShiftRuntimeState state, ServerTick currentTick, ContainmentConfiguration configuration)
+        => StartCore(state, currentTick, configuration, null);
+
+    /// <summary>Starts a ritual for one already-authoritative accepted intent, atomically retaining its exact identity.</summary>
+    internal ContainmentRitualStartResult StartForAuthoritativeIntent(
+        ShiftRuntimeState state,
+        ServerTick currentTick,
+        ContainmentConfiguration configuration,
+        IntentId processedIntentId)
+    {
+        if (processedIntentId.IsDefault)
+        {
+            throw new ArgumentException("Processed intent identifier must be initialized.", nameof(processedIntentId));
+        }
+
+        return StartCore(state, currentTick, configuration, processedIntentId);
+    }
+
+    private static ContainmentRitualStartResult StartCore(
+        ShiftRuntimeState state,
+        ServerTick currentTick,
+        ContainmentConfiguration configuration,
+        IntentId? processedIntentId)
     {
         ContainmentGuards.Validate(state, currentTick, configuration);
         if (state.ActiveContainmentRitual is not null)
@@ -227,7 +250,7 @@ public sealed class ContainmentRitualStartService
 
         var duration = ContainmentIntervals.Positive(configuration.RitualHoldSeconds, nameof(configuration.RitualHoldSeconds));
         var ritual = new ActiveContainmentRitual(currentTick, currentTick + duration, duration);
-        return new ContainmentRitualStarted(state.WithContainment(state.Containment, ritual), ritual);
+        return new ContainmentRitualStarted(state.WithContainmentAndProcessedIntent(state.Containment, ritual, processedIntentId), ritual);
     }
 }
 

@@ -60,7 +60,7 @@ public sealed class Tlaw030ArchitectureTests
 
         Assert.Equal(typeof(AcceptedIntentStageExecution), execute.ReturnType);
         Assert.Equal(
-            new[] { typeof(ShiftRuntimeState), typeof(AcceptedIntentTickBatch), typeof(SchedulerConfiguration), typeof(ImmutableHashSet<ItemId>), typeof(LineNoiseRuntimeState), typeof(AnomalyCatalog) },
+            new[] { typeof(ShiftRuntimeState), typeof(AcceptedIntentTickBatch), typeof(SchedulerConfiguration), typeof(ImmutableHashSet<ItemId>), typeof(LineNoiseRuntimeState), typeof(AnomalyCatalog), typeof(ContainmentConfiguration) },
             execute.GetParameters().Select(parameter => parameter.ParameterType));
         Assert.DoesNotContain(execute.GetParameters(), parameter =>
             parameter.ParameterType == typeof(object) ||
