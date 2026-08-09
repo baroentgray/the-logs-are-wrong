@@ -1,6 +1,7 @@
 using System.Collections.Immutable;
 using System.Reflection;
 using TheLogsAreWrong.Domain.Configuration;
+using TheLogsAreWrong.Domain.Containment;
 using TheLogsAreWrong.Domain.Enums;
 using TheLogsAreWrong.Domain.Events;
 using TheLogsAreWrong.Domain.Identifiers;
@@ -218,6 +219,65 @@ public sealed class HostTickExecutionTests
     }
 
     [Fact]
+    public void Backward_checkpoint_rejection_returns_the_exact_blocked_result_without_journal_append()
+    {
+        var state = RuntimeFixture.CreateInitialState();
+        var quota = QuotaRuntimeState.Create(Fx.Shift);
+        var progress = AdvanceActiveCheckpointTo(state, quota, ServerTick.From(2));
+        var inputs = CreateInputs(
+            ServerTick.Zero,
+            initialShiftState: state,
+            initialQuotaState: quota,
+            progression: progress.Progression,
+            lifecycle: progress.Lifecycle,
+            eventIds: ImmutableArray<EventId>.Empty);
+        var before = Snapshot(inputs.Journal);
+
+        var blocked = Assert.IsType<HostStageSevenBlocked>(Execute(inputs));
+
+        var rejection = Assert.IsType<HostTickCheckpointRejected>(blocked.CheckpointRejection);
+        Assert.Equal(HostTickCheckpointRejectionReason.BackwardTick, rejection.Reason);
+        Assert.Equal(inputs.CurrentTick, rejection.RequestedTick);
+        AssertJournalUnchanged(before, inputs.Journal);
+    }
+
+    [Fact]
+    public void Later_tick_after_shift_completed_checkpoint_returns_the_exact_blocked_result_without_journal_append()
+    {
+        var terminal = AllLogsWrittenOff();
+        var quota = QuotaRuntimeState.Create(Fx.Shift);
+        var initial = CreateInputs(
+            ServerTick.Zero,
+            initialShiftState: terminal,
+            initialQuotaState: quota,
+            journal: JournalAtState(terminal, ServerTick.Zero),
+            eventIds: EventIds("complete", 2));
+
+        var completed = Assert.IsType<HostStageSevenPublished>(Execute(initial));
+        var checkpoint = Assert.IsType<HostTickCheckpointAdvanced>(completed.Checkpoint);
+        Assert.True(checkpoint.Receipt.ShiftCompleted);
+        Assert.Contains(completed.Publications, publication => publication.Envelope.EventType == HostStageSevenEventTypes.ShiftCompleted);
+
+        var later = CreateInputs(
+            ServerTick.From(1),
+            initialShiftState: completed.FinalShiftState,
+            initialQuotaState: completed.FinalQuotaState,
+            initialMovementNoise: completed.StageSix.FinalMovementNoise,
+            initialLineNoise: completed.FinalLineNoise,
+            progression: checkpoint.Progression,
+            lifecycle: checkpoint.Receipt.Lifecycle,
+            journal: initial.Journal,
+            eventIds: ImmutableArray<EventId>.Empty);
+        var before = Snapshot(later.Journal);
+
+        var blocked = Assert.IsType<HostStageSevenBlocked>(Execute(later));
+
+        var rejection = Assert.IsType<HostTickCheckpointRejected>(blocked.CheckpointRejection);
+        Assert.Equal(HostTickCheckpointRejectionReason.ShiftCompleted, rejection.Reason);
+        AssertJournalUnchanged(before, later.Journal);
+    }
+
+    [Fact]
     public void Blocked_no_new_and_already_published_results_retain_existing_stage_seven_taxonomy_without_extra_append()
     {
         var blockedInputs = CreateInputs(ServerTick.From(1), eventIds: ImmutableArray<EventId>.Empty);
@@ -249,7 +309,122 @@ public sealed class HostTickExecutionTests
     }
 
     [Fact]
-    public void Equivalent_inputs_are_deterministic_and_event_id_changes_affect_only_existing_identity_fields()
+    public void Mixed_reachable_stage_publications_remain_in_frozen_host_order_with_exact_causation_and_payload_sources()
+    {
+        var (state, tick) = MixedStagePublicationState();
+        var quota = QuotaRuntimeState.Create(Fx.Shift);
+        var progress = AdvanceActiveCheckpointTo(state, quota, tick);
+        var accepted = AcceptedRoute(state, tick, "log_01", LogIntentActions.WriteOff);
+        var inputs = CreateInputs(
+            tick,
+            initialShiftState: state,
+            initialQuotaState: quota,
+            progression: progress.Progression,
+            lifecycle: progress.Lifecycle,
+            acceptedIntents: accepted,
+            journal: JournalAtState(state, ServerTick.Zero),
+            eventIds: EventIds("mixed", 5));
+
+        var published = Assert.IsType<HostStageSevenPublished>(Execute(inputs));
+
+        Assert.Equal(
+            [
+                HostStageSevenEventTypes.LogWrittenOff,
+                HostStageSevenEventTypes.ContainmentStateChanged,
+                HostStageSevenEventTypes.SawCycleCompleted,
+                HostStageSevenEventTypes.FeedScheduled,
+                HostStageSevenEventTypes.LineNoiseChanged
+            ],
+            published.Publications.Select(publication => publication.Envelope.EventType));
+
+        var writtenOff = Assert.IsType<ManualLogIntentAccepted>(Assert.IsType<ManualRoutingIntentStageOutcome>(published.StageTwo.Steps[0].Outcome).Result);
+        var writtenOffPublication = published.Publications[0].Envelope;
+        var writtenOffPayload = Assert.IsType<HostStageSevenLogTransitionPayload>(writtenOffPublication.Payload);
+        Assert.Equal(published.StageTwo.Steps[0].Receipt.Envelope.IntentId, writtenOffPublication.CausedByIntentId);
+        Assert.Equal((writtenOff.Transition.LogId, writtenOff.Transition.FromState, writtenOff.Transition.ToState, writtenOff.Transition.PriorStateVersion, writtenOff.Transition.CurrentStateVersion),
+            (writtenOffPayload.LogId, writtenOffPayload.FromState, writtenOffPayload.ToState, writtenOffPayload.PriorStateVersion, writtenOffPayload.CurrentStateVersion));
+
+        var containment = Assert.IsType<HostStageSevenContainmentPayload>(published.Publications[1].Envelope.Payload);
+        Assert.Null(published.Publications[1].Envelope.CausedByIntentId);
+        Assert.Equal((published.StageThree.Containment.BeforeState.Containment, published.StageThree.Containment.AfterState.Containment),
+            (containment.PriorContainment, containment.CurrentContainment));
+
+        var saw = Assert.IsType<SawCycleCompleted>(published.StageFour.Completion.Result);
+        var sawPayload = Assert.IsType<HostStageSevenSawCompletedPayload>(published.Publications[2].Envelope.Payload);
+        Assert.Equal((saw.Cycle, saw.CompletedAt, saw.Resolution), (sawPayload.Cycle, sawPayload.CompletedAt, sawPayload.Resolution));
+
+        var scheduled = Assert.IsType<NormalFeedScheduled>(published.StageFive.GenericNormalPlanning);
+        var schedulePayload = Assert.IsType<HostStageSevenFeedSchedulePayload>(published.Publications[3].Envelope.Payload);
+        Assert.Null(published.Publications[3].Envelope.CausedByIntentId);
+        Assert.Equal((scheduled.Schedule.LogId, scheduled.Schedule.Kind, scheduled.Schedule.ScheduledAt, scheduled.Schedule.DueAt, scheduled.Schedule.Delay),
+            (schedulePayload.LogId, schedulePayload.Kind, schedulePayload.ScheduledAt, schedulePayload.DueAt, schedulePayload.Delay));
+
+        var noise = Assert.IsType<LineNoiseEvaluatedWithChange>(published.StageSix.LineNoiseEvaluation);
+        var noisePayload = Assert.IsType<HostStageSevenLineNoisePayload>(published.Publications[4].Envelope.Payload);
+        Assert.Equal(noise.Change, noisePayload.Change);
+    }
+
+    [Fact]
+    public void Stage_five_admitted_feed_evidence_is_applied_to_stage_six_movement_noise_before_line_noise()
+    {
+        var published = Assert.IsType<HostStageSevenPublished>(Execute(CreateInputs(ServerTick.Zero)));
+
+        var feed = Assert.IsType<FeedDueResolved>(published.StageFive.FeedDue);
+        Assert.Equal(FeedDueDisposition.AdmittedToIntake, feed.Disposition);
+        var movementStep = Assert.Single(published.StageSix.MovementSteps);
+        var movement = Assert.IsType<MovementNoiseApplied>(movementStep.Result).State.LastAcceptedMovement!;
+        Assert.Equal(MovementNoiseAcceptedSource.FeedDueResolved, movement.Source);
+        Assert.Equal((feed.ConsumedSchedule.LogId, LogState.SCHEDULED, LogState.AT_INTAKE, feed.PriorStateVersion, feed.CurrentStateVersion),
+            (movement.LogId, movement.SourceState, movement.DestinationState, movement.PriorStateVersion, movement.CurrentStateVersion));
+        Assert.Same(published.StageSix.FinalMovementNoise, published.StageSix.LineNoiseStep.MovementNoiseState);
+    }
+
+    [Fact]
+    public void Composer_preserves_all_immutable_caller_inputs_and_mutates_only_the_supplied_journal_on_publication()
+    {
+        var inputs = CreateInputs(ServerTick.Zero);
+        var initialState = inputs.InitialShiftState;
+        var initialQuota = inputs.InitialQuotaState;
+        var initialMovement = inputs.InitialMovementNoise;
+        var initialLineNoise = inputs.InitialLineNoise;
+        var progression = inputs.Progression;
+        var lifecycle = inputs.Lifecycle;
+        var batch = inputs.AcceptedIntents;
+        var activeTools = inputs.ActiveTools;
+        var scheduler = inputs.SchedulerConfiguration;
+        var shift = inputs.ShiftConfiguration;
+        var containment = inputs.ContainmentConfiguration;
+        var anomalies = inputs.AnomalyCatalog;
+        var journalBefore = Snapshot(inputs.Journal);
+
+        var published = Assert.IsType<HostStageSevenPublished>(Execute(inputs));
+
+        Assert.Same(initialState, inputs.InitialShiftState);
+        Assert.Same(initialQuota, inputs.InitialQuotaState);
+        Assert.Same(initialMovement, inputs.InitialMovementNoise);
+        Assert.Same(initialLineNoise, inputs.InitialLineNoise);
+        Assert.Same(progression, inputs.Progression);
+        Assert.Same(lifecycle, inputs.Lifecycle);
+        Assert.Same(batch, inputs.AcceptedIntents);
+        Assert.Same(activeTools, inputs.ActiveTools);
+        Assert.Same(scheduler, inputs.SchedulerConfiguration);
+        Assert.Same(shift, inputs.ShiftConfiguration);
+        Assert.Same(containment, inputs.ContainmentConfiguration);
+        Assert.Same(anomalies, inputs.AnomalyCatalog);
+        Assert.Same(initialState, published.StageOne.InitialState);
+        Assert.Same(initialQuota, published.StageFour.InitialQuotaState);
+        Assert.Same(initialMovement, published.StageSix.InitialMovementNoise);
+        Assert.Same(initialLineNoise, published.StageSix.InitialLineNoise);
+        Assert.Same(progression, published.StageSix.Progression);
+        Assert.Same(lifecycle, published.StageSix.Lifecycle);
+        Assert.Same(batch, published.StageTwo.Batch);
+        Assert.Same(activeTools, published.StageSix.ActiveTools);
+        Assert.Equal(0, journalBefore.Count);
+        Assert.Equal(published.Publications.Length, inputs.Journal.Count);
+    }
+
+    [Fact]
+    public void Equivalent_inputs_are_independently_deterministic_and_event_id_changes_affect_only_identity()
     {
         var first = CreateInputs(ServerTick.Zero, eventIds: EventIds("first", 4));
         var second = CreateInputs(ServerTick.Zero, eventIds: EventIds("first", 4));
@@ -261,11 +436,13 @@ public sealed class HostTickExecutionTests
 
         Assert.True(firstResult.FinalShiftState.ValueEquals(secondResult.FinalShiftState));
         Assert.True(firstResult.FinalQuotaState.ValueEquals(secondResult.FinalQuotaState));
-        Assert.Equal(first.Journal.Events.Select(EventSemantics), second.Journal.Events.Select(EventSemantics));
-        Assert.Equal(first.Journal.Events.Select(envelope => envelope.EventType), changedIds.Journal.Events.Select(envelope => envelope.EventType));
-        Assert.NotEqual(first.Journal.Events.Select(envelope => envelope.EventId), changedIds.Journal.Events.Select(envelope => envelope.EventId));
+        AssertEquivalentExecution(firstResult, secondResult);
+        AssertJournalSemanticsEqual(first.Journal.Events, second.Journal.Events);
+        AssertJournalSemanticsEqual(first.Journal.Events, changedIds.Journal.Events);
+        Assert.All(first.Journal.Events.Zip(changedIds.Journal.Events), pair => Assert.NotEqual(pair.First.EventId, pair.Second.EventId));
         Assert.True(firstResult.FinalShiftState.ValueEquals(changedResult.FinalShiftState));
         Assert.True(firstResult.FinalQuotaState.ValueEquals(changedResult.FinalQuotaState));
+        AssertEquivalentExecution(firstResult, changedResult);
         Assert.Same(first.InitialShiftState, firstResult.StageOne.InitialState);
         Assert.Same(first.AcceptedIntents, firstResult.StageTwo.Batch);
         Assert.Same(first.ActiveTools, firstResult.StageSix.ActiveTools);
@@ -370,6 +547,37 @@ public sealed class HostTickExecutionTests
         return (QueueForSaw(started.State, "log_02"), started.Cycle.DueAt);
     }
 
+    private static ShiftRuntimeState AllLogsWrittenOff()
+    {
+        var state = RuntimeFixture.CreateInitialState();
+        foreach (var log in state.Logs)
+        {
+            state = RuntimeFixture.MoveToIntake(state, log.LogId.ToString());
+            state = RuntimeFixture.MoveHost(state, log.LogId.ToString(), LogState.HELD_WRITTEN_OFF);
+        }
+
+        return state;
+    }
+
+    private static (ShiftRuntimeState State, ServerTick Tick) MixedStagePublicationState()
+    {
+        // The setup uses only established services: an armed containment deadline, one active saw cycle,
+        // and a learning intake deadline. At tick 100 stage 2 vacates intake, stage 3 advances containment,
+        // stage 4 completes saw work, stage 5 schedules the next normal feed, and stage 6 observes the pulse.
+        var state = RuntimeFixture.MoveToIntake(RuntimeFixture.CreateInitialState(), "log_03");
+        state = RuntimeFixture.MoveHost(state, "log_03", LogState.HELD_WRITTEN_OFF);
+        state = Assert.IsType<ContainmentStableIntervalArmed>(new ContainmentAdvanceService().Advance(
+            state, ServerTick.From(10), Fx.Shift.Containment, Fx.Anomalies)).State;
+        state = QueueForSaw(state, "log_02");
+        var planned = Assert.IsType<NormalFeedScheduled>(new NormalFeedPlanningService().Plan(
+            state, ServerTick.From(35), Fx.Shift.Scheduler));
+        var admitted = Assert.IsType<FeedDueResolved>(new FeedDueResolutionService().Resolve(planned.State, ServerTick.From(40)));
+        state = Assert.IsType<IntakeDeadlineStarted>(new IntakeDeadlineStartService().Start(
+            admitted.State, admitted, Fx.Shift.Profiles[LearningId])).State;
+        state = Assert.IsType<SawCycleStarted>(new SawCycleStartService().Start(state, ServerTick.From(94), Fx.Shift.Scheduler)).State;
+        return (state, ServerTick.From(100));
+    }
+
     private static (ShiftRuntimeState State, ServerTick DueTick) RepairingFeedGateWithUnblockedIntake()
     {
         var state = RuntimeFixture.MoveToIntake(RuntimeFixture.CreateInitialState(), "log_01");
@@ -421,8 +629,118 @@ public sealed class HostTickExecutionTests
         Assert.Equal(expected.Events, actual.Events);
     }
 
-    private static (EventTypeId Type, EventSequence Sequence, ServerTick Tick, StateVersion Version) EventSemantics(EventEnvelope envelope) =>
-        (envelope.EventType, envelope.Sequence, envelope.ServerTick, envelope.StateVersionAfter);
+    private static InMemoryEventJournal JournalAtState(ShiftRuntimeState state, ServerTick tick)
+    {
+        var journal = new InMemoryEventJournal(state.ShiftId);
+        for (var version = 1L; version <= state.StateVersion.Value; version++)
+        {
+            journal.Append(new EventEnvelope
+            {
+                ShiftId = state.ShiftId,
+                EventId = EventId.From($"history_{version}"),
+                Sequence = EventSequence.From(version),
+                ServerTick = tick,
+                StateVersionAfter = StateVersion.From(version),
+                EventType = EventTypeId.From("History"),
+                Payload = HistoryPayload.Instance
+            });
+        }
+
+        return journal;
+    }
+
+    private static (HostTickProgressionEvidence Progression, ShiftLifecycleRuntimeState Lifecycle) AdvanceActiveCheckpointTo(
+        ShiftRuntimeState state,
+        QuotaRuntimeState quota,
+        ServerTick targetTick)
+    {
+        var service = new HostTickCompletionCheckpointService();
+        var progression = HostTickProgressionEvidence.Create(state.ShiftId);
+        var lifecycle = ShiftLifecycleRuntimeState.Create(Fx.Shift, LearningId);
+        for (var value = 0L; value < targetTick.Value; value++)
+        {
+            var advanced = Assert.IsType<HostTickCheckpointAdvanced>(service.Complete(
+                progression, lifecycle, state, quota, ServerTick.From(value), Fx.Shift));
+            progression = advanced.Progression;
+            lifecycle = advanced.Receipt.Lifecycle;
+        }
+
+        return (progression, lifecycle);
+    }
+
+    private static void AssertEquivalentExecution(HostStageSevenPublished left, HostStageSevenPublished right)
+    {
+        Assert.True(left.StageOne.FinalState.ValueEquals(right.StageOne.FinalState));
+        Assert.True(left.StageTwo.FinalState.ValueEquals(right.StageTwo.FinalState));
+        Assert.True(left.StageThree.FinalState.ValueEquals(right.StageThree.FinalState));
+        Assert.True(left.StageFour.FinalShiftState.ValueEquals(right.StageFour.FinalShiftState));
+        Assert.True(left.StageFour.FinalQuotaState.ValueEquals(right.StageFour.FinalQuotaState));
+        Assert.True(left.StageFive.FinalState.ValueEquals(right.StageFive.FinalState));
+        Assert.True(left.StageSix.FinalShiftState.ValueEquals(right.StageSix.FinalShiftState));
+        Assert.True(left.StageSix.FinalQuotaState.ValueEquals(right.StageSix.FinalQuotaState));
+        Assert.True(left.StageSix.FinalMovementNoise.ValueEquals(right.StageSix.FinalMovementNoise));
+        Assert.True(left.StageSix.FinalLineNoise.ValueEquals(right.StageSix.FinalLineNoise));
+        Assert.Equal(left.StageSix.Checkpoint.GetType(), right.StageSix.Checkpoint.GetType());
+
+        var leftCheckpoint = Assert.IsType<HostTickCheckpointAdvanced>(left.StageSix.Checkpoint);
+        var rightCheckpoint = Assert.IsType<HostTickCheckpointAdvanced>(right.StageSix.Checkpoint);
+        Assert.Equal(leftCheckpoint.Receipt.CompletedTick, rightCheckpoint.Receipt.CompletedTick);
+        Assert.Equal(leftCheckpoint.Receipt.Evaluation.GetType(), rightCheckpoint.Receipt.Evaluation.GetType());
+        Assert.True(leftCheckpoint.Receipt.Lifecycle.ValueEquals(rightCheckpoint.Receipt.Lifecycle));
+        Assert.True(leftCheckpoint.Receipt.ShiftState.ValueEquals(rightCheckpoint.Receipt.ShiftState));
+        Assert.True(leftCheckpoint.Receipt.QuotaState.ValueEquals(rightCheckpoint.Receipt.QuotaState));
+        Assert.Equal(left.GetType(), right.GetType());
+        Assert.Equal(left.Publications.Length, right.Publications.Length);
+        Assert.Equal(left.Rejections.Length, right.Rejections.Length);
+    }
+
+    private static void AssertJournalSemanticsEqual(IEnumerable<EventEnvelope> left, IEnumerable<EventEnvelope> right)
+    {
+        var leftEvents = left.ToArray();
+        var rightEvents = right.ToArray();
+        Assert.Equal(leftEvents.Length, rightEvents.Length);
+        for (var index = 0; index < leftEvents.Length; index++)
+        {
+            Assert.Equal(leftEvents[index].Sequence, rightEvents[index].Sequence);
+            Assert.Equal(leftEvents[index].ServerTick, rightEvents[index].ServerTick);
+            Assert.Equal(leftEvents[index].StateVersionAfter, rightEvents[index].StateVersionAfter);
+            Assert.Equal(leftEvents[index].EventType, rightEvents[index].EventType);
+            Assert.Equal(leftEvents[index].CausedByIntentId, rightEvents[index].CausedByIntentId);
+            Assert.True(SamePayloadSemantics(leftEvents[index].Payload, rightEvents[index].Payload));
+        }
+    }
+
+    private static bool SamePayloadSemantics(IDomainEventPayload left, IDomainEventPayload right) =>
+        (left, right) switch
+        {
+            (HostStageSevenLogTransitionPayload a, HostStageSevenLogTransitionPayload b) =>
+                SameVersions(a, b) && a.LogId == b.LogId && a.FromState == b.FromState && a.ToState == b.ToState,
+            (HostStageSevenFeedSchedulePayload a, HostStageSevenFeedSchedulePayload b) =>
+                SameVersions(a, b) && a.LogId == b.LogId && a.Kind == b.Kind && a.ScheduledAt == b.ScheduledAt && a.DueAt == b.DueAt && a.Delay == b.Delay && a.CausedByIntentId == b.CausedByIntentId,
+            (HostStageSevenIntakeDeadlinePayload a, HostStageSevenIntakeDeadlinePayload b) =>
+                SameVersions(a, b) && a.LogId == b.LogId && a.StartedAt == b.StartedAt && a.DueAt == b.DueAt && a.Duration == b.Duration && a.OccurredAt == b.OccurredAt,
+            (HostStageSevenAutoRoutePayload a, HostStageSevenAutoRoutePayload b) =>
+                SameVersions(a, b) && a.LogId == b.LogId && a.AttemptedAt == b.AttemptedAt && a.Outcome == b.Outcome && a.Source == b.Source && a.Destination == b.Destination && a.BlockReason == b.BlockReason && a.FollowUp == b.FollowUp,
+            (HostStageSevenProcedurePayload a, HostStageSevenProcedurePayload b) => SameVersions(a, b) && a.Descriptor == b.Descriptor,
+            (HostStageSevenConfirmationPayload a, HostStageSevenConfirmationPayload b) => SameVersions(a, b) && a.Result == b.Result,
+            (HostStageSevenContainmentPayload a, HostStageSevenContainmentPayload b) => SameVersions(a, b) && a.PriorContainment == b.PriorContainment && a.CurrentContainment == b.CurrentContainment && a.Ritual == b.Ritual && a.Incident == b.Incident,
+            (HostStageSevenRepairPayload a, HostStageSevenRepairPayload b) => SameVersions(a, b) && a.PriorLine == b.PriorLine && a.CurrentLine == b.CurrentLine && a.PendingTransition == b.PendingTransition,
+            (HostStageSevenSawStartedPayload a, HostStageSevenSawStartedPayload b) => SameVersions(a, b) && a.Cycle == b.Cycle,
+            (HostStageSevenSawCompletedPayload a, HostStageSevenSawCompletedPayload b) =>
+                SameVersions(a, b) && a.Cycle == b.Cycle && a.Resolution == b.Resolution && a.CompletedAt == b.CompletedAt && a.QuotaSettlement == b.QuotaSettlement && a.QuotaApplicationLogId == b.QuotaApplicationLogId && a.QuotaApplicationOutcome == b.QuotaApplicationOutcome && a.AcceptedQuotaSettlement == b.AcceptedQuotaSettlement && a.DuplicateQuotaSettlementLogId == b.DuplicateQuotaSettlementLogId,
+            (HostStageSevenLineJamPayload a, HostStageSevenLineJamPayload b) => SameVersions(a, b) && a.LogId == b.LogId && a.Cause == b.Cause && a.EnteredAt == b.EnteredAt,
+            (HostStageSevenLineNoisePayload a, HostStageSevenLineNoisePayload b) => SameVersions(a, b) && a.Change == b.Change,
+            (HostStageSevenConfirmationConditionPayload a, HostStageSevenConfirmationConditionPayload b) => SameVersions(a, b) && a.Prior == b.Prior && a.Current == b.Current,
+            (HostStageSevenShiftCompletedPayload a, HostStageSevenShiftCompletedPayload b) =>
+                SameVersions(a, b) && a.CompletedAt == b.CompletedAt && a.HardDeadlineAt == b.HardDeadlineAt && a.Reason == b.Reason && a.AllLogsTerminal == b.AllLogsTerminal && a.HardDeadlineReached == b.HardDeadlineReached && a.ObjectivesSatisfied == b.ObjectivesSatisfied && a.ProcessedCount == b.ProcessedCount && a.WrittenOffCount == b.WrittenOffCount && a.TargetTotal == b.TargetTotal && a.TotalCreditedUnits == b.TotalCreditedUnits && a.MinimumCorrectlyProcessedAnomalies == b.MinimumCorrectlyProcessedAnomalies && a.CorrectlyProcessedAnomalies == b.CorrectlyProcessedAnomalies && SameSpeciesValues(a.TargetBySpecies, b.TargetBySpecies) && SameSpeciesValues(a.CreditedBySpecies, b.CreditedBySpecies),
+            _ => false
+        };
+
+    private static bool SameVersions(HostStageSevenVersionedPayload left, HostStageSevenVersionedPayload right) =>
+        left.PriorStateVersion == right.PriorStateVersion && left.CurrentStateVersion == right.CurrentStateVersion;
+
+    private static bool SameSpeciesValues(ImmutableDictionary<SpeciesId, int> left, ImmutableDictionary<SpeciesId, int> right) =>
+        left.Count == right.Count && left.All(entry => right.TryGetValue(entry.Key, out var value) && value == entry.Value);
 
     private sealed record ComposerInputs(
         ShiftRuntimeState InitialShiftState,
@@ -447,4 +765,10 @@ public sealed class HostTickExecutionTests
         ServerTick LastTick,
         StateVersion LastStateVersion,
         EventEnvelope[] Events);
+
+    private sealed class HistoryPayload : IDomainEventPayload
+    {
+        public static readonly HistoryPayload Instance = new();
+        private HistoryPayload() { }
+    }
 }
