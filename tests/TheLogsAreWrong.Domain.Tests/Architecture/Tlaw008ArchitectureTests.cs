@@ -24,7 +24,7 @@ public sealed class Tlaw008ArchitectureTests
             "HostLogTransitionService", "LogTransitionExecutor", "ManualLogIntentHandler", "IEventJournal", "QuotaSettlementService.Apply", "EffectExecutor"
         };
 
-        Assert.Equal(2, source.Length);
+        Assert.Equal(3, source.Length);
         Assert.All(forbidden, token => Assert.DoesNotContain(source, file => file.Contains(token, StringComparison.Ordinal)));
     }
 

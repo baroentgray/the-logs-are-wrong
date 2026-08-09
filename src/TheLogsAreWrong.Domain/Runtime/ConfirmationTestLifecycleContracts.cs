@@ -45,6 +45,21 @@ public sealed class ConfirmationTestStartService
 {
     public ConfirmationTestStartResult Start(ShiftRuntimeState state, LogId logId, ImmutableHashSet<ItemId> activeTools, ServerTick tick, LineNoiseRuntimeState lineNoiseRuntime, AnomalyCatalog catalog)
     {
+        return StartCore(state, logId, activeTools, tick, lineNoiseRuntime, catalog, null);
+    }
+
+    internal ConfirmationTestStartResult StartForAuthoritativeIntent(ShiftRuntimeState state, LogId logId, ImmutableHashSet<ItemId> activeTools, ServerTick tick, LineNoiseRuntimeState lineNoiseRuntime, AnomalyCatalog catalog, IntentId processedIntentId)
+    {
+        if (processedIntentId.IsDefault)
+        {
+            throw new ArgumentException("Processed intent identifier must be initialized.", nameof(processedIntentId));
+        }
+
+        return StartCore(state, logId, activeTools, tick, lineNoiseRuntime, catalog, processedIntentId);
+    }
+
+    private static ConfirmationTestStartResult StartCore(ShiftRuntimeState state, LogId logId, ImmutableHashSet<ItemId> activeTools, ServerTick tick, LineNoiseRuntimeState lineNoiseRuntime, AnomalyCatalog catalog, IntentId? processedIntentId)
+    {
         Guard(state, activeTools, tick, catalog); ValidateStartLineNoise(state, lineNoiseRuntime, tick); if (logId.IsDefault) throw new ArgumentException(nameof(logId));
         if (!state.TryGetLog(logId, out var log)) return new ConfirmationTestStartRejected(state, ConfirmationTestStartRejectionReason.TargetNotFound);
         if (log.State != LogState.AT_INTAKE) return new ConfirmationTestStartRejected(state, ConfirmationTestStartRejectionReason.TargetNotAtIntake);
@@ -54,7 +69,9 @@ public sealed class ConfirmationTestStartService
         var resolvedPlan = plan!;
         if (!Valid(state, resolvedPlan, activeTools, lineNoiseRuntime.Current, out var tools)) return new ConfirmationTestStartRejected(state, tools ? ConfirmationTestStartRejectionReason.RequiredLineNoiseNotMet : ConfirmationTestStartRejectionReason.MissingRequiredTool);
         var active = new ActiveConfirmationTest(logId, resolvedPlan.AnomalyId, resolvedPlan, SimulationDuration.Zero, tick, tick + resolvedPlan.Duration, true, tick);
-        return new ConfirmationTestStarted(state.WithActiveConfirmation(active));
+        return new ConfirmationTestStarted(processedIntentId is { } intentId
+            ? state.StartActiveConfirmationForAuthoritativeIntent(active, intentId)
+            : state.WithActiveConfirmation(active));
     }
     internal static void Guard(ShiftRuntimeState state, ImmutableHashSet<ItemId> tools, ServerTick tick, AnomalyCatalog catalog) { ArgumentNullException.ThrowIfNull(state); ArgumentNullException.ThrowIfNull(tools); ArgumentNullException.ThrowIfNull(catalog); if (tick.IsDefault || tools.Any(tool => tool.IsDefault)) throw new ArgumentException("Invalid confirmation input."); }
     private static void ValidateStartLineNoise(ShiftRuntimeState state, LineNoiseRuntimeState runtime, ServerTick tick)

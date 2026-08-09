@@ -1,6 +1,8 @@
 using System.Collections.Immutable;
 using TheLogsAreWrong.Domain.Configuration;
+using TheLogsAreWrong.Domain.Identifiers;
 using TheLogsAreWrong.Domain.Intents;
+using TheLogsAreWrong.Domain.Line;
 using TheLogsAreWrong.Domain.Primitives;
 using TheLogsAreWrong.Domain.Scheduler;
 
@@ -47,6 +49,16 @@ public sealed class ProcedureActionIntentStageOutcome : AcceptedIntentStageOutco
 
     /// <summary>The exact <see cref="ProcedureActionIntentResult"/> returned by the procedure-action handler.</summary>
     public ProcedureActionIntentResult Result { get; }
+}
+
+/// <summary>A receipt owned by <see cref="ConfirmationTestIntentHandler"/> retaining its exact returned result.</summary>
+public sealed class ConfirmationTestIntentStageOutcome : AcceptedIntentStageOutcome
+{
+    internal ConfirmationTestIntentStageOutcome(ConfirmationTestIntentResult result)
+        : base(result.State) => Result = result;
+
+    /// <summary>The exact <see cref="ConfirmationTestIntentResult"/> returned by the confirmation handler.</summary>
+    public ConfirmationTestIntentResult Result { get; }
 }
 
 /// <summary>An action outside the six owned stage-2 actions, retained without invoking any handler.</summary>
@@ -127,6 +139,7 @@ public sealed class AcceptedIntentStageExecutor
     private readonly ManualLogIntentHandler _manualRoutingHandler = new();
     private readonly EarlyFeedIntentHandler _earlyFeedHandler = new();
     private readonly ProcedureActionIntentHandler _procedureActionHandler = new();
+    private readonly ConfirmationTestIntentHandler _confirmationTestHandler = new();
 
     /// <summary>
     /// Executes stage 2 over <paramref name="batch"/> starting from <paramref name="initialState"/>. The batch must
@@ -136,11 +149,15 @@ public sealed class AcceptedIntentStageExecutor
         ShiftRuntimeState initialState,
         AcceptedIntentTickBatch batch,
         SchedulerConfiguration schedulerConfiguration,
+        ImmutableHashSet<ItemId> activeTools,
+        LineNoiseRuntimeState initialLineNoise,
         AnomalyCatalog anomalyCatalog)
     {
         ArgumentNullException.ThrowIfNull(initialState);
         ArgumentNullException.ThrowIfNull(batch);
         ArgumentNullException.ThrowIfNull(schedulerConfiguration);
+        ArgumentNullException.ThrowIfNull(activeTools);
+        ArgumentNullException.ThrowIfNull(initialLineNoise);
         ArgumentNullException.ThrowIfNull(anomalyCatalog);
         if (batch.ShiftId != initialState.ShiftId)
         {
@@ -154,7 +171,7 @@ public sealed class AcceptedIntentStageExecutor
         foreach (var receipt in batch.Intents)
         {
             var beforeState = currentState;
-            var outcome = EvaluateReceipt(beforeState, receipt, batch.CurrentTick, schedulerConfiguration, anomalyCatalog);
+            var outcome = EvaluateReceipt(beforeState, receipt, batch.CurrentTick, schedulerConfiguration, activeTools, initialLineNoise, anomalyCatalog);
             steps.Add(new AcceptedIntentStageStep(receipt, beforeState, outcome));
             currentState = outcome.State;
         }
@@ -167,6 +184,8 @@ public sealed class AcceptedIntentStageExecutor
         AuthoritativeAcceptedIntent receipt,
         ServerTick currentTick,
         SchedulerConfiguration schedulerConfiguration,
+        ImmutableHashSet<ItemId> activeTools,
+        LineNoiseRuntimeState initialLineNoise,
         AnomalyCatalog anomalyCatalog)
     {
         var envelope = receipt.Envelope;
@@ -187,6 +206,12 @@ public sealed class AcceptedIntentStageExecutor
         {
             return new ProcedureActionIntentStageOutcome(
                 _procedureActionHandler.Handle(state, envelope, receipt.AuthoritativeActor, currentTick, anomalyCatalog));
+        }
+
+        if (action == ConfirmationIntentActions.StartConfirmationTest)
+        {
+            return new ConfirmationTestIntentStageOutcome(
+                _confirmationTestHandler.Handle(state, envelope, receipt.AuthoritativeActor, currentTick, activeTools, initialLineNoise, anomalyCatalog));
         }
 
         return new UnsupportedIntentStageOutcome(state, action);

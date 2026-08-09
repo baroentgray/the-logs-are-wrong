@@ -2,6 +2,7 @@ using System.Collections.Immutable;
 using TheLogsAreWrong.Domain.Configuration;
 using TheLogsAreWrong.Domain.Identifiers;
 using TheLogsAreWrong.Domain.Intents;
+using TheLogsAreWrong.Domain.Line;
 using TheLogsAreWrong.Domain.Primitives;
 using TheLogsAreWrong.Domain.Runtime;
 using TheLogsAreWrong.Domain.Sequencing;
@@ -80,6 +81,8 @@ public sealed class AcceptedProcedureActionStageTests
             state,
             AcceptedIntentTickBatchFactory.Create(state.ShiftId, ServerTick.From(10), ImmutableArray.Create(receipts)),
             Fx.Shift.Scheduler,
+            ImmutableHashSet<ItemId>.Empty,
+            LineNoiseRuntimeState.Create(state.ShiftId),
             Fx.Anomalies);
 
     private static AuthoritativeAcceptedIntent Receipt(IntentEnvelope intent, long sequence) =>

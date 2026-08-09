@@ -19,7 +19,7 @@ public sealed class Tlaw036ArchitectureTests
                 "FeedScheduled", "EarlyFeedRequested", "LogPlacedAtFeedGate", "LogAdmittedToIntake",
                 "IntakeDeadlineStarted", "IntakeDeadlineExpired", "AutoRouteAttempted", "LineJammed",
                 "RepairCompleted", "SawCycleStarted", "SawCycleCompleted", "LineNoiseChanged", "LogRouted",
-                "LogWrittenOff", "ProcedureActionStarted", "ProcedureActionCompleted", "ConfirmationTestCompleted", "ContainmentRitualCompleted",
+                "LogWrittenOff", "ProcedureActionStarted", "ProcedureActionCompleted", "ConfirmationTestStarted", "ConfirmationTestCompleted", "ContainmentRitualCompleted",
                 "ContainmentStateChanged", "ConfirmationConditionUpdated", "ShiftCompleted"
             ],
             typeof(HostStageSevenEventTypes).GetFields(BindingFlags.Public | BindingFlags.Static)
@@ -47,6 +47,7 @@ public sealed class Tlaw036ArchitectureTests
         Assert.True(typeof(HostStageSevenLogTransitionPayload).IsSealed);
         Assert.True(typeof(HostStageSevenFeedSchedulePayload).IsSealed);
         Assert.True(typeof(HostStageSevenProcedureActionStartedPayload).IsSealed);
+        Assert.True(typeof(HostStageSevenConfirmationTestStartedPayload).IsSealed);
         Assert.True(typeof(HostStageSevenSawCompletedPayload).IsSealed);
         Assert.True(typeof(HostStageSevenShiftCompletedPayload).IsSealed);
         Assert.True(typeof(HostStageSevenNoNewPublication).IsSealed);

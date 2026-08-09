@@ -599,9 +599,24 @@ public sealed class ShiftRuntimeState
 
     public bool TryGetConfirmationResult(LogId logId, out ConfirmationTestResult result) => ConfirmationResultsByLog.TryGetValue(logId, out result!);
     internal ShiftRuntimeState WithActiveConfirmation(ActiveConfirmationTest? active, ConfirmationTestResult? result = null)
+        => WithActiveConfirmationCore(active, result, null);
+
+    internal ShiftRuntimeState StartActiveConfirmationForAuthoritativeIntent(ActiveConfirmationTest active, IntentId processedIntentId)
+    {
+        ArgumentNullException.ThrowIfNull(active);
+        if (processedIntentId.IsDefault)
+        {
+            throw new ArgumentException("Processed intent identifier must be initialized.", nameof(processedIntentId));
+        }
+
+        return WithActiveConfirmationCore(active, null, processedIntentId);
+    }
+
+    private ShiftRuntimeState WithActiveConfirmationCore(ActiveConfirmationTest? active, ConfirmationTestResult? result, IntentId? processedIntentId)
     {
         var results = result is null ? ConfirmationResultsByLog : ConfirmationResultsByLog.Add(result.LogId, result);
-        return new ShiftRuntimeState(ShiftId, ShiftSeed, StateVersion.Next(), Logs, _logIndexes, _capacities, ProcessedIntentIds, PendingFeed, Inventory, ProcedureProgressByLog, ActiveProcedureHold, active, results, Containment, ActiveContainmentRitual, Line, ActiveIntakeDeadline, ActiveSawCycle);
+        var processed = processedIntentId is { } intentId ? ProcessedIntentIds.Add(intentId) : ProcessedIntentIds;
+        return new ShiftRuntimeState(ShiftId, ShiftSeed, StateVersion.Next(), Logs, _logIndexes, _capacities, processed, PendingFeed, Inventory, ProcedureProgressByLog, ActiveProcedureHold, active, results, Containment, ActiveContainmentRitual, Line, ActiveIntakeDeadline, ActiveSawCycle);
     }
 
     internal ShiftRuntimeState WithContainment(ContainmentRuntimeState containment, ActiveContainmentRitual? activeContainmentRitual)

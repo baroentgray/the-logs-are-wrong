@@ -61,7 +61,7 @@ public sealed class HostTickExecutionService
             anomalyCatalog);
 
         var stageOne = _stageOne.Execute(initialShiftState, currentTick, anomalyCatalog, containmentConfiguration);
-        var stageTwo = _stageTwo.Execute(stageOne.FinalState, acceptedIntents, schedulerConfiguration, anomalyCatalog);
+        var stageTwo = _stageTwo.Execute(stageOne.FinalState, acceptedIntents, schedulerConfiguration, activeTools, initialLineNoise, anomalyCatalog);
         var stageThree = _stageThree.Execute(stageTwo.FinalState, currentTick, containmentConfiguration, anomalyCatalog);
         var stageFour = _stageFour.Execute(stageThree.FinalState, initialQuotaState, currentTick, schedulerConfiguration, anomalyCatalog);
         var stageFive = _stageFive.Execute(stageOne, stageTwo, stageThree, stageFour, currentTick, schedulerConfiguration, selectedProfile);
