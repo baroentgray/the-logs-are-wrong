@@ -32,6 +32,7 @@ public static class HostStageSevenEventTypes
     public static readonly EventTypeId LogWrittenOff = EventTypeId.From("LogWrittenOff");
     public static readonly EventTypeId ProcedureActionStarted = EventTypeId.From("ProcedureActionStarted");
     public static readonly EventTypeId ProcedureActionCompleted = EventTypeId.From("ProcedureActionCompleted");
+    public static readonly EventTypeId ConfirmationTestStarted = EventTypeId.From("ConfirmationTestStarted");
     public static readonly EventTypeId ConfirmationTestCompleted = EventTypeId.From("ConfirmationTestCompleted");
     public static readonly EventTypeId ContainmentRitualCompleted = EventTypeId.From("ContainmentRitualCompleted");
     public static readonly EventTypeId ContainmentStateChanged = EventTypeId.From("ContainmentStateChanged");
@@ -192,6 +193,42 @@ public sealed class HostStageSevenConfirmationPayload : HostStageSevenVersionedP
     internal HostStageSevenConfirmationPayload(ConfirmationTestResult result, StateVersion prior, StateVersion current)
         : base(prior, current) { ArgumentNullException.ThrowIfNull(result); Result = result; }
     public ConfirmationTestResult Result { get; }
+}
+
+/// <summary>Semantic evidence for a configured confirmation-test start; no completion is implied.</summary>
+public sealed class HostStageSevenConfirmationTestStartedPayload : HostStageSevenVersionedPayload
+{
+    internal HostStageSevenConfirmationTestStartedPayload(ActiveConfirmationTest active, StateVersion prior, StateVersion current)
+        : base(prior, current)
+    {
+        ArgumentNullException.ThrowIfNull(active);
+        if (!active.IsRunning || active.SegmentStartedAt is not { } segmentStartedAt || active.DueAt is not { } dueAt)
+        {
+            throw new ArgumentException("Confirmation start evidence must retain a running active confirmation.", nameof(active));
+        }
+
+        LogId = active.LogId;
+        AnomalyId = active.AnomalyId;
+        RequiredTools = active.Plan.RequiredTools;
+        Duration = active.Plan.Duration;
+        Continuous = active.Plan.Continuous;
+        RequiredLineNoise = active.Plan.RequiredLineNoise;
+        ResetWhenConditionLost = active.Plan.ResetWhenConditionLost;
+        Result = active.Plan.Result;
+        SegmentStartedAt = segmentStartedAt;
+        DueAt = dueAt;
+    }
+
+    public LogId LogId { get; }
+    public AnomalyId AnomalyId { get; }
+    public ImmutableHashSet<ItemId> RequiredTools { get; }
+    public SimulationDuration Duration { get; }
+    public bool Continuous { get; }
+    public LineNoise? RequiredLineNoise { get; }
+    public bool ResetWhenConditionLost { get; }
+    public string Result { get; }
+    public ServerTick SegmentStartedAt { get; }
+    public ServerTick DueAt { get; }
 }
 
 public sealed class HostStageSevenContainmentPayload : HostStageSevenVersionedPayload
@@ -612,6 +649,18 @@ public sealed class HostStageSevenEventExecutor
                     RequireNoMutation(step.BeforeState, rejected.State); rejections.Add(new RejectionEvent { ShiftId = step.Receipt.Envelope.ShiftId, IntentId = intentId, ServerTick = tick, CurrentStateVersion = step.BeforeState.StateVersion, Reason = rejected.Reason }); break;
                 case ProcedureActionIntentStageOutcome:
                     RequireNoMutation(step.BeforeState, step.AfterState); break;
+                case ConfirmationTestIntentStageOutcome { Result: ConfirmationTestIntentStarted started }:
+                    var active = started.State.ActiveConfirmationTest ?? throw new InvalidOperationException("Confirmation start requires exact active confirmation evidence.");
+                    AddMutation(plan, HostStageSevenEventTypes.ConfirmationTestStarted,
+                        new HostStageSevenConfirmationTestStartedPayload(active, step.BeforeState.StateVersion, started.State.StateVersion),
+                        intentId, step.BeforeState, started.State);
+                    break;
+                case ConfirmationTestIntentStageOutcome { Result: ConfirmationTestIntentRejected rejected }:
+                    RequireNoMutation(step.BeforeState, rejected.State); rejections.Add(new RejectionEvent { ShiftId = step.Receipt.Envelope.ShiftId, IntentId = intentId, ServerTick = tick, CurrentStateVersion = step.BeforeState.StateVersion, Reason = rejected.Reason }); break;
+                case ConfirmationTestIntentStageOutcome { Result: ConfirmationTestIntentUnderlyingRejected rejected }:
+                    RequireNoMutation(step.BeforeState, rejected.State); rejections.Add(new RejectionEvent { ShiftId = step.Receipt.Envelope.ShiftId, IntentId = intentId, ServerTick = tick, CurrentStateVersion = step.BeforeState.StateVersion, Reason = rejected.Reason }); break;
+                case ConfirmationTestIntentStageOutcome:
+                    RequireNoMutation(step.BeforeState, step.AfterState); break;
                 case EarlyFeedIntentStageOutcome:
                 case UnsupportedIntentStageOutcome:
                     RequireNoMutation(step.BeforeState, step.AfterState); break;
@@ -801,6 +850,8 @@ public sealed class HostStageSevenEventExecutor
                 SameVersions(left, right) && left.Descriptor == right.Descriptor,
             (HostStageSevenProcedureActionStartedPayload left, HostStageSevenProcedureActionStartedPayload right) =>
                 SameVersions(left, right) && left.LogId == right.LogId && left.AnomalyId == right.AnomalyId && left.AttemptedItem == right.AttemptedItem && left.ProcedureStepIndex == right.ProcedureStepIndex && left.StartedAt == right.StartedAt && left.DueAt == right.DueAt && left.Duration == right.Duration,
+            (HostStageSevenConfirmationTestStartedPayload left, HostStageSevenConfirmationTestStartedPayload right) =>
+                SameVersions(left, right) && left.LogId == right.LogId && left.AnomalyId == right.AnomalyId && left.RequiredTools.SetEquals(right.RequiredTools) && left.Duration == right.Duration && left.Continuous == right.Continuous && left.RequiredLineNoise == right.RequiredLineNoise && left.ResetWhenConditionLost == right.ResetWhenConditionLost && left.Result == right.Result && left.SegmentStartedAt == right.SegmentStartedAt && left.DueAt == right.DueAt,
             (HostStageSevenConfirmationPayload left, HostStageSevenConfirmationPayload right) =>
                 SameVersions(left, right) && left.Result == right.Result,
             (HostStageSevenContainmentPayload left, HostStageSevenContainmentPayload right) =>

@@ -2,7 +2,9 @@ using System.Collections.Immutable;
 using System.Reflection;
 using TheLogsAreWrong.Domain.Configuration;
 using TheLogsAreWrong.Domain.Enums;
+using TheLogsAreWrong.Domain.Identifiers;
 using TheLogsAreWrong.Domain.Intents;
+using TheLogsAreWrong.Domain.Line;
 using TheLogsAreWrong.Domain.Runtime;
 using TheLogsAreWrong.Domain.Sequencing;
 
@@ -51,14 +53,14 @@ public sealed class Tlaw030ArchitectureTests
     }
 
     [Fact]
-    public void Public_executor_surface_accepts_only_state_batch_configuration_and_catalog_and_offers_no_dispatch_registry()
+    public void Public_executor_surface_accepts_only_explicit_state_batch_configuration_confirmation_evidence_and_catalog_and_offers_no_dispatch_registry()
     {
         var flags = BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly;
         var execute = Assert.Single(typeof(AcceptedIntentStageExecutor).GetMethods(flags), method => method.Name == "Execute");
 
         Assert.Equal(typeof(AcceptedIntentStageExecution), execute.ReturnType);
         Assert.Equal(
-            new[] { typeof(ShiftRuntimeState), typeof(AcceptedIntentTickBatch), typeof(SchedulerConfiguration), typeof(AnomalyCatalog) },
+            new[] { typeof(ShiftRuntimeState), typeof(AcceptedIntentTickBatch), typeof(SchedulerConfiguration), typeof(ImmutableHashSet<ItemId>), typeof(LineNoiseRuntimeState), typeof(AnomalyCatalog) },
             execute.GetParameters().Select(parameter => parameter.ParameterType));
         Assert.DoesNotContain(execute.GetParameters(), parameter =>
             parameter.ParameterType == typeof(object) ||
@@ -81,6 +83,7 @@ public sealed class Tlaw030ArchitectureTests
             typeof(ManualRoutingIntentStageOutcome),
             typeof(EarlyFeedIntentStageOutcome),
             typeof(ProcedureActionIntentStageOutcome),
+            typeof(ConfirmationTestIntentStageOutcome),
             typeof(UnsupportedIntentStageOutcome)
         };
         var constructor = Assert.Single(root.GetConstructors(BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.DeclaredOnly));
@@ -122,6 +125,8 @@ public sealed class Tlaw030ArchitectureTests
                 typeof(AcceptedIntentStageOutcome),
                 typeof(ManualRoutingIntentStageOutcome),
                 typeof(EarlyFeedIntentStageOutcome),
+                typeof(ProcedureActionIntentStageOutcome),
+                typeof(ConfirmationTestIntentStageOutcome),
                 typeof(UnsupportedIntentStageOutcome),
                 step,
                 result

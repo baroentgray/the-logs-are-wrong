@@ -1141,7 +1141,7 @@ public sealed class HostStageSevenEventExecutionTests
     {
         var stageOne = new HostStageOneCompletionExecutor().Execute(initial, tick, Fx.Anomalies, Fx.Shift.Containment);
         var batch = AcceptedIntentTickBatchFactory.Create(initial.ShiftId, tick, receipts ?? ImmutableArray<AuthoritativeAcceptedIntent>.Empty);
-        var stageTwo = new AcceptedIntentStageExecutor().Execute(stageOne.FinalState, batch, Fx.Shift.Scheduler, Fx.Anomalies);
+        var stageTwo = new AcceptedIntentStageExecutor().Execute(stageOne.FinalState, batch, Fx.Shift.Scheduler, ImmutableHashSet<ItemId>.Empty, LineNoiseRuntimeState.Create(stageOne.FinalState.ShiftId), Fx.Anomalies);
         var stageThree = new HostStageThreeDeadlineExecutor().Execute(stageTwo.FinalState, tick, Fx.Shift.Containment, Fx.Anomalies);
         var stageFour = new HostStageFourSawExecutor().Execute(stageThree.FinalState, quota, tick, Fx.Shift.Scheduler, Fx.Anomalies);
         var stageFive = new HostStageFiveFeedExecutor().Execute(stageOne, stageTwo, stageThree, stageFour, tick, Fx.Shift.Scheduler, Learning);
