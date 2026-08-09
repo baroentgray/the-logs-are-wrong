@@ -24,6 +24,7 @@ public static class HostStageSevenEventTypes
     public static readonly EventTypeId IntakeDeadlineExpired = EventTypeId.From("IntakeDeadlineExpired");
     public static readonly EventTypeId AutoRouteAttempted = EventTypeId.From("AutoRouteAttempted");
     public static readonly EventTypeId LineJammed = EventTypeId.From("LineJammed");
+    public static readonly EventTypeId RepairStarted = EventTypeId.From("RepairStarted");
     public static readonly EventTypeId RepairCompleted = EventTypeId.From("RepairCompleted");
     public static readonly EventTypeId SawCycleStarted = EventTypeId.From("SawCycleStarted");
     public static readonly EventTypeId SawCycleCompleted = EventTypeId.From("SawCycleCompleted");
@@ -256,6 +257,36 @@ public sealed class HostStageSevenRepairPayload : HostStageSevenVersionedPayload
     public LineRuntimeState PriorLine { get; }
     public LineRuntimeState CurrentLine { get; }
     public PendingLineTransitionDescriptor? PendingTransition { get; }
+}
+
+/// <summary>Semantic evidence for one accepted repair start; it never implies repair completion.</summary>
+public sealed class HostStageSevenRepairStartedPayload : HostStageSevenVersionedPayload
+{
+    internal HostStageSevenRepairStartedPayload(LineRuntimeState repairingLine, StateVersion prior, StateVersion current)
+        : base(prior, current)
+    {
+        ArgumentNullException.ThrowIfNull(repairingLine);
+        if (repairingLine.State != LineState.REPAIRING ||
+            !LineRuntimeState.TryGetActiveCause(repairingLine.Cause, out var cause) ||
+            repairingLine.PendingLogId is not { } pendingLogId || pendingLogId.IsDefault ||
+            repairingLine.ActiveRepairHold is not { } hold ||
+            repairingLine.EnteredAt != hold.StartedAt)
+        {
+            throw new ArgumentException("Repair-start publication requires exact repairing line and hold evidence.", nameof(repairingLine));
+        }
+
+        Cause = cause;
+        PendingLogId = pendingLogId;
+        StartedAt = hold.StartedAt;
+        DueAt = hold.DueAt;
+        Duration = hold.Duration;
+    }
+
+    public JamCause Cause { get; }
+    public LogId PendingLogId { get; }
+    public ServerTick StartedAt { get; }
+    public ServerTick DueAt { get; }
+    public SimulationDuration Duration { get; }
 }
 
 public sealed class HostStageSevenSawStartedPayload : HostStageSevenVersionedPayload
@@ -661,6 +692,17 @@ public sealed class HostStageSevenEventExecutor
                     RequireNoMutation(step.BeforeState, rejected.State); rejections.Add(new RejectionEvent { ShiftId = step.Receipt.Envelope.ShiftId, IntentId = intentId, ServerTick = tick, CurrentStateVersion = step.BeforeState.StateVersion, Reason = rejected.Reason }); break;
                 case ConfirmationTestIntentStageOutcome:
                     RequireNoMutation(step.BeforeState, step.AfterState); break;
+                case LineRepairIntentStageOutcome { Result: LineRepairIntentStarted started }:
+                    AddMutation(plan, HostStageSevenEventTypes.RepairStarted,
+                        new HostStageSevenRepairStartedPayload(started.State.Line, step.BeforeState.StateVersion, started.State.StateVersion),
+                        intentId, step.BeforeState, started.State);
+                    break;
+                case LineRepairIntentStageOutcome { Result: LineRepairIntentRejected rejected }:
+                    RequireNoMutation(step.BeforeState, rejected.State); rejections.Add(new RejectionEvent { ShiftId = step.Receipt.Envelope.ShiftId, IntentId = intentId, ServerTick = tick, CurrentStateVersion = step.BeforeState.StateVersion, Reason = rejected.Reason }); break;
+                case LineRepairIntentStageOutcome { Result: LineRepairIntentUnderlyingRejected rejected }:
+                    RequireNoMutation(step.BeforeState, rejected.State); rejections.Add(new RejectionEvent { ShiftId = step.Receipt.Envelope.ShiftId, IntentId = intentId, ServerTick = tick, CurrentStateVersion = step.BeforeState.StateVersion, Reason = rejected.Reason }); break;
+                case LineRepairIntentStageOutcome:
+                    RequireNoMutation(step.BeforeState, step.AfterState); break;
                 case EarlyFeedIntentStageOutcome:
                 case UnsupportedIntentStageOutcome:
                     RequireNoMutation(step.BeforeState, step.AfterState); break;
@@ -858,6 +900,8 @@ public sealed class HostStageSevenEventExecutor
                 SameVersions(left, right) && left.PriorContainment == right.PriorContainment && left.CurrentContainment == right.CurrentContainment && left.Ritual == right.Ritual && left.Incident == right.Incident,
             (HostStageSevenRepairPayload left, HostStageSevenRepairPayload right) =>
                 SameVersions(left, right) && left.PriorLine == right.PriorLine && left.CurrentLine == right.CurrentLine && left.PendingTransition == right.PendingTransition,
+            (HostStageSevenRepairStartedPayload left, HostStageSevenRepairStartedPayload right) =>
+                SameVersions(left, right) && left.Cause == right.Cause && left.PendingLogId == right.PendingLogId && left.StartedAt == right.StartedAt && left.DueAt == right.DueAt && left.Duration == right.Duration,
             (HostStageSevenSawStartedPayload left, HostStageSevenSawStartedPayload right) =>
                 SameVersions(left, right) && left.Cycle == right.Cycle,
             (HostStageSevenSawCompletedPayload left, HostStageSevenSawCompletedPayload right) =>

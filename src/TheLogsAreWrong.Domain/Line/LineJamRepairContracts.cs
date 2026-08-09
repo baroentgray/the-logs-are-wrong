@@ -198,6 +198,28 @@ public enum LineRepairStartFailureReason
 public sealed class LineRepairStartService
 {
     public LineRepairStartResult Start(ShiftRuntimeState state, ServerTick currentTick, SchedulerConfiguration configuration)
+        => StartCore(state, currentTick, configuration, null);
+
+    /// <summary>Starts repair for one already-authoritative accepted intent, atomically retaining its exact identity.</summary>
+    internal LineRepairStartResult StartForAuthoritativeIntent(
+        ShiftRuntimeState state,
+        ServerTick currentTick,
+        SchedulerConfiguration configuration,
+        IntentId processedIntentId)
+    {
+        if (processedIntentId.IsDefault)
+        {
+            throw new ArgumentException("Processed intent identifier must be initialized.", nameof(processedIntentId));
+        }
+
+        return StartCore(state, currentTick, configuration, processedIntentId);
+    }
+
+    private static LineRepairStartResult StartCore(
+        ShiftRuntimeState state,
+        ServerTick currentTick,
+        SchedulerConfiguration configuration,
+        IntentId? processedIntentId)
     {
         LineGuards.ValidateCurrent(state, currentTick);
         ArgumentNullException.ThrowIfNull(configuration);
@@ -219,7 +241,7 @@ public sealed class LineRepairStartService
         var duration = LineGuards.PositiveDuration(configuration.RepairHoldSeconds, nameof(configuration.RepairHoldSeconds));
         var hold = new ActiveRepairHold(currentTick, currentTick + duration, duration);
         var repairing = new LineRuntimeState(LineState.REPAIRING, currentTick, cause, pendingLogId, hold);
-        return new LineRepairStarted(state.WithLine(repairing), hold);
+        return new LineRepairStarted(state.WithLineAndProcessedIntent(repairing, processedIntentId), hold);
     }
 }
 

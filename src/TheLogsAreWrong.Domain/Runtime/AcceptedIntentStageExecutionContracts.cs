@@ -61,7 +61,17 @@ public sealed class ConfirmationTestIntentStageOutcome : AcceptedIntentStageOutc
     public ConfirmationTestIntentResult Result { get; }
 }
 
-/// <summary>An action outside the six owned stage-2 actions, retained without invoking any handler.</summary>
+/// <summary>A receipt owned by <see cref="LineRepairIntentHandler"/> retaining its exact returned result.</summary>
+public sealed class LineRepairIntentStageOutcome : AcceptedIntentStageOutcome
+{
+    internal LineRepairIntentStageOutcome(LineRepairIntentResult result)
+        : base(result.State) => Result = result;
+
+    /// <summary>The exact <see cref="LineRepairIntentResult"/> returned by the line-repair handler.</summary>
+    public LineRepairIntentResult Result { get; }
+}
+
+/// <summary>An action outside the eight owned stage-2 action IDs, retained without invoking any handler.</summary>
 public sealed class UnsupportedIntentStageOutcome : AcceptedIntentStageOutcome
 {
     internal UnsupportedIntentStageOutcome(ShiftRuntimeState state, IntentActionId action)
@@ -140,6 +150,7 @@ public sealed class AcceptedIntentStageExecutor
     private readonly EarlyFeedIntentHandler _earlyFeedHandler = new();
     private readonly ProcedureActionIntentHandler _procedureActionHandler = new();
     private readonly ConfirmationTestIntentHandler _confirmationTestHandler = new();
+    private readonly LineRepairIntentHandler _lineRepairHandler = new();
 
     /// <summary>
     /// Executes stage 2 over <paramref name="batch"/> starting from <paramref name="initialState"/>. The batch must
@@ -212,6 +223,12 @@ public sealed class AcceptedIntentStageExecutor
         {
             return new ConfirmationTestIntentStageOutcome(
                 _confirmationTestHandler.Handle(state, envelope, receipt.AuthoritativeActor, currentTick, activeTools, initialLineNoise, anomalyCatalog));
+        }
+
+        if (action == LineRepairIntentActions.StartLineRepair)
+        {
+            return new LineRepairIntentStageOutcome(
+                _lineRepairHandler.Handle(state, envelope, receipt.AuthoritativeActor, currentTick, schedulerConfiguration));
         }
 
         return new UnsupportedIntentStageOutcome(state, action);
