@@ -13,6 +13,40 @@ namespace TheLogsAreWrong.Domain.Tests.Architecture;
 public sealed class Tlaw038ArchitectureTests
 {
     [Fact]
+    public void Procedure_action_intent_result_family_is_closed_to_external_derivation_and_immutable()
+    {
+        var publicInstance = BindingFlags.Public | BindingFlags.Instance;
+        var allInstance = BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly;
+        var root = typeof(ProcedureActionIntentResult);
+        var constructor = Assert.Single(root.GetConstructors(allInstance));
+        var kinds = new[]
+        {
+            typeof(ProcedureActionIntentHoldStarted),
+            typeof(ProcedureActionIntentCompletedImmediately),
+            typeof(ProcedureActionIntentRejected),
+            typeof(ProcedureActionIntentUnderlyingRejected),
+            typeof(ProcedureActionIntentDuplicateIgnored),
+            typeof(ProcedureActionIntentUnsupported)
+        };
+
+        Assert.True(root.IsClass);
+        Assert.True(root.IsAbstract);
+        Assert.True(constructor.IsFamilyAndAssembly, "The root constructor must be private protected so another assembly cannot derive a result kind.");
+        Assert.False(constructor.IsPublic);
+        Assert.False(constructor.IsFamily);
+        Assert.Empty(root.GetConstructors(publicInstance));
+        Assert.Equal(typeof(ShiftRuntimeState), root.GetProperty(nameof(ProcedureActionIntentResult.State))!.PropertyType);
+        Assert.All(root.GetProperties(publicInstance), property => Assert.Null(property.SetMethod));
+
+        Assert.All(kinds, type =>
+        {
+            Assert.True(type.IsSealed);
+            Assert.Same(root, type.BaseType);
+            Assert.Empty(type.GetConstructors(publicInstance));
+        });
+    }
+
+    [Fact]
     public void Procedure_intent_is_typed_and_handler_has_one_narrow_authoritative_boundary()
     {
         var parameters = typeof(ProcedureActionIntentParameters);

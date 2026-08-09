@@ -113,6 +113,34 @@ public sealed class ProcedureActionIntentHandlerTests
     }
 
     [Fact]
+    public void Existing_target_outside_procedure_retains_the_exact_underlying_rejection_without_any_mutation()
+    {
+        var state = RuntimeFixture.CreateInitialState();
+        var intent = StartIntent(state, "not_at_procedure", "log_03", "holy_water", state.StateVersion);
+
+        var result = Assert.IsType<ProcedureActionIntentUnderlyingRejected>(Handler.Handle(
+            state, intent, RuntimeFixture.BoundActor, ServerTick.From(10), Fx.Anomalies));
+
+        Assert.Equal(RejectionReason.TARGET_NOT_IN_STATE, result.Reason);
+        Assert.Equal(ProcedureActionStartRejectionReason.TargetNotAtProcedure, result.Result.Reason);
+        AssertUnchangedProcedureRejection(state, result, intent.IntentId, LogId.From("log_03"));
+    }
+
+    [Fact]
+    public void Missing_required_item_retains_the_exact_underlying_rejection_without_any_mutation()
+    {
+        var state = AtProcedure("log_06");
+        var intent = StartIntent(state, "missing_item", "log_06", "SALT", state.StateVersion);
+
+        var result = Assert.IsType<ProcedureActionIntentUnderlyingRejected>(Handler.Handle(
+            state, intent, RuntimeFixture.BoundActor, ServerTick.From(10), Fx.Anomalies));
+
+        Assert.Equal(RejectionReason.MISSING_ITEM, result.Reason);
+        Assert.Equal(ProcedureActionStartRejectionReason.MissingItem, result.Result.Reason);
+        AssertUnchangedProcedureRejection(state, result, intent.IntentId, LogId.From("log_06"));
+    }
+
+    [Fact]
     public void Existing_non_intent_start_and_due_completion_remain_unmarked()
     {
         var before = AtProcedure("log_03");
@@ -169,6 +197,26 @@ public sealed class ProcedureActionIntentHandlerTests
         Assert.Equal(reason, rejected.Reason);
         Assert.Same(expected, rejected.State);
         Assert.DoesNotContain(rejected.IntentId, rejected.State.ProcessedIntentIds);
+    }
+
+    private static void AssertUnchangedProcedureRejection(
+        ShiftRuntimeState before,
+        ProcedureActionIntentUnderlyingRejected result,
+        IntentId rejectedIntentId,
+        LogId targetLogId)
+    {
+        Assert.Same(before, result.Result.State);
+        Assert.Same(before, result.State);
+        Assert.Equal(before.StateVersion, result.State.StateVersion);
+        Assert.DoesNotContain(rejectedIntentId, result.State.ProcessedIntentIds);
+        Assert.Same(before.Inventory, result.State.Inventory);
+        Assert.Same(before.ProcedureProgressByLog, result.State.ProcedureProgressByLog);
+        Assert.Null(result.State.ActiveProcedureHold);
+        Assert.False(result.State.TryGetProcedureProgress(targetLogId, out _));
+        Assert.True(before.TryGetLog(targetLogId, out var beforeLog));
+        Assert.True(result.State.TryGetLog(targetLogId, out var afterLog));
+        Assert.Same(beforeLog, afterLog);
+        Assert.Equal(beforeLog.Flags, afterLog.Flags);
     }
 
     private static IntentEnvelope StartIntent(ShiftRuntimeState state, string intentId, string logId, string itemId, StateVersion expected) => new(

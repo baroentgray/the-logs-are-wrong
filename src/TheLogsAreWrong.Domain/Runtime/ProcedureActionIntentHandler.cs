@@ -8,25 +8,76 @@ using TheLogsAreWrong.Domain.Primitives;
 namespace TheLogsAreWrong.Domain.Runtime;
 
 /// <summary>Closed authoritative outcomes for the one stage-2 procedure-action start intent family.</summary>
-public abstract record ProcedureActionIntentResult(ShiftRuntimeState State);
+public abstract class ProcedureActionIntentResult
+{
+    private protected ProcedureActionIntentResult(ShiftRuntimeState state)
+    {
+        ArgumentNullException.ThrowIfNull(state);
+        State = state;
+    }
 
-public sealed record ProcedureActionIntentHoldStarted(ProcedureActionHoldStarted Result)
-    : ProcedureActionIntentResult(Result.State);
+    public ShiftRuntimeState State { get; }
+}
 
-public sealed record ProcedureActionIntentCompletedImmediately(ProcedureActionCompletedImmediately Result)
-    : ProcedureActionIntentResult(Result.State);
+public sealed class ProcedureActionIntentHoldStarted : ProcedureActionIntentResult
+{
+    internal ProcedureActionIntentHoldStarted(ProcedureActionHoldStarted result)
+        : base(result?.State ?? throw new ArgumentNullException(nameof(result))) => Result = result;
 
-public sealed record ProcedureActionIntentRejected(ShiftRuntimeState State, IntentId IntentId, RejectionReason Reason)
-    : ProcedureActionIntentResult(State);
+    public ProcedureActionHoldStarted Result { get; }
+}
 
-public sealed record ProcedureActionIntentUnderlyingRejected(ProcedureActionStartRejected Result, IntentId IntentId, RejectionReason Reason)
-    : ProcedureActionIntentResult(Result.State);
+public sealed class ProcedureActionIntentCompletedImmediately : ProcedureActionIntentResult
+{
+    internal ProcedureActionIntentCompletedImmediately(ProcedureActionCompletedImmediately result)
+        : base(result?.State ?? throw new ArgumentNullException(nameof(result))) => Result = result;
 
-public sealed record ProcedureActionIntentDuplicateIgnored(ShiftRuntimeState State, IntentId IntentId)
-    : ProcedureActionIntentResult(State);
+    public ProcedureActionCompletedImmediately Result { get; }
+}
 
-public sealed record ProcedureActionIntentUnsupported(ShiftRuntimeState State, IntentActionId Action)
-    : ProcedureActionIntentResult(State);
+public sealed class ProcedureActionIntentRejected : ProcedureActionIntentResult
+{
+    internal ProcedureActionIntentRejected(ShiftRuntimeState state, IntentId intentId, RejectionReason reason)
+        : base(state)
+    {
+        IntentId = intentId;
+        Reason = reason;
+    }
+
+    public IntentId IntentId { get; }
+    public RejectionReason Reason { get; }
+}
+
+public sealed class ProcedureActionIntentUnderlyingRejected : ProcedureActionIntentResult
+{
+    internal ProcedureActionIntentUnderlyingRejected(ProcedureActionStartRejected result, IntentId intentId, RejectionReason reason)
+        : base(result?.State ?? throw new ArgumentNullException(nameof(result)))
+    {
+        Result = result;
+        IntentId = intentId;
+        Reason = reason;
+    }
+
+    public ProcedureActionStartRejected Result { get; }
+    public IntentId IntentId { get; }
+    public RejectionReason Reason { get; }
+}
+
+public sealed class ProcedureActionIntentDuplicateIgnored : ProcedureActionIntentResult
+{
+    internal ProcedureActionIntentDuplicateIgnored(ShiftRuntimeState state, IntentId intentId)
+        : base(state) => IntentId = intentId;
+
+    public IntentId IntentId { get; }
+}
+
+public sealed class ProcedureActionIntentUnsupported : ProcedureActionIntentResult
+{
+    internal ProcedureActionIntentUnsupported(ShiftRuntimeState state, IntentActionId action)
+        : base(state) => Action = action;
+
+    public IntentActionId Action { get; }
+}
 
 /// <summary>
 /// Authoritative handler for exactly <c>start_procedure_action</c>. It validates the established intent guard order,
