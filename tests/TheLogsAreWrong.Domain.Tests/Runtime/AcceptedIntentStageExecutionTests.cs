@@ -17,7 +17,8 @@ namespace TheLogsAreWrong.Domain.Tests.Runtime;
 public sealed class AcceptedIntentStageExecutionTests
 {
     private static readonly ServerTick BatchTick = ServerTick.From(7);
-    private static readonly SchedulerConfiguration Scheduler = Fixture.LoadP0().Shift.Scheduler;
+    private static readonly ValidatedConfiguration Fx = Fixture.LoadP0();
+    private static readonly SchedulerConfiguration Scheduler = Fx.Shift.Scheduler;
 
     public static TheoryData<IntentActionId, LogState, LogState> ManualActions => new()
     {
@@ -36,9 +37,10 @@ public sealed class AcceptedIntentStageExecutionTests
         var batch = EmptyBatch(state.ShiftId);
         var executor = new AcceptedIntentStageExecutor();
 
-        Assert.Throws<ArgumentNullException>(() => executor.Execute(null!, batch, Scheduler));
-        Assert.Throws<ArgumentNullException>(() => executor.Execute(state, null!, Scheduler));
-        Assert.Throws<ArgumentNullException>(() => executor.Execute(state, batch, null!));
+        Assert.Throws<ArgumentNullException>(() => executor.Execute(null!, batch, Scheduler, Fx.Anomalies));
+        Assert.Throws<ArgumentNullException>(() => executor.Execute(state, null!, Scheduler, Fx.Anomalies));
+        Assert.Throws<ArgumentNullException>(() => executor.Execute(state, batch, null!, Fx.Anomalies));
+        Assert.Throws<ArgumentNullException>(() => executor.Execute(state, batch, Scheduler, null!));
     }
 
     [Fact]
@@ -53,7 +55,7 @@ public sealed class AcceptedIntentStageExecutionTests
         var crossShiftBatch = AcceptedIntentTickBatchFactory.Create(otherShift, BatchTick, new[] { receipt });
 
         Assert.NotEqual(state.ShiftId, crossShiftBatch.ShiftId);
-        Assert.Throws<ArgumentException>(() => new AcceptedIntentStageExecutor().Execute(state, crossShiftBatch, Scheduler));
+        Assert.Throws<ArgumentException>(() => new AcceptedIntentStageExecutor().Execute(state, crossShiftBatch, Scheduler, Fx.Anomalies));
     }
 
     [Fact]
@@ -95,7 +97,7 @@ public sealed class AcceptedIntentStageExecutionTests
     }
 
     [Fact]
-    public void Executor_execute_accepts_only_state_batch_and_configuration()
+    public void Executor_execute_accepts_only_state_batch_configuration_and_anomaly_catalog()
     {
         var execute = Assert.Single(
             typeof(AcceptedIntentStageExecutor).GetMethods(BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly),
@@ -103,7 +105,7 @@ public sealed class AcceptedIntentStageExecutionTests
 
         Assert.Equal(typeof(AcceptedIntentStageExecution), execute.ReturnType);
         Assert.Equal(
-            new[] { typeof(ShiftRuntimeState), typeof(AcceptedIntentTickBatch), typeof(SchedulerConfiguration) },
+            new[] { typeof(ShiftRuntimeState), typeof(AcceptedIntentTickBatch), typeof(SchedulerConfiguration), typeof(AnomalyCatalog) },
             execute.GetParameters().Select(parameter => parameter.ParameterType));
         Assert.DoesNotContain(execute.GetParameters(), parameter =>
             parameter.ParameterType == typeof(object) ||
@@ -461,7 +463,7 @@ public sealed class AcceptedIntentStageExecutionTests
     // ----- Helpers -----
 
     private static AcceptedIntentStageExecution Execute(ShiftRuntimeState initialState, AcceptedIntentTickBatch batch)
-        => new AcceptedIntentStageExecutor().Execute(initialState, batch, Scheduler);
+        => new AcceptedIntentStageExecutor().Execute(initialState, batch, Scheduler, Fx.Anomalies);
 
     private static (AcceptedIntentStageExecution Execution, AuthoritativeAcceptedIntent[] Receipts) BuildMixedExecution()
     {

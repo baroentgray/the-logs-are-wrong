@@ -172,14 +172,30 @@ public sealed class ItemActionCompletionService
     public ItemActionCompletionResult Complete(ShiftRuntimeState state, LogId logId, ItemId attemptedItem, AnomalyCatalog catalog)
     {
         ArgumentNullException.ThrowIfNull(state);
-        return CompleteCore(state, logId, attemptedItem, catalog, state.ActiveProcedureHold);
+        return CompleteCore(state, logId, attemptedItem, catalog, state.ActiveProcedureHold, null);
+    }
+
+    internal ItemActionCompletionResult CompleteForAuthoritativeIntent(
+        ShiftRuntimeState state,
+        LogId logId,
+        ItemId attemptedItem,
+        AnomalyCatalog catalog,
+        IntentId processedIntentId)
+    {
+        ArgumentNullException.ThrowIfNull(state);
+        if (processedIntentId.IsDefault)
+        {
+            throw new ArgumentException("Processed intent identity must be initialized.", nameof(processedIntentId));
+        }
+
+        return CompleteCore(state, logId, attemptedItem, catalog, state.ActiveProcedureHold, processedIntentId);
     }
 
     internal ItemActionCompletionResult CompleteActiveProcedureHold(ShiftRuntimeState state, ActiveProcedureHold activeProcedureHold, AnomalyCatalog catalog)
     {
         ArgumentNullException.ThrowIfNull(state);
         ArgumentNullException.ThrowIfNull(activeProcedureHold);
-        return CompleteCore(state, activeProcedureHold.LogId, activeProcedureHold.AttemptedItem, catalog, null);
+        return CompleteCore(state, activeProcedureHold.LogId, activeProcedureHold.AttemptedItem, catalog, null, null);
     }
 
     private static ItemActionCompletionResult CompleteCore(
@@ -187,7 +203,8 @@ public sealed class ItemActionCompletionService
         LogId logId,
         ItemId attemptedItem,
         AnomalyCatalog catalog,
-        ActiveProcedureHold? activeProcedureHold)
+        ActiveProcedureHold? activeProcedureHold,
+        IntentId? processedIntentId)
     {
         if (logId.IsDefault)
         {
@@ -239,19 +256,19 @@ public sealed class ItemActionCompletionService
                 return Reject(state, ProcedureCompletionRejectionReason.RepeatedCorrectStep);
             }
 
-            return CompleteConfiguredWrongAction(state, log, attemptedItem, catalog, priorProgress, activeProcedureHold);
+            return CompleteConfiguredWrongAction(state, log, attemptedItem, catalog, priorProgress, activeProcedureHold, processedIntentId);
         }
 
         var nextStepIndex = hasPriorProgress ? priorProgress.CompletedStepCount : 0;
         if (plan.Steps[nextStepIndex].Item == attemptedItem)
         {
-            return CompleteCorrectStep(state, log, plan, nextStepIndex, priorProgress, attemptedItem, activeProcedureHold);
+            return CompleteCorrectStep(state, log, plan, nextStepIndex, priorProgress, attemptedItem, activeProcedureHold, processedIntentId);
         }
 
         var wrongAction = WrongActionResolver.Resolve(log, attemptedItem, catalog);
         if (wrongAction is ConfiguredWrongActionResolution configured)
         {
-            return CompleteConfiguredWrongAction(state, log, configured, priorProgress, activeProcedureHold);
+            return CompleteConfiguredWrongAction(state, log, configured, priorProgress, activeProcedureHold, processedIntentId);
         }
 
         if (!state.Inventory.IsAvailable(attemptedItem))
@@ -271,7 +288,8 @@ public sealed class ItemActionCompletionService
         int nextStepIndex,
         ProcedureProgress? priorProgress,
         ItemId attemptedItem,
-        ActiveProcedureHold? activeProcedureHold)
+        ActiveProcedureHold? activeProcedureHold,
+        IntentId? processedIntentId)
     {
         var step = plan.Steps[nextStepIndex];
         if (!state.Inventory.IsAvailable(attemptedItem))
@@ -296,7 +314,7 @@ public sealed class ItemActionCompletionService
         var newlyGrantedFlags = progress.IsComplete
             ? plan.GrantedFlags.Except(log.Flags).ToImmutableHashSet()
             : ImmutableHashSet<FlagId>.Empty;
-        var updatedState = state.ApplyItemAction(log.LogId, inventory, progress, newlyGrantedFlags, activeProcedureHold);
+        var updatedState = state.ApplyItemAction(log.LogId, inventory, progress, newlyGrantedFlags, activeProcedureHold, processedIntentId);
         return new ItemActionCompletionAccepted(
             updatedState,
             new ItemActionCompletionDescriptor(
@@ -318,11 +336,12 @@ public sealed class ItemActionCompletionService
         ItemId attemptedItem,
         AnomalyCatalog catalog,
         ProcedureProgress? priorProgress,
-        ActiveProcedureHold? activeProcedureHold)
+        ActiveProcedureHold? activeProcedureHold,
+        IntentId? processedIntentId)
     {
         var resolution = WrongActionResolver.Resolve(log, attemptedItem, catalog);
         return resolution is ConfiguredWrongActionResolution configured
-            ? CompleteConfiguredWrongAction(state, log, configured, priorProgress, activeProcedureHold)
+            ? CompleteConfiguredWrongAction(state, log, configured, priorProgress, activeProcedureHold, processedIntentId)
             : Reject(state, state.Inventory.IsAvailable(attemptedItem)
                 ? ProcedureCompletionRejectionReason.UnconfiguredWrongAction
                 : ProcedureCompletionRejectionReason.MissingItem);
@@ -333,7 +352,8 @@ public sealed class ItemActionCompletionService
         LogRuntimeState log,
         ConfiguredWrongActionResolution configured,
         ProcedureProgress? priorProgress,
-        ActiveProcedureHold? activeProcedureHold)
+        ActiveProcedureHold? activeProcedureHold,
+        IntentId? processedIntentId)
     {
         if (!configured.LeavesStateUnchanged)
         {
@@ -351,7 +371,7 @@ public sealed class ItemActionCompletionService
             return Reject(state, ProcedureCompletionRejectionReason.MissingItem);
         }
 
-        var updatedState = state.ApplyItemAction(log.LogId, inventory, null, ImmutableHashSet<FlagId>.Empty, activeProcedureHold);
+        var updatedState = state.ApplyItemAction(log.LogId, inventory, null, ImmutableHashSet<FlagId>.Empty, activeProcedureHold, processedIntentId);
         return new ItemActionCompletionAccepted(
             updatedState,
             new ItemActionCompletionDescriptor(

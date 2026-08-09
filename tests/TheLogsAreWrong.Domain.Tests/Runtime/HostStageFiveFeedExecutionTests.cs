@@ -464,7 +464,7 @@ public sealed class HostStageFiveFeedExecutionTests
         var sched = scheduler ?? Fx.Shift.Scheduler;
         var one = new HostStageOneCompletionExecutor().Execute(initialShiftState, tick, Fx.Anomalies, Fx.Shift.Containment);
         var batch = batchFactory is null ? EmptyBatch(one.FinalState.ShiftId, tick) : batchFactory(one);
-        var two = new AcceptedIntentStageExecutor().Execute(one.FinalState, batch, sched);
+        var two = new AcceptedIntentStageExecutor().Execute(one.FinalState, batch, sched, Fx.Anomalies);
         var three = new HostStageThreeDeadlineExecutor().Execute(two.FinalState, tick, Fx.Shift.Containment, Fx.Anomalies);
         var four = new HostStageFourSawExecutor().Execute(three.FinalState, quota, tick, sched, Fx.Anomalies);
         return new StageChain(one, two, three, four);

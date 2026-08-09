@@ -39,7 +39,17 @@ public sealed class EarlyFeedIntentStageOutcome : AcceptedIntentStageOutcome
     public EarlyFeedIntentResult Result { get; }
 }
 
-/// <summary>An action outside the five owned stage-2 actions, retained without invoking any handler.</summary>
+/// <summary>A receipt owned by <see cref="ProcedureActionIntentHandler"/> retaining its exact returned result.</summary>
+public sealed class ProcedureActionIntentStageOutcome : AcceptedIntentStageOutcome
+{
+    internal ProcedureActionIntentStageOutcome(ProcedureActionIntentResult result)
+        : base(result.State) => Result = result;
+
+    /// <summary>The exact <see cref="ProcedureActionIntentResult"/> returned by the procedure-action handler.</summary>
+    public ProcedureActionIntentResult Result { get; }
+}
+
+/// <summary>An action outside the six owned stage-2 actions, retained without invoking any handler.</summary>
 public sealed class UnsupportedIntentStageOutcome : AcceptedIntentStageOutcome
 {
     internal UnsupportedIntentStageOutcome(ShiftRuntimeState state, IntentActionId action)
@@ -116,6 +126,7 @@ public sealed class AcceptedIntentStageExecutor
 {
     private readonly ManualLogIntentHandler _manualRoutingHandler = new();
     private readonly EarlyFeedIntentHandler _earlyFeedHandler = new();
+    private readonly ProcedureActionIntentHandler _procedureActionHandler = new();
 
     /// <summary>
     /// Executes stage 2 over <paramref name="batch"/> starting from <paramref name="initialState"/>. The batch must
@@ -124,11 +135,13 @@ public sealed class AcceptedIntentStageExecutor
     public AcceptedIntentStageExecution Execute(
         ShiftRuntimeState initialState,
         AcceptedIntentTickBatch batch,
-        SchedulerConfiguration schedulerConfiguration)
+        SchedulerConfiguration schedulerConfiguration,
+        AnomalyCatalog anomalyCatalog)
     {
         ArgumentNullException.ThrowIfNull(initialState);
         ArgumentNullException.ThrowIfNull(batch);
         ArgumentNullException.ThrowIfNull(schedulerConfiguration);
+        ArgumentNullException.ThrowIfNull(anomalyCatalog);
         if (batch.ShiftId != initialState.ShiftId)
         {
             throw new ArgumentException(
@@ -141,7 +154,7 @@ public sealed class AcceptedIntentStageExecutor
         foreach (var receipt in batch.Intents)
         {
             var beforeState = currentState;
-            var outcome = EvaluateReceipt(beforeState, receipt, batch.CurrentTick, schedulerConfiguration);
+            var outcome = EvaluateReceipt(beforeState, receipt, batch.CurrentTick, schedulerConfiguration, anomalyCatalog);
             steps.Add(new AcceptedIntentStageStep(receipt, beforeState, outcome));
             currentState = outcome.State;
         }
@@ -153,7 +166,8 @@ public sealed class AcceptedIntentStageExecutor
         ShiftRuntimeState state,
         AuthoritativeAcceptedIntent receipt,
         ServerTick currentTick,
-        SchedulerConfiguration schedulerConfiguration)
+        SchedulerConfiguration schedulerConfiguration,
+        AnomalyCatalog anomalyCatalog)
     {
         var envelope = receipt.Envelope;
         var action = envelope.Action;
@@ -167,6 +181,12 @@ public sealed class AcceptedIntentStageExecutor
         {
             return new EarlyFeedIntentStageOutcome(
                 _earlyFeedHandler.Handle(state, envelope, receipt.AuthoritativeActor, currentTick, schedulerConfiguration));
+        }
+
+        if (action == ProcedureIntentActions.StartProcedureAction)
+        {
+            return new ProcedureActionIntentStageOutcome(
+                _procedureActionHandler.Handle(state, envelope, receipt.AuthoritativeActor, currentTick, anomalyCatalog));
         }
 
         return new UnsupportedIntentStageOutcome(state, action);

@@ -52,7 +52,7 @@ public sealed class EventContractTests
     }
 
     [Fact]
-    public void Rejection_contract_is_value_equal_has_all_fourteen_reasons_and_has_no_sequence()
+    public void Rejection_contract_is_value_equal_has_all_twenty_reasons_and_has_no_sequence()
     {
         var rejection = new RejectionEvent
         {
@@ -79,7 +79,13 @@ public sealed class EventContractTests
             RejectionReason.LINE_NOT_CLEAR,
             RejectionReason.BLOCKING_CONDITION_REMAINS,
             RejectionReason.NO_ACTIVE_REQUEST,
-            RejectionReason.NO_MORE_LOGS
+            RejectionReason.NO_MORE_LOGS,
+            RejectionReason.MALFORMED_PROCEDURE_PARAMETERS,
+            RejectionReason.PROCEDURE_HOLD_ACTIVE,
+            RejectionReason.PROCEDURE_NO_PLAN,
+            RejectionReason.PROCEDURE_OUT_OF_ORDER_ITEM,
+            RejectionReason.PROCEDURE_REPEATED_STEP,
+            RejectionReason.PROCEDURE_UNCONFIGURED_ITEM
         }, Enum.GetValues<RejectionReason>());
         Assert.DoesNotContain(typeof(RejectionEvent).GetProperties(), property => property.PropertyType == typeof(EventSequence));
     }

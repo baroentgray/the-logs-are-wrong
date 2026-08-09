@@ -508,6 +508,15 @@ public sealed class ShiftRuntimeState
         ProcedureProgress? progress,
         ImmutableHashSet<FlagId> newlyGrantedFlags,
         ActiveProcedureHold? activeProcedureHold)
+        => ApplyItemAction(logId, inventory, progress, newlyGrantedFlags, activeProcedureHold, null);
+
+    internal ShiftRuntimeState ApplyItemAction(
+        LogId logId,
+        RuntimeInventory inventory,
+        ProcedureProgress? progress,
+        ImmutableHashSet<FlagId> newlyGrantedFlags,
+        ActiveProcedureHold? activeProcedureHold,
+        IntentId? processedIntentId)
     {
         if (!TryGetLog(logId, out var existing))
         {
@@ -522,6 +531,7 @@ public sealed class ShiftRuntimeState
         var updatedProgress = progress is null
             ? ProcedureProgressByLog
             : ProcedureProgressByLog.SetItem(logId, progress);
+        var processed = processedIntentId is { } intentId ? ProcessedIntentIds.Add(intentId) : ProcessedIntentIds;
         return new ShiftRuntimeState(
             ShiftId,
             ShiftSeed,
@@ -529,7 +539,7 @@ public sealed class ShiftRuntimeState
             updatedLogs,
             _logIndexes,
             _capacities,
-            ProcessedIntentIds,
+            processed,
             PendingFeed,
             inventory,
             updatedProgress,
@@ -537,6 +547,9 @@ public sealed class ShiftRuntimeState
     }
 
     internal ShiftRuntimeState StartActiveProcedureHold(ActiveProcedureHold activeProcedureHold)
+        => StartActiveProcedureHold(activeProcedureHold, null);
+
+    internal ShiftRuntimeState StartActiveProcedureHold(ActiveProcedureHold activeProcedureHold, IntentId? processedIntentId)
     {
         ArgumentNullException.ThrowIfNull(activeProcedureHold);
         if (ActiveProcedureHold is not null)
@@ -556,7 +569,7 @@ public sealed class ShiftRuntimeState
             Logs,
             _logIndexes,
             _capacities,
-            ProcessedIntentIds,
+            processedIntentId is { } intentId ? ProcessedIntentIds.Add(intentId) : ProcessedIntentIds,
             PendingFeed,
             Inventory,
             ProcedureProgressByLog,

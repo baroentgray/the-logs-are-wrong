@@ -2,6 +2,7 @@ using TheLogsAreWrong.Domain.Anomalies;
 using TheLogsAreWrong.Domain.Configuration;
 using TheLogsAreWrong.Domain.Enums;
 using TheLogsAreWrong.Domain.Identifiers;
+using TheLogsAreWrong.Domain.Intents;
 using TheLogsAreWrong.Domain.Primitives;
 using TheLogsAreWrong.Domain.Time;
 
@@ -94,6 +95,31 @@ public sealed class ProcedureActionStartService
         ItemId attemptedItem,
         ServerTick currentTick,
         AnomalyCatalog catalog)
+        => StartCore(state, logId, attemptedItem, currentTick, catalog, null);
+
+    internal ProcedureActionStartResult StartForAuthoritativeIntent(
+        ShiftRuntimeState state,
+        LogId logId,
+        ItemId attemptedItem,
+        ServerTick currentTick,
+        AnomalyCatalog catalog,
+        IntentId processedIntentId)
+    {
+        if (processedIntentId.IsDefault)
+        {
+            throw new ArgumentException("Processed intent identity must be initialized.", nameof(processedIntentId));
+        }
+
+        return StartCore(state, logId, attemptedItem, currentTick, catalog, processedIntentId);
+    }
+
+    private ProcedureActionStartResult StartCore(
+        ShiftRuntimeState state,
+        LogId logId,
+        ItemId attemptedItem,
+        ServerTick currentTick,
+        AnomalyCatalog catalog,
+        IntentId? processedIntentId)
     {
         ArgumentNullException.ThrowIfNull(state);
         if (logId.IsDefault)
@@ -144,7 +170,7 @@ public sealed class ProcedureActionStartService
         {
             return plan.Steps.Any(step => step.Item == attemptedItem)
                 ? Reject(state, ProcedureActionStartRejectionReason.RepeatedCorrectStep)
-                : CompleteImmediately(state, logId, attemptedItem, catalog);
+                : CompleteImmediately(state, logId, attemptedItem, catalog, processedIntentId);
         }
 
         var nextStepIndex = hasPriorProgress ? priorProgress.CompletedStepCount : 0;
@@ -167,16 +193,16 @@ public sealed class ProcedureActionStartService
                     currentTick,
                     currentTick + duration,
                     duration);
-                var updatedState = state.StartActiveProcedureHold(hold);
+                var updatedState = state.StartActiveProcedureHold(hold, processedIntentId);
                 return new ProcedureActionHoldStarted(updatedState, hold);
             }
 
-            return CompleteImmediately(state, logId, attemptedItem, catalog);
+            return CompleteImmediately(state, logId, attemptedItem, catalog, processedIntentId);
         }
 
         if (WrongActionResolver.Resolve(log, attemptedItem, catalog) is ConfiguredWrongActionResolution)
         {
-            return CompleteImmediately(state, logId, attemptedItem, catalog);
+            return CompleteImmediately(state, logId, attemptedItem, catalog, processedIntentId);
         }
 
         if (!state.Inventory.IsAvailable(attemptedItem))
@@ -189,9 +215,11 @@ public sealed class ProcedureActionStartService
             : Reject(state, ProcedureActionStartRejectionReason.UnconfiguredWrongAction);
     }
 
-    private ProcedureActionStartResult CompleteImmediately(ShiftRuntimeState state, LogId logId, ItemId attemptedItem, AnomalyCatalog catalog)
+    private ProcedureActionStartResult CompleteImmediately(ShiftRuntimeState state, LogId logId, ItemId attemptedItem, AnomalyCatalog catalog, IntentId? processedIntentId)
     {
-        var completion = _completion.Complete(state, logId, attemptedItem, catalog);
+        var completion = processedIntentId is { } intentId
+            ? _completion.CompleteForAuthoritativeIntent(state, logId, attemptedItem, catalog, intentId)
+            : _completion.Complete(state, logId, attemptedItem, catalog);
         return completion switch
         {
             ItemActionCompletionAccepted accepted => new ProcedureActionCompletedImmediately(accepted.State, accepted.Descriptor),
