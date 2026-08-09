@@ -30,6 +30,7 @@ public static class HostStageSevenEventTypes
     public static readonly EventTypeId LineNoiseChanged = EventTypeId.From("LineNoiseChanged");
     public static readonly EventTypeId LogRouted = EventTypeId.From("LogRouted");
     public static readonly EventTypeId LogWrittenOff = EventTypeId.From("LogWrittenOff");
+    public static readonly EventTypeId ProcedureActionStarted = EventTypeId.From("ProcedureActionStarted");
     public static readonly EventTypeId ProcedureActionCompleted = EventTypeId.From("ProcedureActionCompleted");
     public static readonly EventTypeId ConfirmationTestCompleted = EventTypeId.From("ConfirmationTestCompleted");
     public static readonly EventTypeId ContainmentRitualCompleted = EventTypeId.From("ContainmentRitualCompleted");
@@ -159,6 +160,31 @@ public sealed class HostStageSevenProcedurePayload : HostStageSevenVersionedPayl
         Descriptor = descriptor;
     }
     public ItemActionCompletionDescriptor Descriptor { get; }
+}
+
+/// <summary>Semantic evidence for the start of an existing procedure hold; no completion is implied.</summary>
+public sealed class HostStageSevenProcedureActionStartedPayload : HostStageSevenVersionedPayload
+{
+    internal HostStageSevenProcedureActionStartedPayload(ActiveProcedureHold hold, StateVersion prior, StateVersion current)
+        : base(prior, current)
+    {
+        ArgumentNullException.ThrowIfNull(hold);
+        LogId = hold.LogId;
+        AnomalyId = hold.AnomalyId;
+        AttemptedItem = hold.AttemptedItem;
+        ProcedureStepIndex = hold.ProcedureStepIndex;
+        StartedAt = hold.StartedAt;
+        DueAt = hold.DueAt;
+        Duration = hold.Duration;
+    }
+
+    public LogId LogId { get; }
+    public AnomalyId AnomalyId { get; }
+    public ItemId AttemptedItem { get; }
+    public int ProcedureStepIndex { get; }
+    public ServerTick StartedAt { get; }
+    public ServerTick DueAt { get; }
+    public SimulationDuration Duration { get; }
 }
 
 public sealed class HostStageSevenConfirmationPayload : HostStageSevenVersionedPayload
@@ -570,6 +596,22 @@ public sealed class HostStageSevenEventExecutor
                     break;
                 case EarlyFeedIntentStageOutcome { Result: EarlyFeedIntentRejected rejected }:
                     RequireNoMutation(step.BeforeState, rejected.State); rejections.Add(new RejectionEvent { ShiftId = step.Receipt.Envelope.ShiftId, IntentId = intentId, ServerTick = tick, CurrentStateVersion = step.BeforeState.StateVersion, Reason = rejected.Reason }); break;
+                case ProcedureActionIntentStageOutcome { Result: ProcedureActionIntentHoldStarted started }:
+                    AddMutation(plan, HostStageSevenEventTypes.ProcedureActionStarted,
+                        new HostStageSevenProcedureActionStartedPayload(started.Result.Hold, step.BeforeState.StateVersion, started.State.StateVersion),
+                        intentId, step.BeforeState, started.State);
+                    break;
+                case ProcedureActionIntentStageOutcome { Result: ProcedureActionIntentCompletedImmediately completed }:
+                    AddMutation(plan, HostStageSevenEventTypes.ProcedureActionCompleted,
+                        new HostStageSevenProcedurePayload(completed.Result.Descriptor),
+                        intentId, step.BeforeState, completed.State);
+                    break;
+                case ProcedureActionIntentStageOutcome { Result: ProcedureActionIntentRejected rejected }:
+                    RequireNoMutation(step.BeforeState, rejected.State); rejections.Add(new RejectionEvent { ShiftId = step.Receipt.Envelope.ShiftId, IntentId = intentId, ServerTick = tick, CurrentStateVersion = step.BeforeState.StateVersion, Reason = rejected.Reason }); break;
+                case ProcedureActionIntentStageOutcome { Result: ProcedureActionIntentUnderlyingRejected rejected }:
+                    RequireNoMutation(step.BeforeState, rejected.State); rejections.Add(new RejectionEvent { ShiftId = step.Receipt.Envelope.ShiftId, IntentId = intentId, ServerTick = tick, CurrentStateVersion = step.BeforeState.StateVersion, Reason = rejected.Reason }); break;
+                case ProcedureActionIntentStageOutcome:
+                    RequireNoMutation(step.BeforeState, step.AfterState); break;
                 case EarlyFeedIntentStageOutcome:
                 case UnsupportedIntentStageOutcome:
                     RequireNoMutation(step.BeforeState, step.AfterState); break;
@@ -757,6 +799,8 @@ public sealed class HostStageSevenEventExecutor
                 SameVersions(left, right) && left.LogId == right.LogId && left.AttemptedAt == right.AttemptedAt && left.Outcome == right.Outcome && left.Source == right.Source && left.Destination == right.Destination && left.BlockReason == right.BlockReason && left.FollowUp == right.FollowUp,
             (HostStageSevenProcedurePayload left, HostStageSevenProcedurePayload right) =>
                 SameVersions(left, right) && left.Descriptor == right.Descriptor,
+            (HostStageSevenProcedureActionStartedPayload left, HostStageSevenProcedureActionStartedPayload right) =>
+                SameVersions(left, right) && left.LogId == right.LogId && left.AnomalyId == right.AnomalyId && left.AttemptedItem == right.AttemptedItem && left.ProcedureStepIndex == right.ProcedureStepIndex && left.StartedAt == right.StartedAt && left.DueAt == right.DueAt && left.Duration == right.Duration,
             (HostStageSevenConfirmationPayload left, HostStageSevenConfirmationPayload right) =>
                 SameVersions(left, right) && left.Result == right.Result,
             (HostStageSevenContainmentPayload left, HostStageSevenContainmentPayload right) =>
