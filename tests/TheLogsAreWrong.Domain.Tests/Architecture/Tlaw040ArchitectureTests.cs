@@ -59,7 +59,7 @@ public sealed class Tlaw040ArchitectureTests
     public void Stage_two_and_seven_close_line_repair_outcomes_without_later_stage_or_replay_expansion()
     {
         var stageTwo = ReadSource("AcceptedIntentStageExecutionContracts.cs");
-        Assert.Contains("eight owned stage-2 action IDs", stageTwo, StringComparison.Ordinal);
+        Assert.Contains("nine owned stage-2 action IDs", stageTwo, StringComparison.Ordinal);
         Assert.Contains("LineRepairIntentHandler", stageTwo, StringComparison.Ordinal);
         Assert.Contains("LineRepairIntentStageOutcome", stageTwo, StringComparison.Ordinal);
 

@@ -35,6 +35,7 @@ public static class HostStageSevenEventTypes
     public static readonly EventTypeId ProcedureActionCompleted = EventTypeId.From("ProcedureActionCompleted");
     public static readonly EventTypeId ConfirmationTestStarted = EventTypeId.From("ConfirmationTestStarted");
     public static readonly EventTypeId ConfirmationTestCompleted = EventTypeId.From("ConfirmationTestCompleted");
+    public static readonly EventTypeId ContainmentRitualStarted = EventTypeId.From("ContainmentRitualStarted");
     public static readonly EventTypeId ContainmentRitualCompleted = EventTypeId.From("ContainmentRitualCompleted");
     public static readonly EventTypeId ContainmentStateChanged = EventTypeId.From("ContainmentStateChanged");
     public static readonly EventTypeId ConfirmationConditionUpdated = EventTypeId.From("ConfirmationConditionUpdated");
@@ -244,6 +245,41 @@ public sealed class HostStageSevenContainmentPayload : HostStageSevenVersionedPa
     public ContainmentRuntimeState CurrentContainment { get; }
     public ActiveContainmentRitual? Ritual { get; }
     public ContainmentIncidentDescriptor? Incident { get; }
+}
+
+/// <summary>Semantic evidence for one accepted containment-ritual start; it never implies ritual completion.</summary>
+public sealed class HostStageSevenContainmentRitualStartedPayload : HostStageSevenVersionedPayload
+{
+    internal HostStageSevenContainmentRitualStartedPayload(
+        ContainmentRuntimeState containment,
+        ActiveContainmentRitual ritual,
+        StateVersion prior,
+        StateVersion current)
+        : base(prior, current)
+    {
+        ArgumentNullException.ThrowIfNull(containment);
+        ArgumentNullException.ThrowIfNull(ritual);
+        if (containment.State == ContainmentState.STABLE ||
+            ritual.StartedAt.IsDefault || ritual.DueAt.IsDefault || ritual.Duration.IsDefault ||
+            ritual.Duration <= SimulationDuration.Zero || ritual.DueAt != ritual.StartedAt + ritual.Duration)
+        {
+            throw new ArgumentException("Containment ritual start publication requires initialized active containment and ritual evidence.");
+        }
+
+        ContainmentState = containment.State;
+        ContainmentEnteredAt = containment.EnteredAt;
+        ContainmentDeadlineAt = containment.DeadlineAt;
+        RitualStartedAt = ritual.StartedAt;
+        RitualDueAt = ritual.DueAt;
+        RitualDuration = ritual.Duration;
+    }
+
+    public ContainmentState ContainmentState { get; }
+    public ServerTick ContainmentEnteredAt { get; }
+    public ServerTick? ContainmentDeadlineAt { get; }
+    public ServerTick RitualStartedAt { get; }
+    public ServerTick RitualDueAt { get; }
+    public SimulationDuration RitualDuration { get; }
 }
 
 public sealed class HostStageSevenRepairPayload : HostStageSevenVersionedPayload
@@ -703,6 +739,23 @@ public sealed class HostStageSevenEventExecutor
                     RequireNoMutation(step.BeforeState, rejected.State); rejections.Add(new RejectionEvent { ShiftId = step.Receipt.Envelope.ShiftId, IntentId = intentId, ServerTick = tick, CurrentStateVersion = step.BeforeState.StateVersion, Reason = rejected.Reason }); break;
                 case LineRepairIntentStageOutcome:
                     RequireNoMutation(step.BeforeState, step.AfterState); break;
+                case ContainmentRitualIntentStageOutcome { Result: ContainmentRitualIntentStarted started }:
+                    var ritual = started.State.ActiveContainmentRitual ?? throw new InvalidOperationException("Containment ritual start requires exact active ritual evidence.");
+                    if (!ReferenceEquals(ritual, started.Result.Ritual) || !ReferenceEquals(step.BeforeState.Containment, started.State.Containment))
+                    {
+                        throw new InvalidOperationException("Containment ritual start must retain the exact existing containment and ritual evidence.");
+                    }
+
+                    AddMutation(plan, HostStageSevenEventTypes.ContainmentRitualStarted,
+                        new HostStageSevenContainmentRitualStartedPayload(started.State.Containment, ritual, step.BeforeState.StateVersion, started.State.StateVersion),
+                        intentId, step.BeforeState, started.State);
+                    break;
+                case ContainmentRitualIntentStageOutcome { Result: ContainmentRitualIntentRejected rejected }:
+                    RequireNoMutation(step.BeforeState, rejected.State); rejections.Add(new RejectionEvent { ShiftId = step.Receipt.Envelope.ShiftId, IntentId = intentId, ServerTick = tick, CurrentStateVersion = step.BeforeState.StateVersion, Reason = rejected.Reason }); break;
+                case ContainmentRitualIntentStageOutcome { Result: ContainmentRitualIntentUnderlyingRejected rejected }:
+                    RequireNoMutation(step.BeforeState, rejected.State); rejections.Add(new RejectionEvent { ShiftId = step.Receipt.Envelope.ShiftId, IntentId = intentId, ServerTick = tick, CurrentStateVersion = step.BeforeState.StateVersion, Reason = rejected.Reason }); break;
+                case ContainmentRitualIntentStageOutcome:
+                    RequireNoMutation(step.BeforeState, step.AfterState); break;
                 case EarlyFeedIntentStageOutcome:
                 case UnsupportedIntentStageOutcome:
                     RequireNoMutation(step.BeforeState, step.AfterState); break;
@@ -898,6 +951,8 @@ public sealed class HostStageSevenEventExecutor
                 SameVersions(left, right) && left.Result == right.Result,
             (HostStageSevenContainmentPayload left, HostStageSevenContainmentPayload right) =>
                 SameVersions(left, right) && left.PriorContainment == right.PriorContainment && left.CurrentContainment == right.CurrentContainment && left.Ritual == right.Ritual && left.Incident == right.Incident,
+            (HostStageSevenContainmentRitualStartedPayload left, HostStageSevenContainmentRitualStartedPayload right) =>
+                SameVersions(left, right) && left.ContainmentState == right.ContainmentState && left.ContainmentEnteredAt == right.ContainmentEnteredAt && left.ContainmentDeadlineAt == right.ContainmentDeadlineAt && left.RitualStartedAt == right.RitualStartedAt && left.RitualDueAt == right.RitualDueAt && left.RitualDuration == right.RitualDuration,
             (HostStageSevenRepairPayload left, HostStageSevenRepairPayload right) =>
                 SameVersions(left, right) && left.PriorLine == right.PriorLine && left.CurrentLine == right.CurrentLine && left.PendingTransition == right.PendingTransition,
             (HostStageSevenRepairStartedPayload left, HostStageSevenRepairStartedPayload right) =>

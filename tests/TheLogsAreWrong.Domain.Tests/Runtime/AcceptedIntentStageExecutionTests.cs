@@ -40,12 +40,13 @@ public sealed class AcceptedIntentStageExecutionTests
 
         var tools = ImmutableHashSet<ItemId>.Empty;
         var noise = LineNoiseRuntimeState.Create(state.ShiftId);
-        Assert.Throws<ArgumentNullException>(() => executor.Execute(null!, batch, Scheduler, tools, noise, Fx.Anomalies));
-        Assert.Throws<ArgumentNullException>(() => executor.Execute(state, null!, Scheduler, tools, noise, Fx.Anomalies));
-        Assert.Throws<ArgumentNullException>(() => executor.Execute(state, batch, null!, tools, noise, Fx.Anomalies));
-        Assert.Throws<ArgumentNullException>(() => executor.Execute(state, batch, Scheduler, null!, noise, Fx.Anomalies));
-        Assert.Throws<ArgumentNullException>(() => executor.Execute(state, batch, Scheduler, tools, null!, Fx.Anomalies));
-        Assert.Throws<ArgumentNullException>(() => executor.Execute(state, batch, Scheduler, tools, noise, null!));
+        Assert.Throws<ArgumentNullException>(() => executor.Execute(null!, batch, Scheduler, tools, noise, Fx.Anomalies, Fx.Shift.Containment));
+        Assert.Throws<ArgumentNullException>(() => executor.Execute(state, null!, Scheduler, tools, noise, Fx.Anomalies, Fx.Shift.Containment));
+        Assert.Throws<ArgumentNullException>(() => executor.Execute(state, batch, null!, tools, noise, Fx.Anomalies, Fx.Shift.Containment));
+        Assert.Throws<ArgumentNullException>(() => executor.Execute(state, batch, Scheduler, null!, noise, Fx.Anomalies, Fx.Shift.Containment));
+        Assert.Throws<ArgumentNullException>(() => executor.Execute(state, batch, Scheduler, tools, null!, Fx.Anomalies, Fx.Shift.Containment));
+        Assert.Throws<ArgumentNullException>(() => executor.Execute(state, batch, Scheduler, tools, noise, null!, Fx.Shift.Containment));
+        Assert.Throws<ArgumentNullException>(() => executor.Execute(state, batch, Scheduler, tools, noise, Fx.Anomalies, null!));
     }
 
     [Fact]
@@ -60,7 +61,7 @@ public sealed class AcceptedIntentStageExecutionTests
         var crossShiftBatch = AcceptedIntentTickBatchFactory.Create(otherShift, BatchTick, new[] { receipt });
 
         Assert.NotEqual(state.ShiftId, crossShiftBatch.ShiftId);
-        Assert.Throws<ArgumentException>(() => new AcceptedIntentStageExecutor().Execute(state, crossShiftBatch, Scheduler, ImmutableHashSet<ItemId>.Empty, LineNoiseRuntimeState.Create(state.ShiftId), Fx.Anomalies));
+        Assert.Throws<ArgumentException>(() => new AcceptedIntentStageExecutor().Execute(state, crossShiftBatch, Scheduler, ImmutableHashSet<ItemId>.Empty, LineNoiseRuntimeState.Create(state.ShiftId), Fx.Anomalies, Fx.Shift.Containment));
     }
 
     [Fact]
@@ -110,7 +111,7 @@ public sealed class AcceptedIntentStageExecutionTests
 
         Assert.Equal(typeof(AcceptedIntentStageExecution), execute.ReturnType);
         Assert.Equal(
-            new[] { typeof(ShiftRuntimeState), typeof(AcceptedIntentTickBatch), typeof(SchedulerConfiguration), typeof(ImmutableHashSet<ItemId>), typeof(LineNoiseRuntimeState), typeof(AnomalyCatalog) },
+            new[] { typeof(ShiftRuntimeState), typeof(AcceptedIntentTickBatch), typeof(SchedulerConfiguration), typeof(ImmutableHashSet<ItemId>), typeof(LineNoiseRuntimeState), typeof(AnomalyCatalog), typeof(ContainmentConfiguration) },
             execute.GetParameters().Select(parameter => parameter.ParameterType));
         Assert.DoesNotContain(execute.GetParameters(), parameter =>
             parameter.ParameterType == typeof(object) ||
@@ -468,7 +469,7 @@ public sealed class AcceptedIntentStageExecutionTests
     // ----- Helpers -----
 
     private static AcceptedIntentStageExecution Execute(ShiftRuntimeState initialState, AcceptedIntentTickBatch batch)
-        => new AcceptedIntentStageExecutor().Execute(initialState, batch, Scheduler, ImmutableHashSet<ItemId>.Empty, LineNoiseRuntimeState.Create(initialState.ShiftId), Fx.Anomalies);
+        => new AcceptedIntentStageExecutor().Execute(initialState, batch, Scheduler, ImmutableHashSet<ItemId>.Empty, LineNoiseRuntimeState.Create(initialState.ShiftId), Fx.Anomalies, Fx.Shift.Containment);
 
     private static (AcceptedIntentStageExecution Execution, AuthoritativeAcceptedIntent[] Receipts) BuildMixedExecution()
     {
