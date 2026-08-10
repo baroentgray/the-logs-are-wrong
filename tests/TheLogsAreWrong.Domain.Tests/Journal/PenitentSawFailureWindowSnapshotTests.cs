@@ -1,10 +1,14 @@
 using System.Collections.Immutable;
 using TheLogsAreWrong.Domain.Configuration;
+using TheLogsAreWrong.Domain.Enums;
 using TheLogsAreWrong.Domain.Events;
+using TheLogsAreWrong.Domain.Identifiers;
+using TheLogsAreWrong.Domain.Intents;
 using TheLogsAreWrong.Domain.Journal;
 using TheLogsAreWrong.Domain.Primitives;
 using TheLogsAreWrong.Domain.Runtime;
 using TheLogsAreWrong.Domain.Scheduler;
+using TheLogsAreWrong.Domain.Sequencing;
 using TheLogsAreWrong.Domain.Tests.Determinism;
 using TheLogsAreWrong.Domain.Time;
 
@@ -88,6 +92,75 @@ public sealed class PenitentSawFailureWindowSnapshotTests
             .Count(field => field.FieldType == typeof(EventTypeId)));
     }
 
+    [Fact]
+    public void A_restored_intake_deadline_expires_through_real_host_ticks_while_the_failure_window_remains_active()
+    {
+        var (configuration, run) = RunIncorrectPenitent();
+        var source = Captures(run).Single(snapshot => snapshot.ServerTick == ServerTick.From(19));
+        var deadlineSnapshot = With(
+            source,
+            WithDeadline(
+                source.SchedulerState,
+                new SnapshotIntakeDeadline(LogId.From("log_04"), source.ServerTick, SimulationDuration.FromTicks(2))),
+            source.ServerTick);
+        var restored = Assert.IsType<ShiftSnapshotRestored>(Restore.Restore(deadlineSnapshot, configuration.Shift));
+        var journal = JournalAtBoundary(run, deadlineSnapshot);
+        var host = new HostTickExecutionService();
+
+        var waiting = host.Execute(
+            restored.ShiftState,
+            restored.QuotaState,
+            restored.MovementNoise,
+            restored.LineNoise,
+            restored.Progression,
+            restored.Lifecycle,
+            Batch(restored.ShiftState.ShiftId, ServerTick.From(20)),
+            ImmutableHashSet<ItemId>.Empty,
+            journal,
+            [],
+            ServerTick.From(20),
+            configuration.Shift.Scheduler,
+            configuration.Shift,
+            configuration.Shift.Containment,
+            configuration.Anomalies);
+
+        var waitingCheckpoint = Assert.IsType<HostTickCheckpointAdvanced>(waiting.Checkpoint);
+        Assert.IsType<HostStageSevenNoNewPublication>(waiting);
+        Assert.IsType<SawCycleStartBlockedByFailureWindow>(waiting.StageFour.Start.Result);
+        Assert.Equal(ServerTick.From(21), Assert.IsType<ActiveIntakeDeadline>(waiting.FinalShiftState.ActiveIntakeDeadline).DueAt);
+
+        var expired = host.Execute(
+            waiting.FinalShiftState,
+            waiting.FinalQuotaState,
+            waiting.StageSix.FinalMovementNoise,
+            waiting.FinalLineNoise,
+            waitingCheckpoint.Progression,
+            waitingCheckpoint.Receipt.Lifecycle,
+            Batch(waiting.FinalShiftState.ShiftId, ServerTick.From(21)),
+            ImmutableHashSet<ItemId>.Empty,
+            journal,
+            [EventId.From("tlaw047_deadline_expired"), EventId.From("tlaw047_deadline_auto_route"), EventId.From("tlaw047_deadline_feed")],
+            ServerTick.From(21),
+            configuration.Shift.Scheduler,
+            configuration.Shift,
+            configuration.Shift.Containment,
+            configuration.Anomalies);
+
+        var published = Assert.IsType<HostStageSevenPublished>(expired);
+        Assert.Equal(
+            [HostStageSevenEventTypes.IntakeDeadlineExpired, HostStageSevenEventTypes.AutoRouteAttempted, HostStageSevenEventTypes.FeedScheduled],
+            published.Publications.Select(publication => publication.Envelope.EventType));
+        Assert.IsType<IntakeDeadlineExpired>(expired.StageThree.IntakeDeadline.Result);
+        Assert.IsType<DefaultIntakeAutoRouteApplied>(expired.StageFive.DefaultRoute);
+        Assert.IsType<SawCycleStartBlockedByFailureWindow>(expired.StageFour.Start.Result);
+        Assert.Null(expired.FinalShiftState.ActiveIntakeDeadline);
+        Assert.Equal(LogState.QUEUED_FOR_SAW, Log(expired.FinalShiftState, "log_04").State);
+        Assert.Equal((ServerTick.From(19), ServerTick.From(27)), (expired.FinalShiftState.ActiveSawFailureWindow!.StartedAt, expired.FinalShiftState.ActiveSawFailureWindow.DueAt));
+        Assert.Equal(ServerTick.From(840), expired.Checkpoint is HostTickCheckpointAdvanced advanced
+            ? advanced.Receipt.Lifecycle.HardDeadlineAt
+            : throw new InvalidOperationException("The real host tick must advance its checkpoint."));
+    }
+
     private static (ValidatedConfiguration Configuration, FullP0HostScenarioRun Run) RunIncorrectPenitent()
     {
         var configuration = Fixture.LoadP0();
@@ -120,4 +193,34 @@ public sealed class PenitentSawFailureWindowSnapshotTests
         window,
         source.ProcessedIntentIds,
         source.Progression);
+
+    private static SnapshotSchedulerState WithDeadline(SnapshotSchedulerState source, SnapshotIntakeDeadline deadline) => new(
+        source.PendingFeed,
+        deadline,
+        source.ActiveProcedureHold,
+        source.ActiveConfirmationTest,
+        source.ActiveSawCycle,
+        source.ActiveSawFailureWindow,
+        source.ProcessedIntentIds,
+        source.Progression);
+
+    private static AcceptedIntentTickBatch Batch(ShiftId shiftId, ServerTick tick) =>
+        AcceptedIntentTickBatchFactory.Create(shiftId, tick, []);
+
+    private static InMemoryEventJournal JournalAtBoundary(FullP0HostScenarioRun run, ShiftSnapshot snapshot)
+    {
+        var journal = new InMemoryEventJournal(snapshot.ShiftId);
+        foreach (var envelope in run.Journal.Events.Where(envelope => envelope.Sequence <= snapshot.LastEventSequence))
+        {
+            journal.Append(envelope);
+        }
+
+        return journal;
+    }
+
+    private static LogRuntimeState Log(ShiftRuntimeState state, string logId)
+    {
+        Assert.True(state.TryGetLog(LogId.From(logId), out var log));
+        return log;
+    }
 }

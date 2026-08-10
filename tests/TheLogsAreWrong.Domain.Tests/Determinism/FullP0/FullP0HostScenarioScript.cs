@@ -472,6 +472,36 @@ internal sealed class FullP0HostScenarioScript
         return new FullP0HostScenarioScript("TLAW042_INCORRECT_PENITENT", "TLAW042_INCORRECT_PENITENT", Learning, P0Seed, ServerTick.From(19), false, builder.Build());
     }
 
+    /// <summary>
+    /// TLAW-047-only continuation of <see cref="IncorrectPenitent"/>. It preserves that frozen TLAW-042 scenario
+    /// exactly, then proves the D-015 interval is saw-only through expiry: an ordinary early-feed intent and admission
+    /// continue while the queued successor is blocked until the exact due tick.
+    /// </summary>
+    internal static FullP0HostScenarioScript IncorrectPenitentFailureWindowContinuation()
+    {
+        var builder = new ScriptBuilder();
+        ClearNormals(builder, 2);
+        builder.Tick(13, [Route("log_03", LogIntentActions.RouteToSawQueue)], [LogRouted, SawCycleStarted, FeedScheduled]);
+        builder.Tick(18, [LogAdmittedToIntake, IntakeDeadlineStarted]);
+        builder.Tick(19, [SawCycleCompleted]);
+        builder.Tick(
+            20,
+            [EarlyFeed(), Route("log_04", LogIntentActions.RouteToSawQueue, 1)],
+            [EarlyFeedRequested, FeedScheduled, LogRouted]);
+        builder.Tick(22, [LogAdmittedToIntake, IntakeDeadlineStarted]);
+        builder.Tick(24, [LineNoiseChanged]);
+        builder.Tick(27, [SawCycleStarted, LineNoiseChanged]);
+        builder.Tick(33, [SawCycleCompleted]);
+        return new FullP0HostScenarioScript(
+            "TLAW047_INCORRECT_PENITENT_FAILURE_WINDOW_CONTINUATION",
+            "TLAW047_INCORRECT_PENITENT_FAILURE_WINDOW_CONTINUATION",
+            Learning,
+            P0Seed,
+            ServerTick.From(33),
+            false,
+            builder.Build());
+    }
+
     /// <summary>§9 — the bounded incorrect-False-Species saw scenario. log_05 reaches the saw without CORRECTLY_RELABELED.</summary>
     internal static FullP0HostScenarioScript IncorrectFalseSpecies()
     {

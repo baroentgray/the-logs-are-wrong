@@ -1,3 +1,6 @@
+using System.Collections.Immutable;
+using System.Reflection;
+using TheLogsAreWrong.Domain.Anomalies;
 using TheLogsAreWrong.Domain.Configuration;
 using TheLogsAreWrong.Domain.Enums;
 using TheLogsAreWrong.Domain.Identifiers;
@@ -107,6 +110,78 @@ public sealed class PenitentSawFailureWindowTests
         Assert.Same(completed.State, execution.FinalShiftState);
         Assert.Equal(beforeVersion.Next(), execution.FinalShiftState.StateVersion);
         Assert.Equal(0, execution.FinalQuotaState.TotalCreditedUnits);
+    }
+
+    [Fact]
+    public void Normal_saw_completion_keeps_the_established_same_tick_quota_then_successor_start_without_a_failure_window()
+    {
+        var started = Start(Queued("log_01"), ServerTick.From(10));
+        var withSuccessor = Queue(started.State, "log_02");
+        var beforeVersion = withSuccessor.StateVersion;
+
+        var execution = new HostStageFourSawExecutor().Execute(
+            withSuccessor,
+            TheLogsAreWrong.Domain.Quota.QuotaRuntimeState.Create(Fx.Shift),
+            started.Cycle.DueAt,
+            Fx.Shift.Scheduler,
+            Fx.Anomalies);
+
+        var completed = Assert.IsType<SawCycleCompleted>(execution.Completion.Result);
+        Assert.IsType<SawQuotaApplicationAccepted>(execution.Quota.Result);
+        var successor = Assert.IsType<SawCycleStarted>(execution.Start.Result);
+
+        Assert.Equal((LogId.From("log_01"), LogId.From("log_02")), (completed.Cycle.LogId, successor.Cycle.LogId));
+        Assert.Same(completed.State, execution.Start.BeforeShiftState);
+        Assert.Equal(beforeVersion.Next(), completed.State.StateVersion);
+        Assert.Equal(completed.State.StateVersion.Next(), successor.State.StateVersion);
+        Assert.Equal(successor.State.StateVersion, execution.FinalShiftState.StateVersion);
+        Assert.Null(execution.FinalShiftState.ActiveSawFailureWindow);
+    }
+
+    [Fact]
+    public void Malformed_effect_like_incorrect_penitent_evidence_fails_closed_without_creating_a_window()
+    {
+        var started = Start(Queued("log_03"), ServerTick.From(10));
+        var completion = Assert.IsType<SawCycleCompleted>(
+            new SawCycleCompletionService().Complete(started.State, started.Cycle.DueAt, Fx.Anomalies));
+        var exact = Assert.Single(completion.Resolution.Effects);
+
+        var malformedEffects = new[]
+        {
+            ImmutableArray<EffectDefinition>.Empty,
+            ImmutableArray.Create(exact, exact),
+            ImmutableArray.Create(exact with { Type = EffectType.@lock }),
+            ImmutableArray.Create(exact with { Event = EffectEventId.From("UNRELATED_EVENT") }),
+            ImmutableArray.Create(exact with { DurationSeconds = 7 }),
+            ImmutableArray.Create(exact with { Target = "not_null" })
+        };
+
+        foreach (var effects in malformedEffects)
+        {
+            var malformed = new ProcessingResolution(
+                completion.Resolution.LogId,
+                isAnomalous: true,
+                allRequiredFlagsPresent: false,
+                LogState.PROCESSED,
+                completion.Resolution.Settlement,
+                effects);
+
+            AssertInternalTriggerRejects(malformed, started.Cycle.DueAt);
+        }
+    }
+
+    private static void AssertInternalTriggerRejects(ProcessingResolution resolution, ServerTick completedAt)
+    {
+        var factory = typeof(SawCycleCompletionService).Assembly.GetType(
+            "TheLogsAreWrong.Domain.Scheduler.SawFailureWindowFactory",
+            throwOnError: true)!;
+        var derive = factory.GetMethod("FromCompletion", BindingFlags.Static | BindingFlags.NonPublic)
+            ?? throw new InvalidOperationException("The frozen TLAW-047 trigger derivation is unavailable.");
+
+        var invocation = Assert.Throws<TargetInvocationException>(() =>
+            derive.Invoke(null, [AnomalyId.From("PENITENT_TRUNK"), resolution, completedAt]));
+
+        Assert.IsType<InvalidOperationException>(invocation.InnerException);
     }
 
     private static SawCycleStarted Start(ShiftRuntimeState state, ServerTick tick) =>
