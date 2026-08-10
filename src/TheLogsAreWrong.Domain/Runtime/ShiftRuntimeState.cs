@@ -686,6 +686,86 @@ public sealed class ShiftRuntimeState
             ActiveSawCycle);
     }
 
+    /// <summary>
+    /// The one snapshot-specific restoration seam. It exists because every other host-owned state exposes an internal
+    /// factory that can rebuild an exact value, while this state's constructor is private and its derived capacity and
+    /// manifest-index maps are not reachable from a snapshot value.
+    /// <para>
+    /// The seam derives the shift identity, seed, node capacities and manifest index map from the same validated
+    /// configuration the live host used, so a restored state can never disagree with configuration on those. It adds no
+    /// gameplay behaviour, mutates nothing, validates that the supplied manifest projection matches the configured
+    /// manifest exactly, and returns a new immutable value. It stays <c>internal</c> so no caller outside this assembly
+    /// can construct an arbitrary malformed runtime.
+    /// </para>
+    /// </summary>
+    internal static ShiftRuntimeState RestoreForSnapshot(
+        ShiftConfiguration configuration,
+        StateVersion stateVersion,
+        ImmutableArray<LogRuntimeState> logs,
+        ImmutableHashSet<IntentId> processedIntentIds,
+        PendingFeedSchedule? pendingFeed,
+        RuntimeInventory inventory,
+        ImmutableDictionary<LogId, ProcedureProgress> procedureProgressByLog,
+        ActiveProcedureHold? activeProcedureHold,
+        ActiveConfirmationTest? activeConfirmationTest,
+        ImmutableDictionary<LogId, ConfirmationTestResult> confirmationResultsByLog,
+        ContainmentRuntimeState containment,
+        ActiveContainmentRitual? activeContainmentRitual,
+        LineRuntimeState line,
+        ActiveIntakeDeadline? activeIntakeDeadline,
+        ActiveSawCycle? activeSawCycle)
+    {
+        // Create validates the configuration, capacities and manifest exactly as the live host does.
+        var pristine = Create(configuration);
+        ArgumentNullException.ThrowIfNull(inventory);
+        ArgumentNullException.ThrowIfNull(processedIntentIds);
+        ArgumentNullException.ThrowIfNull(procedureProgressByLog);
+        ArgumentNullException.ThrowIfNull(confirmationResultsByLog);
+        ArgumentNullException.ThrowIfNull(containment);
+        ArgumentNullException.ThrowIfNull(line);
+
+        if (stateVersion.IsDefault)
+        {
+            throw new ArgumentException("A restored runtime requires an initialized state version.", nameof(stateVersion));
+        }
+
+        if (logs.IsDefault || logs.Length != pristine.Logs.Length)
+        {
+            throw new ArgumentException("A restored manifest must have the exact configured length.", nameof(logs));
+        }
+
+        for (var index = 0; index < logs.Length; index++)
+        {
+            var restored = logs[index];
+            var configured = pristine.Logs[index];
+            if (restored is null || restored.LogId != configured.LogId || restored.TrueSpecies != configured.TrueSpecies ||
+                restored.DeclaredSpecies != configured.DeclaredSpecies || restored.Anomaly != configured.Anomaly)
+            {
+                throw new ArgumentException("A restored manifest must match the configured manifest order and identity.", nameof(logs));
+            }
+        }
+
+        return new ShiftRuntimeState(
+            pristine.ShiftId,
+            pristine.ShiftSeed,
+            stateVersion,
+            logs,
+            pristine._logIndexes,
+            pristine._capacities,
+            processedIntentIds,
+            pendingFeed,
+            inventory,
+            procedureProgressByLog,
+            activeProcedureHold,
+            activeConfirmationTest,
+            confirmationResultsByLog,
+            containment,
+            activeContainmentRitual,
+            line,
+            activeIntakeDeadline,
+            activeSawCycle);
+    }
+
     private static bool ConfirmationEqual(ActiveConfirmationTest? left, ActiveConfirmationTest? right) => left is null ? right is null : right is not null && left.LogId == right.LogId && left.AnomalyId == right.AnomalyId && left.AccumulatedValidDuration == right.AccumulatedValidDuration && left.SegmentStartedAt == right.SegmentStartedAt && left.DueAt == right.DueAt && left.IsRunning == right.IsRunning && left.LastConditionBoundaryAt == right.LastConditionBoundaryAt && left.Plan.AnomalyId == right.Plan.AnomalyId && left.Plan.RequiredTools.SetEquals(right.Plan.RequiredTools) && left.Plan.Duration == right.Plan.Duration && left.Plan.Continuous == right.Plan.Continuous && left.Plan.RequiredLineNoise == right.Plan.RequiredLineNoise && left.Plan.ResetWhenConditionLost == right.Plan.ResetWhenConditionLost && left.Plan.Result == right.Plan.Result;
     private static bool ResultEqual(ConfirmationTestResult left, ConfirmationTestResult right) => left.LogId == right.LogId && left.AnomalyId == right.AnomalyId && left.Result == right.Result && left.RequiredTools.SetEquals(right.RequiredTools) && left.Duration == right.Duration && left.CompletedAt == right.CompletedAt;
 }
