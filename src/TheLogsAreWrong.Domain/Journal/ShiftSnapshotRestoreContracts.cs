@@ -106,6 +106,10 @@ public sealed class ShiftSnapshotRestoreService
             movementNoise = RestoreMovementNoise(snapshot);
             lineNoise = RestoreLineNoise(snapshot, shift, movementNoise);
             lifecycle = RestoreLifecycle(snapshot, configuration, shift, quota);
+
+            // Reconstruction is only accepted once the correlated evidence is proven coherent, so checkpoint
+            // progression is derived from validated state rather than from whatever the snapshot claimed.
+            ShiftSnapshotCorrelationValidation.Validate(snapshot, shift, quota, lifecycle, configuration);
             progression = RestoreProgression(snapshot, shift, quota, lifecycle);
         }
         catch (ArgumentException exception)
@@ -363,5 +367,148 @@ public sealed class ShiftSnapshotRestoreService
             : new ShiftCompletionActive(lifecycle, shift, quota, false, false);
 
         return progression.Advance(HostTickCompletionReceipt.Create(snapshot.ServerTick, evaluation));
+    }
+}
+
+/// <summary>
+/// The single closed correlation boundary for snapshot restoration. It executes no gameplay: the established
+/// cross-runtime invariants are delegated to the frozen <see cref="ShiftCompletionValidation"/> boundary, and only the
+/// correlations that are specific to restoring a public snapshot value are derived here, from the same frozen facts the
+/// completion rules use. Every violation throws, so <see cref="ShiftSnapshotRestoreService"/> fails closed with
+/// <see cref="ShiftSnapshotRestoreRejection.ContradictoryEvidence"/> rather than returning impossible runtime state.
+/// </summary>
+internal static class ShiftSnapshotCorrelationValidation
+{
+    internal static void Validate(
+        ShiftSnapshot snapshot,
+        ShiftRuntimeState shift,
+        QuotaRuntimeState quota,
+        ShiftLifecycleRuntimeState lifecycle,
+        ShiftConfiguration configuration)
+    {
+        // Established evidence: lifecycle/configuration agreement, manifest identity and order, settled-quota identity,
+        // and the active-saw invariant (the cycle owner exists, is IN_SAW, is the only saw occupant, and its timing is
+        // coherent). Reusing the frozen boundary avoids duplicating any gameplay rule here.
+        ShiftCompletionValidation.ValidateActiveCorrelation(lifecycle, shift, quota, snapshot.ServerTick, configuration);
+
+        var processedCount = 0;
+        var writtenOffCount = 0;
+        foreach (var log in shift.Logs)
+        {
+            if (log.State == LogState.PROCESSED)
+            {
+                processedCount++;
+            }
+            else if (log.State == LogState.HELD_WRITTEN_OFF)
+            {
+                writtenOffCount++;
+            }
+        }
+
+        var allLogsTerminal = processedCount + writtenOffCount == shift.Logs.Length;
+
+        if (lifecycle.Completion is { } completion)
+        {
+            ValidateCompletedLifecycle(snapshot, completion, lifecycle, quota, processedCount, writtenOffCount, allLogsTerminal);
+        }
+        else
+        {
+            ValidateActiveLifecycle(snapshot, lifecycle, allLogsTerminal);
+        }
+
+        ValidateProgression(snapshot, lifecycle);
+    }
+
+    /// <summary>
+    /// An active restored lifecycle must still be resumable. The frozen completion rules refuse to evaluate an active
+    /// lifecycle past its hard deadline and force completion once the deadline is reached or every log is terminal, so a
+    /// snapshot that is already in either condition without completion could never be produced by the host and could
+    /// never survive the next sequential tick.
+    /// </summary>
+    private static void ValidateActiveLifecycle(ShiftSnapshot snapshot, ShiftLifecycleRuntimeState lifecycle, bool allLogsTerminal)
+    {
+        if (snapshot.ServerTick >= lifecycle.HardDeadlineAt)
+        {
+            throw new InvalidOperationException(
+                $"An active restored lifecycle cannot already be at or past its hard deadline: tick {snapshot.ServerTick} vs deadline {lifecycle.HardDeadlineAt}.");
+        }
+
+        if (allLogsTerminal)
+        {
+            throw new InvalidOperationException("An active restored lifecycle cannot already have every manifest log terminal.");
+        }
+    }
+
+    /// <summary>
+    /// A completion-bearing snapshot must agree with the exact frozen completion derivation for its own tick, lifecycle
+    /// and quota evidence, so a restored completed shift is the one the host would have produced.
+    /// </summary>
+    private static void ValidateCompletedLifecycle(
+        ShiftSnapshot snapshot,
+        ShiftCompletionEvidence completion,
+        ShiftLifecycleRuntimeState lifecycle,
+        QuotaRuntimeState quota,
+        int processedCount,
+        int writtenOffCount,
+        bool allLogsTerminal)
+    {
+        if (completion.CompletedAt > snapshot.ServerTick || completion.CompletedAt > lifecycle.HardDeadlineAt || completion.CompletedAt < lifecycle.StartedAt)
+        {
+            throw new InvalidOperationException(
+                $"Completion tick {completion.CompletedAt} must lie inside the restored lifecycle window and never after the snapshot tick {snapshot.ServerTick}.");
+        }
+
+        var hardDeadlineReached = completion.CompletedAt == lifecycle.HardDeadlineAt;
+        if (completion.HardDeadlineReached != hardDeadlineReached || completion.AllLogsTerminal != allLogsTerminal)
+        {
+            throw new InvalidOperationException("Restored completion evidence must agree with the reconstructed deadline and terminal-log facts.");
+        }
+
+        if (!allLogsTerminal && !hardDeadlineReached)
+        {
+            throw new InvalidOperationException("A restored shift cannot be completed before either every log is terminal or the hard deadline is reached.");
+        }
+
+        var expectedReason = hardDeadlineReached
+            ? allLogsTerminal ? ShiftCompletionReason.AllLogsTerminalAtHardDeadline : ShiftCompletionReason.HardDeadline
+            : ShiftCompletionReason.AllLogsTerminal;
+        if (completion.Reason != expectedReason)
+        {
+            throw new InvalidOperationException($"Restored completion reason must be {expectedReason} for the reconstructed evidence.");
+        }
+
+        if (completion.ProcessedCount != processedCount || completion.WrittenOffCount != writtenOffCount)
+        {
+            throw new InvalidOperationException("Restored completion counts must equal the reconstructed terminal-log counts.");
+        }
+
+        if (completion.ObjectivesSatisfied != quota.ObjectivesSatisfied)
+        {
+            throw new InvalidOperationException("Restored completion objective satisfaction must equal the reconstructed quota verdict.");
+        }
+    }
+
+    /// <summary>
+    /// The restored checkpoint evidence must be usable as the previous checkpoint of the next sequential host tick: a
+    /// snapshot that reports no completed tick can only be the pristine pre-execution projection, and a receipt may not
+    /// claim the shift completed while the restored lifecycle is still active.
+    /// </summary>
+    private static void ValidateProgression(ShiftSnapshot snapshot, ShiftLifecycleRuntimeState lifecycle)
+    {
+        var progression = snapshot.SchedulerState.Progression;
+        if (!progression.HasCompletedTick)
+        {
+            if (snapshot.ServerTick != ServerTick.Zero || snapshot.StateVersion != StateVersion.Zero || snapshot.LastEventSequence != EventSequence.None)
+            {
+                throw new InvalidOperationException("A snapshot without a completed host tick must still be the pristine pre-execution projection.");
+            }
+
+            return;
+        }
+
+        if (progression.LastReceiptCompletedShift && !lifecycle.IsCompleted)
+        {
+            throw new InvalidOperationException("A checkpoint receipt cannot report a completed shift while the restored lifecycle is still active.");
+        }
     }
 }
