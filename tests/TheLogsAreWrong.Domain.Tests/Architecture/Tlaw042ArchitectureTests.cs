@@ -54,6 +54,30 @@ public sealed class Tlaw042ArchitectureTests
             Directory.GetFiles(determinism, "*.cs", SearchOption.AllDirectories).Length);
     }
 
+    /// <summary>
+    /// LOW-1 — the exact authorized TLAW-042 range must contain no production edit at all, whether or not the edit
+    /// mentions this increment. The range is pinned to the authorized Gate-1 baseline, so this guard is scoped to the
+    /// TLAW-042 branch by construction and must be retargeted or retired by the increment that next changes
+    /// <c>src/**</c> on <c>main</c>.
+    /// </summary>
+    [Fact]
+    public void Exact_tlaw042_commit_range_changes_only_test_project_paths()
+    {
+        var root = FindRepositoryRoot();
+        var changed = RunGit(root, "diff", "--name-only", AuthorizedBaseline, "HEAD");
+
+        // Non-vacuous: the range really is the TLAW-042 implementation.
+        Assert.NotEmpty(changed);
+        Assert.Contains("tests/TheLogsAreWrong.Domain.Tests/Determinism/FullP0/FullP0HostScenarioDriver.cs", changed);
+        Assert.All(changed, path => Assert.StartsWith(AuthorizedPathPrefix, path, StringComparison.Ordinal));
+        Assert.All(
+            UnauthorizedRootPrefixes,
+            prefix => Assert.DoesNotContain(changed, path => path.StartsWith(prefix, StringComparison.Ordinal)));
+
+        // The baseline really is an ancestor of the corrected candidate, so the range above is the whole increment.
+        Assert.Equal([AuthorizedBaseline], RunGit(root, "merge-base", AuthorizedBaseline, "HEAD"));
+    }
+
     [Fact]
     public void No_production_source_configuration_or_documentation_file_was_changed_for_tlaw042()
     {
@@ -207,6 +231,45 @@ public sealed class Tlaw042ArchitectureTests
         Assert.True(driverTypes.Length >= 8, $"The TLAW-042 driver-type scan is vacuous: {driverTypes.Length} types.");
         Assert.All(driverTypes, type => Assert.False(type.IsPublic, $"{type.Name} must not widen the test surface."));
         Assert.All(driverTypes, type => Assert.Equal(typeof(Tlaw042ArchitectureTests).Assembly, type.Assembly));
+    }
+
+    /// <summary>The exact authorized Gate-1 baseline this increment was implemented from.</summary>
+    private const string AuthorizedBaseline = "71aee1cc4138c2996e974afc9008eb3536b98ff9";
+
+    private const string AuthorizedPathPrefix = "tests/TheLogsAreWrong.Domain.Tests/";
+
+    private static readonly string[] UnauthorizedRootPrefixes = ["src/", "data/", "docs/", "source/", "tools/"];
+
+    /// <summary>
+    /// Runs git with an argument list rather than a parsed command line, so no path or revision is ever shell-quoted.
+    /// Git always reports repository paths with forward slashes, so the returned values are platform-independent.
+    /// </summary>
+    private static string[] RunGit(string workingDirectory, params string[] arguments)
+    {
+        var startInfo = new System.Diagnostics.ProcessStartInfo("git")
+        {
+            WorkingDirectory = workingDirectory,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            UseShellExecute = false,
+            CreateNoWindow = true
+        };
+
+        foreach (var argument in arguments)
+        {
+            startInfo.ArgumentList.Add(argument);
+        }
+
+        using var process = System.Diagnostics.Process.Start(startInfo)
+            ?? throw new InvalidOperationException("git could not be started for the TLAW-042 range guard.");
+        var standardOutput = process.StandardOutput.ReadToEnd();
+        var standardError = process.StandardError.ReadToEnd();
+        process.WaitForExit();
+
+        Assert.True(process.ExitCode == 0, $"git {string.Join(' ', arguments)} failed: {standardError}");
+        return standardOutput
+            .Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .ToArray();
     }
 
     private static bool IsBuildOutput(string path) =>

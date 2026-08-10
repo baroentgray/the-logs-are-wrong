@@ -54,6 +54,59 @@ internal sealed record FullP0LogProjection(string LogId, string TrueSpecies, str
 }
 
 /// <summary>
+/// The complete canonical value projection of the final <see cref="ShiftRuntimeState"/>. Every publicly readable
+/// semantic component that participates in <c>ShiftRuntimeState.ValueEquals</c> is represented here with deterministic
+/// ordering for every set and dictionary.
+/// <para>
+/// One component cannot be reached through the existing public API: the private per-node capacity map that
+/// <c>ValueEquals</c> also compares is exposed only indirectly through <c>GetNodeOccupancy</c>. TLAW-042 does not add a
+/// production accessor and does not use reflection for it; the repeatability test additionally asserts
+/// <c>FinalShiftState.ValueEquals(...)</c> between independent runs, which covers that inaccessible portion.
+/// </para>
+/// </summary>
+internal sealed record FullP0ShiftStateProjection(
+    string ShiftId,
+    int ShiftSeed,
+    long StateVersion,
+    ImmutableArray<FullP0LogProjection> Logs,
+    ImmutableArray<string> ProcessedIntentIds,
+    string PendingFeed,
+    ImmutableArray<string> ConsumableInventory,
+    ImmutableArray<string> ReusableInventory,
+    ImmutableArray<string> ProcedureProgressByLog,
+    string ActiveProcedureHold,
+    string ActiveConfirmationTest,
+    ImmutableArray<string> ConfirmationResultsByLog,
+    string Containment,
+    string ActiveContainmentRitual,
+    string Line,
+    string ActiveIntakeDeadline,
+    string ActiveSawCycle,
+    ImmutableArray<string> NodeOccupancy)
+{
+    public bool StructurallyEquals(FullP0ShiftStateProjection other) =>
+        ShiftId == other.ShiftId &&
+        ShiftSeed == other.ShiftSeed &&
+        StateVersion == other.StateVersion &&
+        Logs.Length == other.Logs.Length &&
+        Logs.Select((log, index) => log.StructurallyEquals(other.Logs[index])).All(equal => equal) &&
+        ProcessedIntentIds.SequenceEqual(other.ProcessedIntentIds, StringComparer.Ordinal) &&
+        PendingFeed == other.PendingFeed &&
+        ConsumableInventory.SequenceEqual(other.ConsumableInventory, StringComparer.Ordinal) &&
+        ReusableInventory.SequenceEqual(other.ReusableInventory, StringComparer.Ordinal) &&
+        ProcedureProgressByLog.SequenceEqual(other.ProcedureProgressByLog, StringComparer.Ordinal) &&
+        ActiveProcedureHold == other.ActiveProcedureHold &&
+        ActiveConfirmationTest == other.ActiveConfirmationTest &&
+        ConfirmationResultsByLog.SequenceEqual(other.ConfirmationResultsByLog, StringComparer.Ordinal) &&
+        Containment == other.Containment &&
+        ActiveContainmentRitual == other.ActiveContainmentRitual &&
+        Line == other.Line &&
+        ActiveIntakeDeadline == other.ActiveIntakeDeadline &&
+        ActiveSawCycle == other.ActiveSawCycle &&
+        NodeOccupancy.SequenceEqual(other.NodeOccupancy, StringComparer.Ordinal);
+}
+
+/// <summary>
 /// The TLAW-042 canonical immutable full-host trace projection. It is a pure value view over the exact host-produced
 /// evidence of one scenario run and is the unit of structural comparison for the repeatability and sensitivity proofs.
 /// It introduces no production type, retains no mutable reference, and derives nothing from the environment.
@@ -75,16 +128,7 @@ internal sealed class FullP0HostTraceProjection
         bool objectivesSatisfied,
         int processedCount,
         int writtenOffCount,
-        long finalShiftStateVersion,
-        string finalLineState,
-        string finalContainmentState,
-        long finalContainmentEnteredAt,
-        long? finalContainmentDeadlineAt,
-        bool finalHasActiveSawCycle,
-        bool finalHasActiveIntakeDeadline,
-        bool finalHasPendingFeed,
-        ImmutableArray<string> finalInventory,
-        ImmutableArray<FullP0LogProjection> logs,
+        FullP0ShiftStateProjection finalShift,
         int quotaTargetTotal,
         int quotaTotalCreditedUnits,
         int quotaMinimumCorrectlyProcessedAnomalies,
@@ -114,16 +158,7 @@ internal sealed class FullP0HostTraceProjection
         ObjectivesSatisfied = objectivesSatisfied;
         ProcessedCount = processedCount;
         WrittenOffCount = writtenOffCount;
-        FinalShiftStateVersion = finalShiftStateVersion;
-        FinalLineState = finalLineState;
-        FinalContainmentState = finalContainmentState;
-        FinalContainmentEnteredAt = finalContainmentEnteredAt;
-        FinalContainmentDeadlineAt = finalContainmentDeadlineAt;
-        FinalHasActiveSawCycle = finalHasActiveSawCycle;
-        FinalHasActiveIntakeDeadline = finalHasActiveIntakeDeadline;
-        FinalHasPendingFeed = finalHasPendingFeed;
-        FinalInventory = finalInventory;
-        Logs = logs;
+        FinalShift = finalShift;
         QuotaTargetTotal = quotaTargetTotal;
         QuotaTotalCreditedUnits = quotaTotalCreditedUnits;
         QuotaMinimumCorrectlyProcessedAnomalies = quotaMinimumCorrectlyProcessedAnomalies;
@@ -154,16 +189,10 @@ internal sealed class FullP0HostTraceProjection
     public bool ObjectivesSatisfied { get; }
     public int ProcessedCount { get; }
     public int WrittenOffCount { get; }
-    public long FinalShiftStateVersion { get; }
-    public string FinalLineState { get; }
-    public string FinalContainmentState { get; }
-    public long FinalContainmentEnteredAt { get; }
-    public long? FinalContainmentDeadlineAt { get; }
-    public bool FinalHasActiveSawCycle { get; }
-    public bool FinalHasActiveIntakeDeadline { get; }
-    public bool FinalHasPendingFeed { get; }
-    public ImmutableArray<string> FinalInventory { get; }
-    public ImmutableArray<FullP0LogProjection> Logs { get; }
+    /// <summary>The complete canonical value projection of the final shift runtime state.</summary>
+    public FullP0ShiftStateProjection FinalShift { get; }
+
+    public ImmutableArray<FullP0LogProjection> Logs => FinalShift.Logs;
     public int QuotaTargetTotal { get; }
     public int QuotaTotalCreditedUnits { get; }
     public int QuotaMinimumCorrectlyProcessedAnomalies { get; }
@@ -201,19 +230,7 @@ internal sealed class FullP0HostTraceProjection
             completion?.ObjectivesSatisfied ?? false,
             completion?.ProcessedCount ?? shift.Logs.Count(log => log.State == LogState.PROCESSED),
             completion?.WrittenOffCount ?? shift.Logs.Count(log => log.State == LogState.HELD_WRITTEN_OFF),
-            shift.StateVersion.Value,
-            shift.Line.State.ToString(),
-            shift.Containment.State.ToString(),
-            shift.Containment.EnteredAt.Value,
-            shift.Containment.DeadlineAt?.Value,
-            shift.ActiveSawCycle is not null,
-            shift.ActiveIntakeDeadline is not null,
-            shift.PendingFeed is not null,
-            shift.Inventory.ConsumableQuantities
-                .OrderBy(pair => pair.Key.ToString(), StringComparer.Ordinal)
-                .Select(pair => $"{pair.Key}={pair.Value.ToString(CultureInfo.InvariantCulture)}")
-                .ToImmutableArray(),
-            shift.Logs.Select(ProjectLog).ToImmutableArray(),
+            ProjectShiftState(shift),
             quota.TargetTotal,
             quota.TotalCreditedUnits,
             quota.MinimumCorrectlyProcessedAnomalies,
@@ -247,17 +264,7 @@ internal sealed class FullP0HostTraceProjection
             ObjectivesSatisfied == other.ObjectivesSatisfied &&
             ProcessedCount == other.ProcessedCount &&
             WrittenOffCount == other.WrittenOffCount &&
-            FinalShiftStateVersion == other.FinalShiftStateVersion &&
-            FinalLineState == other.FinalLineState &&
-            FinalContainmentState == other.FinalContainmentState &&
-            FinalContainmentEnteredAt == other.FinalContainmentEnteredAt &&
-            FinalContainmentDeadlineAt == other.FinalContainmentDeadlineAt &&
-            FinalHasActiveSawCycle == other.FinalHasActiveSawCycle &&
-            FinalHasActiveIntakeDeadline == other.FinalHasActiveIntakeDeadline &&
-            FinalHasPendingFeed == other.FinalHasPendingFeed &&
-            FinalInventory.SequenceEqual(other.FinalInventory, StringComparer.Ordinal) &&
-            Logs.Length == other.Logs.Length &&
-            Logs.Select((log, index) => log.StructurallyEquals(other.Logs[index])).All(equal => equal) &&
+            FinalShift.StructurallyEquals(other.FinalShift) &&
             QuotaTargetTotal == other.QuotaTargetTotal &&
             QuotaTotalCreditedUnits == other.QuotaTotalCreditedUnits &&
             QuotaMinimumCorrectlyProcessedAnomalies == other.QuotaMinimumCorrectlyProcessedAnomalies &&
@@ -296,6 +303,47 @@ internal sealed class FullP0HostTraceProjection
             ? $"event count {Events.Length.ToString(CultureInfo.InvariantCulture)} != {other.Events.Length.ToString(CultureInfo.InvariantCulture)}"
             : "non-journal canonical field difference";
     }
+
+    /// <summary>Projects every publicly readable semantic component of the final shift runtime state.</summary>
+    private static FullP0ShiftStateProjection ProjectShiftState(ShiftRuntimeState shift) => new(
+        shift.ShiftId.ToString(),
+        shift.ShiftSeed.Value,
+        shift.StateVersion.Value,
+        shift.Logs.Select(ProjectLog).ToImmutableArray(),
+        shift.ProcessedIntentIds.Select(intentId => intentId.ToString()).OrderBy(value => value, StringComparer.Ordinal).ToImmutableArray(),
+        ProjectPendingFeed(shift.PendingFeed),
+        shift.Inventory.ConsumableQuantities
+            .OrderBy(pair => pair.Key.ToString(), StringComparer.Ordinal)
+            .Select(pair => $"{pair.Key}={pair.Value.ToString(CultureInfo.InvariantCulture)}")
+            .ToImmutableArray(),
+        shift.Inventory.ReusableItems.Select(item => item.ToString()).OrderBy(value => value, StringComparer.Ordinal).ToImmutableArray(),
+        shift.ProcedureProgressByLog
+            .OrderBy(pair => pair.Key.ToString(), StringComparer.Ordinal)
+            .Select(pair => $"{pair.Key}=>{ProjectProgress(pair.Value)}")
+            .ToImmutableArray(),
+        shift.ActiveProcedureHold is { } hold
+            ? $"{hold.LogId}/{hold.AnomalyId}/{hold.AttemptedItem}/step={hold.ProcedureStepIndex.ToString(CultureInfo.InvariantCulture)}/{hold.StartedAt}->{hold.DueAt}/{hold.Duration.Value.ToString(CultureInfo.InvariantCulture)}"
+            : "-",
+        ProjectActiveConfirmation(shift.ActiveConfirmationTest),
+        shift.ConfirmationResultsByLog
+            .OrderBy(pair => pair.Key.ToString(), StringComparer.Ordinal)
+            .Select(pair => $"{pair.Key}=>{string.Join('/', ProjectConfirmationResult(pair.Value))}")
+            .ToImmutableArray(),
+        ProjectContainment(shift.Containment),
+        ProjectRitual(shift.ActiveContainmentRitual),
+        ProjectLine(shift.Line),
+        shift.ActiveIntakeDeadline is { } deadline
+            ? $"{deadline.LogId}/{deadline.StartedAt}->{deadline.DueAt}/{deadline.Duration.Value.ToString(CultureInfo.InvariantCulture)}"
+            : "-",
+        shift.ActiveSawCycle is { } cycle ? ProjectSawCycle(cycle) : "-",
+        Enum.GetValues<NodeId>()
+            .OrderBy(node => node.ToString(), StringComparer.Ordinal)
+            .Select(node => $"{node}={shift.GetNodeOccupancy(node).ToString(CultureInfo.InvariantCulture)}")
+            .ToImmutableArray());
+
+    private static string ProjectPendingFeed(PendingFeedSchedule? pendingFeed) => pendingFeed is null
+        ? "-"
+        : $"{pendingFeed.LogId}/{pendingFeed.Kind}/{pendingFeed.ScheduledAt}->{pendingFeed.DueAt}/{pendingFeed.Delay.Value.ToString(CultureInfo.InvariantCulture)}/{pendingFeed.CausedByIntentId?.ToString() ?? "-"}";
 
     private static FullP0LogProjection ProjectLog(LogRuntimeState log) => new(
         log.LogId.ToString(),

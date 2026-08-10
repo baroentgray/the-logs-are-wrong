@@ -50,17 +50,18 @@ public sealed class FullP0HostScenarioTests
         Assert.True(run.FinalQuotaState.GetCreditedUnits(Pine) >= 5);
         Assert.True(run.FinalQuotaState.GetCreditedUnits(Oak) >= 4);
         Assert.True(run.FinalQuotaState.CorrectlyProcessedAnomalies >= 2);
-        Assert.Equal(5, run.FinalQuotaState.GetCreditedUnits(Pine));
-        Assert.Equal(4, run.FinalQuotaState.GetCreditedUnits(Oak));
-        Assert.Equal(2, run.FinalQuotaState.CorrectlyProcessedAnomalies);
-        Assert.Equal(9, run.FinalQuotaState.TotalCreditedUnits);
+        Assert.Equal(6, run.FinalQuotaState.GetCreditedUnits(Pine));
+        Assert.Equal(5, run.FinalQuotaState.GetCreditedUnits(Oak));
+        Assert.Equal(4, run.FinalQuotaState.CorrectlyProcessedAnomalies);
+        Assert.Equal(11, run.FinalQuotaState.TotalCreditedUnits);
 
         AssertExactSettlementParity(run);
         AssertOnlyFrozenEventTypes(run);
+        AssertCoreScenarioIsEffectIndependent(run);
     }
 
     [Fact]
-    public void Learning_correct_path_processes_two_anomalies_correctly_through_real_confirmation_and_procedure_intents()
+    public void Learning_correct_path_processes_every_reached_anomaly_correctly_through_real_confirmation_and_procedure_intents()
     {
         var run = Execute(FullP0HostScenarioScript.LearningCorrectPath());
 
@@ -73,7 +74,8 @@ public sealed class FullP0HostScenarioTests
         Assert.Equal(2, startedConfirmations.Length);
         Assert.All(startedConfirmations, envelope => Assert.NotNull(envelope.CausedByIntentId));
 
-        foreach (var logId in new[] { "log_03", "log_05" })
+        // Every anomaly that reaches the saw in the core path is correctly processed: only the written-off log_08 does not.
+        foreach (var logId in new[] { "log_03", "log_05", "log_06", "log_10" })
         {
             var saw = run.SawCompletionFor(logId);
             Assert.True(saw.Resolution.IsAnomalous);
@@ -86,19 +88,58 @@ public sealed class FullP0HostScenarioTests
 
         Assert.Equal(Pine, run.SawCompletionFor("log_03").QuotaSettlement.CreditedSpecies);
         Assert.Equal(Oak, run.SawCompletionFor("log_05").QuotaSettlement.CreditedSpecies);
+        Assert.Equal(Oak, run.SawCompletionFor("log_06").QuotaSettlement.CreditedSpecies);
+        Assert.Equal(Pine, run.SawCompletionFor("log_10").QuotaSettlement.CreditedSpecies);
 
         // The real procedure boundary granted the required flags; nothing was fabricated.
         var procedures = run.EventsOfType(HostStageSevenEventTypes.ProcedureActionCompleted)
             .Select(envelope => ((HostStageSevenProcedurePayload)envelope.Payload).Descriptor)
             .ToArray();
-        Assert.Equal(2, procedures.Length);
+        Assert.Equal(6, procedures.Length);
         Assert.Contains(procedures, descriptor => descriptor.LogId == LogId.From("log_03") && descriptor.NewlyGrantedFlags.Contains(FlagId.From("SANITIZED_PENITENT")));
         Assert.Contains(procedures, descriptor => descriptor.LogId == LogId.From("log_05") && descriptor.NewlyGrantedFlags.Contains(FlagId.From("CORRECTLY_RELABELED")));
+        Assert.Contains(procedures, descriptor => descriptor.LogId == LogId.From("log_06") && descriptor.NewlyGrantedFlags.Contains(FlagId.From("SEALED_RESIN")));
+        Assert.Contains(procedures, descriptor => descriptor.LogId == LogId.From("log_10") && descriptor.NewlyGrantedFlags.Contains(FlagId.From("SEALED_RESIN")));
+        Assert.All(procedures, descriptor => Assert.Equal(ItemActionCompletionKind.CorrectProcedureStep, descriptor.Kind));
         Assert.All(procedures, descriptor => Assert.Empty(descriptor.Effects));
+
+        // Both Resin logs were sealed from the exact configured two salt and two red-tape charges.
+        Assert.Equal(0, run.FinalShiftState.Inventory.GetConsumableQuantity(ItemId.From("salt")));
+        Assert.Equal(0, run.FinalShiftState.Inventory.GetConsumableQuantity(ItemId.From("red_tape")));
+        Assert.Equal(1, run.FinalShiftState.Inventory.GetConsumableQuantity(HolyWater));
 
         // The exact saw completions really ran: one per processed log.
         Assert.Equal(11, run.EventsOfType(HostStageSevenEventTypes.SawCycleCompleted).Count());
         Assert.Equal(11, run.EventsOfType(HostStageSevenEventTypes.SawCycleStarted).Count());
+    }
+
+    /// <summary>
+    /// MEDIUM-1 — the three core full-shift scenarios must never depend on an incorrect-processing effect descriptor
+    /// being left unexecuted. The isolated §9 scenarios remain the only place those descriptors are produced.
+    /// </summary>
+    [Fact]
+    public void Core_full_shift_scenarios_never_produce_an_incorrect_processing_effect_descriptor()
+    {
+        var core = new[]
+        {
+            FullP0HostScenarioScript.LearningCorrectPath(),
+            FullP0HostScenarioScript.LearningFullTimeout(),
+            FullP0HostScenarioScript.PressureFullTimeout()
+        };
+
+        foreach (var script in core)
+        {
+            var run = Execute(script);
+            AssertCoreScenarioIsEffectIndependent(run);
+        }
+
+        // Non-vacuous: the same guard really does fire for the isolated wrong-outcome scenarios, which are the only
+        // place TLAW-042 deliberately retains an incorrect-processing descriptor.
+        foreach (var isolated in new[] { FullP0HostScenarioScript.IncorrectPenitent(), FullP0HostScenarioScript.IncorrectResin(), FullP0HostScenarioScript.ResinWrongHolyWaterRecovery() })
+        {
+            var run = Execute(isolated);
+            Assert.ThrowsAny<Xunit.Sdk.XunitException>(() => AssertCoreScenarioIsEffectIndependent(run));
+        }
     }
 
     // ----- §10 player-action coverage and mixed accepted batches -----
@@ -211,47 +252,41 @@ public sealed class FullP0HostScenarioTests
     // ----- §8.2 Learning full-timeout -----
 
     [Fact]
-    public void Conservative_learning_full_timeout_policy_still_completes_before_the_frozen_hard_deadline()
+    public void Cautious_learning_full_timeout_policy_still_completes_before_the_frozen_hard_deadline()
     {
         var run = Execute(FullP0HostScenarioScript.LearningFullTimeout());
         var completion = run.Completion;
 
         AssertSequentialTicksFromZero(run);
-        Assert.All(run.Executions, execution => Assert.Empty(execution.StageTwo.Steps));
         Assert.Equal(840, run.FinalLifecycle.HardDeadlineAt.Value);
         Assert.Equal(782, completion.CompletedAt.Value);
         Assert.True(completion.CompletedAt < run.FinalLifecycle.HardDeadlineAt);
+        Assert.Equal(783, run.HostTickCount);
         Assert.Equal(ShiftCompletionReason.AllLogsTerminal, completion.Reason);
         Assert.Equal(12, completion.ProcessedCount);
         Assert.Equal(0, completion.WrittenOffCount);
 
-        // Every release used the exact configured 60-second intake timeout and the frozen default auto-route.
-        var expirations = run.EventsOfType(HostStageSevenEventTypes.IntakeDeadlineExpired)
-            .Select(envelope => (HostStageSevenIntakeDeadlinePayload)envelope.Payload)
-            .ToArray();
-        Assert.Equal(12, expirations.Length);
-        Assert.All(expirations, payload => Assert.Equal(60, payload.Duration.Value));
-        Assert.All(expirations, payload => Assert.Equal(payload.DueAt, payload.OccurredAt));
-        Assert.Equal(
-            12,
-            run.EventsOfType(HostStageSevenEventTypes.AutoRouteAttempted)
-                .Count(envelope => ((HostStageSevenAutoRoutePayload)envelope.Payload).Outcome == HostStageSevenAutoRouteOutcome.Applied));
+        AssertCautiousFullTimeoutPolicy(run, intakeTimeout: 60);
 
-        // The frozen policy is capable of completion but not of satisfying the objective without acceleration.
-        Assert.False(completion.ObjectivesSatisfied);
+        // The corrected cautious policy reaches the frozen objective within the learning deadline.
+        Assert.True(completion.ObjectivesSatisfied);
+        Assert.Equal(6, run.FinalQuotaState.GetCreditedUnits(Pine));
+        Assert.Equal(6, run.FinalQuotaState.GetCreditedUnits(Oak));
+        Assert.Equal(5, run.FinalQuotaState.CorrectlyProcessedAnomalies);
+        Assert.Equal(12, run.FinalQuotaState.TotalCreditedUnits);
         AssertExactSettlementParity(run);
+        AssertCoreScenarioIsEffectIndependent(run);
     }
 
     // ----- §8.3 Pressure full-timeout -----
 
     [Fact]
-    public void Conservative_pressure_full_timeout_policy_fails_at_the_exact_frozen_hard_deadline()
+    public void Cautious_pressure_full_timeout_policy_still_fails_to_finish_at_the_exact_frozen_hard_deadline()
     {
         var run = Execute(FullP0HostScenarioScript.PressureFullTimeout());
         var completion = run.Completion;
 
         AssertSequentialTicksFromZero(run);
-        Assert.All(run.Executions, execution => Assert.Empty(execution.StageTwo.Steps));
         Assert.Equal(600, run.FinalLifecycle.HardDeadlineAt.Value);
         Assert.Equal(600, completion.CompletedAt.Value);
         Assert.Equal(601, run.HostTickCount);
@@ -259,21 +294,95 @@ public sealed class FullP0HostScenarioTests
         Assert.Equal(599, run.Ticks[^2].Tick.Value);
         Assert.DoesNotContain(run.Ticks.SkipLast(1), record => record.LifecycleCompleted);
 
+        // The identical cautious policy cannot finish the required production work inside the pressure deadline.
         Assert.Equal(ShiftCompletionReason.HardDeadline, completion.Reason);
         Assert.True(completion.HardDeadlineReached);
         Assert.False(completion.AllLogsTerminal);
-        Assert.False(completion.ObjectivesSatisfied);
         Assert.Equal(11, completion.ProcessedCount);
         Assert.Equal(0, completion.WrittenOffCount);
-        Assert.Equal(45, ((HostStageSevenIntakeDeadlinePayload)run.EventsOfType(HostStageSevenEventTypes.IntakeDeadlineExpired).First().Payload).Duration.Value);
+        Assert.Equal(LogState.IN_SAW, LogStateOf(run, "log_12"));
+
+        AssertCautiousFullTimeoutPolicy(run, intakeTimeout: 45);
 
         var shiftCompleted = Assert.Single(run.EventsOfType(HostStageSevenEventTypes.ShiftCompleted));
         var payload = Assert.IsType<HostStageSevenShiftCompletedPayload>(shiftCompleted.Payload);
         Assert.Equal(600, shiftCompleted.ServerTick.Value);
         Assert.Equal(600, payload.HardDeadlineAt.Value);
-        Assert.Equal(7, payload.TotalCreditedUnits);
-        Assert.Equal(0, payload.CorrectlyProcessedAnomalies);
+        Assert.False(payload.AllLogsTerminal);
+        Assert.Equal(11, payload.TotalCreditedUnits);
+        Assert.Equal(5, payload.CorrectlyProcessedAnomalies);
+        Assert.Equal(5, run.FinalQuotaState.GetCreditedUnits(Pine));
+        Assert.Equal(6, run.FinalQuotaState.GetCreditedUnits(Oak));
         AssertExactSettlementParity(run);
+        AssertCoreScenarioIsEffectIndependent(run);
+    }
+
+    /// <summary>
+    /// The one shared cautious full-timeout decision rule, asserted identically for both profiles.
+    /// Ordinary logs are released only by the exact configured timeout and the frozen default auto-route; anomalous
+    /// logs dwell until the last tick from which their configured confirmation and procedure work can still complete.
+    /// </summary>
+    private static void AssertCautiousFullTimeoutPolicy(FullP0HostScenarioRun run, long intakeTimeout)
+    {
+        var cadence = intakeTimeout + 5;
+        var anomalies = new (int ManifestIndex, string LogId, long ConfirmDuration)[]
+        {
+            (3, "log_03", 4), (5, "log_05", 6), (6, "log_06", 4), (8, "log_08", 4), (10, "log_10", 4)
+        };
+        var ordinaryIndexes = new[] { 1, 2, 4, 7, 9, 11, 12 };
+
+        // Ordinary logs: exact configured timeout, then the frozen default auto-route. Nothing else releases them.
+        var expirations = run.EventsOfType(HostStageSevenEventTypes.IntakeDeadlineExpired)
+            .Select(envelope => (HostStageSevenIntakeDeadlinePayload)envelope.Payload)
+            .ToArray();
+        Assert.Equal(ordinaryIndexes.Length, expirations.Length);
+        Assert.All(expirations, payload => Assert.Equal(intakeTimeout, payload.Duration.Value));
+        Assert.All(expirations, payload => Assert.Equal(payload.DueAt, payload.OccurredAt));
+        Assert.Equal(
+            ordinaryIndexes.Select(index => (cadence * (index - 1)) + intakeTimeout).ToArray(),
+            expirations.Select(payload => payload.DueAt.Value).ToArray());
+        Assert.Equal(
+            ordinaryIndexes.Length,
+            run.EventsOfType(HostStageSevenEventTypes.AutoRouteAttempted)
+                .Count(envelope => ((HostStageSevenAutoRoutePayload)envelope.Payload).Outcome == HostStageSevenAutoRouteOutcome.Applied));
+
+        var expiredLogs = expirations.Select(payload => payload.LogId.ToString()).ToImmutableHashSet();
+        Assert.All(anomalies, anomaly => Assert.DoesNotContain(anomaly.LogId, expiredLogs));
+
+        // Anomalous logs: the configured confirmation starts at exactly deadline - duration, and the log leaves intake
+        // for its procedure in stage 2 of the exact deadline tick — the last tick before stage 3 would auto-route it.
+        foreach (var anomaly in anomalies)
+        {
+            var deadline = (cadence * (anomaly.ManifestIndex - 1)) + intakeTimeout;
+            var started = Assert.Single(
+                run.EventsOfType(HostStageSevenEventTypes.ConfirmationTestStarted),
+                envelope => ((HostStageSevenConfirmationTestStartedPayload)envelope.Payload).LogId == LogId.From(anomaly.LogId));
+            var startedPayload = (HostStageSevenConfirmationTestStartedPayload)started.Payload;
+            Assert.Equal(deadline - anomaly.ConfirmDuration, started.ServerTick.Value);
+            Assert.Equal(anomaly.ConfirmDuration, startedPayload.Duration.Value);
+            Assert.Equal(deadline, startedPayload.DueAt.Value);
+
+            var completedConfirmation = Assert.Single(
+                run.EventsOfType(HostStageSevenEventTypes.ConfirmationTestCompleted),
+                envelope => ((HostStageSevenConfirmationPayload)envelope.Payload).Result.LogId == LogId.From(anomaly.LogId));
+            Assert.Equal(deadline, completedConfirmation.ServerTick.Value);
+
+            // The route-to-procedure receipt is the exact latest intervention: same tick, stage 2, before stage 3.
+            var interventionTick = run.Executions.Single(execution => execution.CurrentTick.Value == deadline);
+            var routed = interventionTick.StageTwo.Steps[0];
+            var accepted = Assert.IsType<ManualLogIntentAccepted>(Assert.IsType<ManualRoutingIntentStageOutcome>(routed.Outcome).Result);
+            Assert.Equal(LogId.From(anomaly.LogId), accepted.Transition.LogId);
+            Assert.Equal(LogState.AT_INTAKE, accepted.Transition.FromState);
+            Assert.Equal(LogState.AT_PROCEDURE, accepted.Transition.ToState);
+            Assert.IsType<IntakeDeadlineNoActiveDeadline>(interventionTick.StageThree.IntakeDeadline.Result);
+
+            var saw = run.SawCompletionFor(anomaly.LogId);
+            Assert.True(saw.Resolution.AllRequiredFlagsPresent, anomaly.LogId);
+            Assert.Equal(1, saw.QuotaSettlement.CorrectAnomalyDelta);
+        }
+
+        Assert.Equal(anomalies.Length, run.EventsOfType(HostStageSevenEventTypes.ConfirmationTestCompleted).Count());
+        Assert.Equal(5, run.FinalQuotaState.CorrectlyProcessedAnomalies);
     }
 
     // ----- §8.4 write off every suspicious log -----
@@ -481,6 +590,30 @@ public sealed class FullP0HostScenarioTests
             .ToImmutableHashSet();
         Assert.Equal(24, frozen.Count);
         Assert.All(run.Journal.Events, envelope => Assert.Contains(envelope.EventType, frozen));
+    }
+
+    /// <summary>
+    /// MEDIUM-1 — a core full-shift scenario must not reach any incorrect-processing outcome at all, so no retained
+    /// <c>time_penalty</c> or <c>lock</c> descriptor exists whose unexecuted state the scenario could silently depend on.
+    /// </summary>
+    private static void AssertCoreScenarioIsEffectIndependent(FullP0HostScenarioRun run)
+    {
+        var sawEffects = run.EventsOfType(HostStageSevenEventTypes.SawCycleCompleted)
+            .Select(envelope => (HostStageSevenSawCompletedPayload)envelope.Payload)
+            .SelectMany(payload => payload.Resolution.Effects.Select(effect => $"{payload.Cycle.LogId} saw {effect.Type}:{effect.Event}"))
+            .ToArray();
+        var procedureEffects = run.EventsOfType(HostStageSevenEventTypes.ProcedureActionCompleted)
+            .Select(envelope => ((HostStageSevenProcedurePayload)envelope.Payload).Descriptor)
+            .SelectMany(descriptor => descriptor.Effects.Select(effect => $"{descriptor.LogId} procedure {effect.Type}:{effect.Event}"))
+            .ToArray();
+
+        Assert.Empty(sawEffects.Concat(procedureEffects));
+        Assert.DoesNotContain(
+            run.EventsOfType(HostStageSevenEventTypes.SawCycleCompleted).Select(envelope => (HostStageSevenSawCompletedPayload)envelope.Payload),
+            payload => payload.Resolution.AllRequiredFlagsPresent == false);
+        Assert.DoesNotContain(
+            run.EventsOfType(HostStageSevenEventTypes.ProcedureActionCompleted).Select(envelope => ((HostStageSevenProcedurePayload)envelope.Payload).Descriptor),
+            descriptor => descriptor.Kind == ItemActionCompletionKind.ConfiguredWrongAction);
     }
 
     /// <summary>TLAW-042 never executes a configured effect: retained descriptors change no runtime and publish no event.</summary>

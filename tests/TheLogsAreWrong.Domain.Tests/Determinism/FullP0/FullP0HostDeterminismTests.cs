@@ -30,7 +30,7 @@ public sealed class FullP0HostDeterminismTests
         Assert.Equal(IndependentRunCount, runs.Length);
 
         // Non-vacuous: the compared projection really carries a full shift of ordered host evidence.
-        Assert.Equal(107, baseline.Events.Length);
+        Assert.Equal(115, baseline.Events.Length);
         Assert.Equal(173, baseline.HostTickCount);
         Assert.Equal(12, baseline.Logs.Length);
         Assert.True(baseline.LifecycleCompleted);

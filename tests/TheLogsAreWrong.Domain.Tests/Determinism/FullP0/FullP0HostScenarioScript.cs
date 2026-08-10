@@ -1,4 +1,5 @@
 using System.Collections.Immutable;
+using System.Globalization;
 using TheLogsAreWrong.Domain.Events;
 using TheLogsAreWrong.Domain.Identifiers;
 using TheLogsAreWrong.Domain.Intents;
@@ -99,6 +100,7 @@ internal sealed class FullP0HostScenarioScript
     internal static readonly ItemId RedTape = ItemId.From("red_tape");
     internal static readonly ItemId RelabelStamp = ItemId.From("relabel_stamp");
     internal static readonly ItemId SoundMeter = ItemId.From("sound_meter");
+    internal static readonly ItemId ChoirCassette = ItemId.From("choir_cassette");
     internal static readonly ItemId Scale = ItemId.From("scale");
     internal static readonly ItemId Caliper = ItemId.From("caliper");
 
@@ -211,8 +213,19 @@ internal sealed class FullP0HostScenarioScript
         builder.Tick(46, [Route("log_05", LogIntentActions.ReturnFromProcedure)], [LogRouted]);
         builder.Tick(47, [Route("log_05", LogIntentActions.RouteToSawQueue)], [LogRouted, SawCycleStarted]);
         builder.Tick(50, [LogAdmittedToIntake, IntakeDeadlineStarted]);
-        builder.Tick(51, [Route("log_06", LogIntentActions.RouteToSawQueue)], [LogRouted, FeedScheduled]);
-        builder.Tick(53, [SawCycleCompleted, SawCycleStarted]);
+
+        // log_06 is RESIN_BLASPHEMER: it is sealed through the real configured procedure so the core success path
+        // never produces an incorrect-processing effect descriptor.
+        builder.Tick(
+            51,
+            [
+                Route("log_06", LogIntentActions.RouteToProcedure),
+                Procedure("log_06", Salt, 1, FullP0ScriptedIntentOutcome.ProcedureActionCompletedImmediately),
+                Procedure("log_06", RedTape, 2, FullP0ScriptedIntentOutcome.ProcedureActionCompletedImmediately)
+            ],
+            [LogRouted, ProcedureActionCompleted, ProcedureActionCompleted, FeedScheduled]);
+        builder.Tick(52, [Route("log_06", LogIntentActions.ReturnFromProcedure)], [LogRouted]);
+        builder.Tick(53, [Route("log_06", LogIntentActions.RouteToSawQueue)], [LogRouted, SawCycleCompleted, SawCycleStarted]);
         builder.Tick(56, [LogAdmittedToIntake, IntakeDeadlineStarted]);
         builder.Tick(57, [Route("log_07", LogIntentActions.RouteToSawQueue)], [LogRouted, FeedScheduled]);
         builder.Tick(59, [SawCycleCompleted, SawCycleStarted]);
@@ -226,10 +239,22 @@ internal sealed class FullP0HostScenarioScript
         builder.Tick(129, [SawCycleStarted]);
         builder.Tick(133, [LogAdmittedToIntake, IntakeDeadlineStarted]);
         builder.Tick(135, [SawCycleCompleted]);
-        builder.Tick(136, [Route("log_10", LogIntentActions.RouteToSawQueue)], [LogRouted, SawCycleStarted, FeedScheduled]);
+
+        // log_10 is the second RESIN_BLASPHEMER: it consumes the remaining salt and red tape through the real
+        // configured procedure, so both Resin logs reach the saw sealed and the core path stays effect-independent.
+        builder.Tick(
+            136,
+            [
+                Route("log_10", LogIntentActions.RouteToProcedure),
+                Procedure("log_10", Salt, 1, FullP0ScriptedIntentOutcome.ProcedureActionCompletedImmediately),
+                Procedure("log_10", RedTape, 2, FullP0ScriptedIntentOutcome.ProcedureActionCompletedImmediately)
+            ],
+            [LogRouted, ProcedureActionCompleted, ProcedureActionCompleted, FeedScheduled]);
+        builder.Tick(137, [Route("log_10", LogIntentActions.ReturnFromProcedure)], [LogRouted]);
+        builder.Tick(138, [Route("log_10", LogIntentActions.RouteToSawQueue)], [LogRouted, SawCycleStarted]);
         builder.Tick(141, [LogAdmittedToIntake, IntakeDeadlineStarted]);
-        builder.Tick(142, [SawCycleCompleted]);
-        builder.Tick(144, [LineNoiseChanged]);
+        builder.Tick(144, [SawCycleCompleted]);
+        builder.Tick(146, [LineNoiseChanged]);
         builder.Tick(153, [ContainmentStateChanged]);
         builder.Tick(154, [StartRitual()], [ContainmentRitualStarted]);
         builder.Tick(158, [ContainmentRitualCompleted]);
@@ -242,48 +267,161 @@ internal sealed class FullP0HostScenarioScript
         return new FullP0HostScenarioScript(scenarioId, LearningCorrectPathIdentityNamespace, Learning, P0Seed, ServerTick.From(finalRoutingTick + 6), true, builder.Build());
     }
 
-    /// <summary>
-    /// §8.2 — the mechanically conservative Learning full-timeout policy: no manual routing intent is ever issued, so
-    /// every inspected intake owner is released only by its exact configured 60-second timeout and default auto-route.
-    /// </summary>
+    /// <summary>§8.2 — the cautious full-timeout policy under the exact learning profile (60-second timeout, deadline 840).</summary>
     internal static FullP0HostScenarioScript LearningFullTimeout() =>
-        BuildFullTimeout("TLAW042_LEARNING_FULL_TIMEOUT", Learning, 60, 65, true);
+        BuildCautiousFullTimeout("TLAW042_LEARNING_FULL_TIMEOUT", Learning, 60, 782);
 
-    /// <summary>§8.3 — the analogous conservative full-timeout policy under the exact pressure profile (45-second timeout, deadline 600).</summary>
+    /// <summary>§8.3 — the identical cautious policy under the exact pressure profile (45-second timeout, deadline 600).</summary>
     internal static FullP0HostScenarioScript PressureFullTimeout() =>
-        BuildFullTimeout("TLAW042_PRESSURE_FULL_TIMEOUT", Pressure, 45, 50, false);
+        BuildCautiousFullTimeout("TLAW042_PRESSURE_FULL_TIMEOUT", Pressure, 45, 600);
 
-    private static FullP0HostScenarioScript BuildFullTimeout(string scenarioId, ProfileId profile, long firstExpiry, long cadence, bool completesBeforeDeadline)
+    /// <summary>The one manifest-derived classification the cautious full-timeout policy branches on.</summary>
+    private enum CautiousLogKind { Ordinary, Penitent, FalseSpecies, Resin }
+
+    private static CautiousLogKind KindOf(int manifestIndex) => manifestIndex switch
     {
+        3 or 8 => CautiousLogKind.Penitent,
+        5 => CautiousLogKind.FalseSpecies,
+        6 or 10 => CautiousLogKind.Resin,
+        _ => CautiousLogKind.Ordinary
+    };
+
+    /// <summary>
+    /// The one mechanically defined cautious full-timeout policy shared by §8.2 and §8.3. Only the configured profile
+    /// timeout differs between the two runs; the decision rule is identical.
+    /// <para>
+    /// Ordinary logs are never routed by hand: each is released solely by its exact configured intake timeout and the
+    /// frozen default auto-route, so the full timeout cost is paid in every cycle.
+    /// </para>
+    /// <para>
+    /// Anomalous logs dwell at intake for as long as the frozen rules allow and then perform exactly the configured
+    /// confirmation and procedure work that their correct processing requires. The latest deterministic intervention is
+    /// forced by two frozen facts: the configured confirmation test only runs while the log is at intake, and the log
+    /// must leave intake during stage 2 of its exact deadline tick, because stage 3 of that same tick would otherwise
+    /// expire the deadline and auto-route it to the saw unflagged. The confirmation therefore starts at exactly
+    /// <c>deadline - confirmDurationSeconds</c> (the last tick from which it can still complete in stage 1 of the
+    /// deadline tick), and the log is routed to procedure in stage 2 of the deadline tick itself. Waiting one tick
+    /// longer in either place would force an incorrect Penitent or Resin saw outcome, so this is the maximally cautious
+    /// dwell the scenario permits — no timeout, deadline or catalog value is altered to reach it.
+    /// </para>
+    /// </summary>
+    private static FullP0HostScenarioScript BuildCautiousFullTimeout(string scenarioId, ProfileId profile, long intakeTimeout, long finalTick)
+    {
+        // The normal feed delay follows every vacated intake, so one log enters intake every timeout + 5 ticks.
+        var cadence = intakeTimeout + 5;
         var builder = new ScriptBuilder();
         builder.Tick(0, [FeedScheduled, LogAdmittedToIntake, IntakeDeadlineStarted, LineNoiseChanged]);
         builder.Tick(2, [LineNoiseChanged]);
 
-        // Eleven identical timeout cycles release logs one through eleven and schedule the next normal feed.
-        for (var cycle = 0; cycle < 11; cycle++)
+        for (var manifestIndex = 1; manifestIndex <= 12; manifestIndex++)
         {
-            var expiry = firstExpiry + (cadence * cycle);
-            builder.Tick(expiry, [IntakeDeadlineExpired, AutoRouteAttempted, FeedScheduled, LineNoiseChanged]);
-            builder.Tick(expiry + 1, [SawCycleStarted]);
-            builder.Tick(expiry + 5, [LogAdmittedToIntake, IntakeDeadlineStarted]);
-            builder.Tick(expiry + 7, [SawCycleCompleted]);
-            builder.Tick(expiry + 9, [LineNoiseChanged]);
+            var logId = $"log_{manifestIndex.ToString("00", CultureInfo.InvariantCulture)}";
+            var deadline = (cadence * (manifestIndex - 1)) + intakeTimeout;
+            var isLastLog = manifestIndex == 12;
+
+            switch (KindOf(manifestIndex))
+            {
+                case CautiousLogKind.Ordinary:
+                    builder.Tick(
+                        deadline,
+                        isLastLog
+                            ? [IntakeDeadlineExpired, AutoRouteAttempted, LineNoiseChanged]
+                            : [IntakeDeadlineExpired, AutoRouteAttempted, FeedScheduled, LineNoiseChanged]);
+                    builder.Tick(deadline + 1, [SawCycleStarted]);
+                    if (!isLastLog)
+                    {
+                        builder.Tick(deadline + 5, [LogAdmittedToIntake, IntakeDeadlineStarted]);
+                        builder.Tick(deadline + 7, [SawCycleCompleted]);
+                        builder.Tick(deadline + 9, [LineNoiseChanged]);
+                    }
+                    else if (deadline + 7 <= finalTick)
+                    {
+                        builder.Tick(deadline + 7, [SawCycleCompleted, ShiftCompleted]);
+                    }
+                    else
+                    {
+                        // The hard deadline arrives while the last saw cycle is still running.
+                        builder.Tick(finalTick, [ShiftCompleted]);
+                    }
+
+                    break;
+
+                case CautiousLogKind.Penitent:
+                    // Confirmation: sound_meter, 4 continuous quiet seconds. Procedure: holy_water with a 3-second hold.
+                    builder.Tools(deadline - 4, ImmutableHashSet.Create(SoundMeter), [StartConfirmation(logId)], [ConfirmationTestStarted]);
+                    Idle(builder, deadline - 3, deadline - 1, ImmutableHashSet.Create(SoundMeter));
+                    builder.Tools(
+                        deadline,
+                        ImmutableHashSet.Create(SoundMeter),
+                        [
+                            Route(logId, LogIntentActions.RouteToProcedure, 1),
+                            Procedure(logId, HolyWater, 2, FullP0ScriptedIntentOutcome.ProcedureActionHoldStarted)
+                        ],
+                        [ConfirmationTestCompleted, LogRouted, ProcedureActionStarted, FeedScheduled, LineNoiseChanged]);
+                    builder.Tick(deadline + 2, [LineNoiseChanged]);
+                    builder.Tick(deadline + 3, [Route(logId, LogIntentActions.ReturnFromProcedure, 1)], [ProcedureActionCompleted, LogRouted, LineNoiseChanged]);
+                    builder.Tick(deadline + 4, [Route(logId, LogIntentActions.RouteToSawQueue)], [LogRouted, SawCycleStarted]);
+                    builder.Tick(deadline + 5, [LogAdmittedToIntake, IntakeDeadlineStarted]);
+                    builder.Tick(deadline + 10, [SawCycleCompleted]);
+                    builder.Tick(deadline + 12, [LineNoiseChanged]);
+                    break;
+
+                case CautiousLogKind.FalseSpecies:
+                    // Confirmation: scale and caliper, 6 seconds. Procedure: the reusable relabel stamp, no hold.
+                    builder.Tools(deadline - 6, ImmutableHashSet.Create(Scale, Caliper), [StartConfirmation(logId)], [ConfirmationTestStarted]);
+                    Idle(builder, deadline - 5, deadline - 1, ImmutableHashSet.Create(Scale, Caliper));
+                    builder.Tools(
+                        deadline,
+                        ImmutableHashSet.Create(Scale, Caliper),
+                        [
+                            Route(logId, LogIntentActions.RouteToProcedure, 1),
+                            Procedure(logId, RelabelStamp, 2, FullP0ScriptedIntentOutcome.ProcedureActionCompletedImmediately)
+                        ],
+                        [ConfirmationTestCompleted, LogRouted, ProcedureActionCompleted, FeedScheduled, LineNoiseChanged]);
+                    ImmediateProcedureTail(builder, logId, deadline);
+                    break;
+
+                case CautiousLogKind.Resin:
+                    // Confirmation: choir cassette, 4 continuous seconds. Procedure: salt then red tape, no hold.
+                    builder.Tools(deadline - 4, ImmutableHashSet.Create(ChoirCassette), [StartConfirmation(logId)], [ConfirmationTestStarted]);
+                    Idle(builder, deadline - 3, deadline - 1, ImmutableHashSet.Create(ChoirCassette));
+                    builder.Tools(
+                        deadline,
+                        ImmutableHashSet.Create(ChoirCassette),
+                        [
+                            Route(logId, LogIntentActions.RouteToProcedure, 1),
+                            Procedure(logId, Salt, 2, FullP0ScriptedIntentOutcome.ProcedureActionCompletedImmediately),
+                            Procedure(logId, RedTape, 3, FullP0ScriptedIntentOutcome.ProcedureActionCompletedImmediately)
+                        ],
+                        [ConfirmationTestCompleted, LogRouted, ProcedureActionCompleted, ProcedureActionCompleted, FeedScheduled, LineNoiseChanged]);
+                    ImmediateProcedureTail(builder, logId, deadline);
+                    break;
+
+                default:
+                    throw new InvalidOperationException("Unknown cautious log kind.");
+            }
         }
 
-        // The twelfth timeout has no successor to schedule.
-        var last = firstExpiry + (cadence * 11);
-        builder.Tick(last, [IntakeDeadlineExpired, AutoRouteAttempted, LineNoiseChanged]);
-        builder.Tick(last + 1, [SawCycleStarted]);
+        return new FullP0HostScenarioScript(scenarioId, scenarioId, profile, P0Seed, ServerTick.From(finalTick), true, builder.Build());
+    }
 
-        if (completesBeforeDeadline)
+    /// <summary>The shared tail for an anomaly whose configured procedure completes immediately.</summary>
+    private static void ImmediateProcedureTail(ScriptBuilder builder, string logId, long deadline)
+    {
+        builder.Tick(deadline + 1, [Route(logId, LogIntentActions.ReturnFromProcedure)], [LogRouted]);
+        builder.Tick(deadline + 2, [Route(logId, LogIntentActions.RouteToSawQueue)], [LogRouted, SawCycleStarted]);
+        builder.Tick(deadline + 5, [LogAdmittedToIntake, IntakeDeadlineStarted]);
+        builder.Tick(deadline + 8, [SawCycleCompleted]);
+        builder.Tick(deadline + 10, [LineNoiseChanged]);
+    }
+
+    /// <summary>Keeps the configured confirmation tools active across the silent ticks of a running confirmation.</summary>
+    private static void Idle(ScriptBuilder builder, long fromTick, long toTick, ImmutableHashSet<ItemId> tools)
+    {
+        for (var tick = fromTick; tick <= toTick; tick++)
         {
-            builder.Tick(last + 7, [SawCycleCompleted, ShiftCompleted]);
-            return new FullP0HostScenarioScript(scenarioId, scenarioId, profile, P0Seed, ServerTick.From(last + 7), true, builder.Build());
+            builder.Tools(tick, tools, [], []);
         }
-
-        // The pressure hard deadline arrives while the last cycle is still running.
-        builder.Tick(600, [ShiftCompleted]);
-        return new FullP0HostScenarioScript(scenarioId, scenarioId, profile, P0Seed, ServerTick.From(600), true, builder.Build());
     }
 
     /// <summary>§8.4 — every suspicious log is irreversibly written off; the seven normals cannot satisfy the frozen objective.</summary>
@@ -388,7 +526,7 @@ internal sealed class FullP0HostScenarioScript
         {
             var admitted = 6 * index;
             var written = admitted + 1;
-            var logId = $"log_{(index + 1).ToString("00", System.Globalization.CultureInfo.InvariantCulture)}";
+            var logId = $"log_{(index + 1).ToString("00", CultureInfo.InvariantCulture)}";
             if (admitted > 0)
             {
                 builder.Tick(admitted, [LogAdmittedToIntake, IntakeDeadlineStarted, LineNoiseChanged]);
@@ -423,7 +561,7 @@ internal sealed class FullP0HostScenarioScript
 
             if (!_ticks.TryAdd(tick, new FullP0ScriptedTick(ServerTick.From(tick), intents, tools, events)))
             {
-                throw new ArgumentException($"Tick {tick.ToString(System.Globalization.CultureInfo.InvariantCulture)} is already scripted.", nameof(tick));
+                throw new ArgumentException($"Tick {tick.ToString(CultureInfo.InvariantCulture)} is already scripted.", nameof(tick));
             }
         }
 
