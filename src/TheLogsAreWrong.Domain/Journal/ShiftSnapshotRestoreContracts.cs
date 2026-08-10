@@ -257,7 +257,8 @@ public sealed class ShiftSnapshotRestoreService
                 line.PendingLogId,
                 line.ActiveRepairHold is { } repair ? new ActiveRepairHold(repair.StartedAt, repair.StartedAt + repair.Duration, repair.Duration) : null),
             scheduler.ActiveIntakeDeadline is { } deadline ? new ActiveIntakeDeadline(deadline.LogId, deadline.StartedAt, deadline.Duration) : null,
-            scheduler.ActiveSawCycle is { } cycle ? new ActiveSawCycle(cycle.LogId, cycle.StartedAt, cycle.Duration) : null);
+            scheduler.ActiveSawCycle is { } cycle ? new ActiveSawCycle(cycle.LogId, cycle.StartedAt, cycle.Duration) : null,
+            scheduler.ActiveSawFailureWindow is { } window ? new SawFailureWindow(window.StartedAt, window.Duration) : null);
     }
 
     private static ActiveConfirmationTest? RestoreConfirmationTest(SnapshotConfirmationTest? confirmation)
@@ -431,6 +432,7 @@ internal static class ShiftSnapshotCorrelationValidation
         ValidateActiveProcedureHold(snapshot, shift);
         ValidateActiveConfirmation(snapshot, shift);
         ValidateActiveIntakeDeadline(snapshot, shift);
+        ValidateSawFailureWindow(snapshot, shift);
         ValidateActiveContainmentRitual(snapshot, shift);
         ValidateActiveLineRepair(snapshot, shift);
     }
@@ -536,6 +538,24 @@ internal static class ShiftSnapshotCorrelationValidation
         }
 
         ValidateActiveWindow("intake deadline", deadline.StartedAt, deadline.DueAt, snapshot.ServerTick);
+    }
+
+    private static void ValidateSawFailureWindow(ShiftSnapshot snapshot, ShiftRuntimeState shift)
+    {
+        if (shift.ActiveSawFailureWindow is not { } window)
+        {
+            return;
+        }
+
+        if (snapshot.ServerTick < window.StartedAt)
+        {
+            throw new InvalidOperationException("A restored saw failure window cannot begin after the snapshot tick.");
+        }
+
+        if (window.IsActiveAt(snapshot.ServerTick) && shift.ActiveSawCycle is not null)
+        {
+            throw new InvalidOperationException("An active saw cycle cannot coexist with an active saw failure window.");
+        }
     }
 
     private static void ValidateActiveContainmentRitual(ShiftSnapshot snapshot, ShiftRuntimeState shift)

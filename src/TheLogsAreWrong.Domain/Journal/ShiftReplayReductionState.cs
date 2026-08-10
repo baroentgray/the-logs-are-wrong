@@ -74,6 +74,7 @@ internal sealed class ReductionState
         ActiveProcedureHold = snapshot.SchedulerState.ActiveProcedureHold;
         ActiveConfirmationTest = snapshot.SchedulerState.ActiveConfirmationTest;
         ActiveSawCycle = snapshot.SchedulerState.ActiveSawCycle;
+        ActiveSawFailureWindow = snapshot.SchedulerState.ActiveSawFailureWindow;
         LineStateValue = snapshot.LineState.State;
         LineEnteredAt = snapshot.LineState.EnteredAt;
         LineCause = snapshot.LineState.Cause;
@@ -99,6 +100,7 @@ internal sealed class ReductionState
     internal SnapshotProcedureHold? ActiveProcedureHold { get; set; }
     internal SnapshotConfirmationTest? ActiveConfirmationTest { get; set; }
     internal SnapshotSawCycle? ActiveSawCycle { get; set; }
+    internal SnapshotSawFailureWindow? ActiveSawFailureWindow { get; set; }
     internal LineState LineStateValue { get; set; }
     internal ServerTick LineEnteredAt { get; set; }
     internal JamCause? LineCause { get; set; }
@@ -406,6 +408,7 @@ internal sealed class ReductionState
             ActiveProcedureHold,
             ActiveConfirmationTest,
             ActiveSawCycle,
+            ActiveSawFailureWindow,
             _processedIntents.ToImmutableArray(),
             new SnapshotProgression(_hasCompletedTick, Completion is not null)),
         [.. _logs],

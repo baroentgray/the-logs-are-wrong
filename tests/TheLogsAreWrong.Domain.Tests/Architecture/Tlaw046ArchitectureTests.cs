@@ -30,7 +30,7 @@ public sealed class Tlaw046ArchitectureTests
     [
         "HostAggregate", "AuthoritativeHostState", "ShiftAggregate", "HostState",
         "EffectExecutor", "EffectDispatcher", "EffectRuntime", "EffectApplier",
-        "ButtonLock", "ForcedLinePause", "SawFailure", "TimePenalty"
+        "ButtonLock", "ForcedLinePause", "TimePenalty"
     ];
 
     [Fact]

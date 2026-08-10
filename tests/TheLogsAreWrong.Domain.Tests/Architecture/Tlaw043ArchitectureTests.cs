@@ -9,10 +9,9 @@ using TheLogsAreWrong.Domain.Runtime;
 namespace TheLogsAreWrong.Domain.Tests.Architecture;
 
 /// <summary>
-/// TLAW-043 audit evidence. These tests record what the audited main actually contains: the frozen effect descriptors
-/// are configuration data with no production execution surface, and the accepted TLAW-042 range proof is historical.
-/// They deliberately assert nothing about whether Gate 1 is complete and encode no owner effect decision — that verdict
-/// belongs to <c>docs/agent/GATE1_EXIT_AUDIT.md</c> and to the owner, not to executable code.
+/// TLAW-043 audit evidence. The original descriptor-only audit remains historical. TLAW-047 later authorizes the one
+/// narrow Penitent saw-owned interval; Resin and containment descriptors remain data-only and no generic effect runtime
+/// is introduced here.
 /// </summary>
 [Trait("Scope", "TLAW-043")]
 public sealed class Tlaw043ArchitectureTests
@@ -21,11 +20,11 @@ public sealed class Tlaw043ArchitectureTests
     private static readonly AnomalyId Resin = AnomalyId.From("RESIN_BLASPHEMER");
     private static readonly AnomalyId FalseSpecies = AnomalyId.From("FALSE_SPECIES");
 
-    /// <summary>Identifiers that would exist if any of the three unexecuted effects had been given a runtime.</summary>
+    /// <summary>Identifiers that would exceed the later-authorized narrow Penitent saw-owned window.</summary>
     private static readonly string[] ForbiddenEffectRuntimeConcepts =
     [
         "EffectExecutor", "EffectDispatcher", "EffectRuntime", "EffectApplier", "EffectScheduler",
-        "TimePenalty", "ButtonLock", "NearestLineButton", "ForcedLinePause", "ForcedPause",
+        "ButtonLock", "NearestLineButton", "ForcedLinePause", "ForcedPause",
         "LineButtonState", "PenaltyRuntime", "MiscreditApplication", "MiscreditExecutor"
     ];
 
@@ -54,7 +53,7 @@ public sealed class Tlaw043ArchitectureTests
     }
 
     [Fact]
-    public void No_production_runtime_state_or_executor_exists_for_the_three_unexecuted_effects()
+    public void No_generic_effect_runtime_or_resin_or_containment_executor_exists()
     {
         var domainSources = DomainSources();
         Assert.True(domainSources.Length > 30, $"The domain source scan is vacuous: {domainSources.Length} files.");
@@ -68,9 +67,13 @@ public sealed class Tlaw043ArchitectureTests
             ForbiddenEffectRuntimeConcepts,
             concept => Assert.DoesNotContain(exported, type => type.Name.Contains(concept, StringComparison.Ordinal)));
 
-        // The Domain never branches on an effect kind at all: it carries descriptors and nothing more. The only
-        // production reference to an EffectType member is the YAML loader's shape validation of duration and target.
-        Assert.DoesNotContain(domainSources, source => source.Contains("EffectType.", StringComparison.Ordinal));
+        // D-015 may branch only in the saw-owned completion/replay boundary; it does not authorize a generic dispatcher.
+        var effectTypeConsumers = Directory.GetFiles(DomainSourceRoot(), "*.cs", SearchOption.AllDirectories)
+            .Where(path => File.ReadAllText(path).Contains("EffectType.", StringComparison.Ordinal))
+            .Select(path => Path.GetFileName(path)!)
+            .OrderBy(name => name, StringComparer.Ordinal)
+            .ToArray();
+        Assert.Equal(["SawCycleContracts.cs"], effectTypeConsumers);
         Assert.Contains("EffectType.time_penalty", File.ReadAllText(YamlLoaderSourcePath()), StringComparison.Ordinal);
     }
 
