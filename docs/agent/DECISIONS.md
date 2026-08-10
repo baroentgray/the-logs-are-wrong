@@ -95,3 +95,79 @@ accepts completed saw evidence and applies its resolved settlement to quota; thi
 does not pre-approve a generic host aggregate or dispatcher.
 
 Sources: [Issue #64](https://github.com/baroentgray/the-logs-are-wrong/issues/64) and [BAR-63](https://linear.app/baronet/issue/BAR-63/tlaw-023-apply-completed-saw-settlement-to-quota-runtime).
+
+## D-014 — Gate 1 implements the frozen full ShiftSnapshot/replay contract
+
+The owner accepted TLAW-043 option B for the snapshot/replay blocker: the already
+frozen Gate-1 requirement is implemented rather than deferred. The accepted scope
+is exactly the `docs/LOG_STATE_MACHINE.md` contract — a full `ShiftSnapshot`
+carrying `shift_id`, `server_tick`, `state_version`, `last_event_sequence`,
+`scheduler_state`, `logs[]`, `line_state`, `containment_state`, `inventory`,
+`quota` and `objectives`; snapshot capture; restore from a snapshot plus the
+events after `last_event_sequence`; and full replay from the initial manifest
+producing the same final snapshot.
+
+This remains pure Gate-1 Domain work and introduces no Unity, network or package
+dependency. Gate 3 may later consume the same contract for snapshot/resync under
+`docs/NETWORK_RULES.md`, but that future use does not defer the Gate-1
+implementation. It is a separate bounded increment and is not combined with
+D-015.
+
+Sources: [Issue #109 comment 5238424632](https://github.com/baroentgray/the-logs-are-wrong/issues/109#issuecomment-5238424632), `docs/LOG_STATE_MACHINE.md`, `docs/agent/GATE1_EXIT_AUDIT.md`, and [Issue #107](https://github.com/baroentgray/the-logs-are-wrong/issues/107).
+
+## D-015 — Incorrect Penitent processing opens an 8-second saw-only failure window
+
+The owner accepted TLAW-043 option B for `time_penalty` and froze its exact
+deterministic mechanics. The trigger stays the frozen incorrect-saw path: a
+`PENITENT_TRUNK` completes the saw path without `SANITIZED_PENITENT`.
+
+Accepted semantics:
+
+- the incorrect saw cycle completes and retains the already-frozen rejected,
+  no-credit outcome;
+- `FALSE_PA_ANNOUNCEMENT` remains the causal domain event identifier, and Gate 1
+  requires no audio playback;
+- an 8-second saw-only failure window begins at that incorrect completion;
+- while the window is active the saw is unavailable and no new saw cycle may
+  start;
+- intake, feed progression and other line-admission work continue under their
+  existing contracts;
+- intake deadlines continue;
+- the hard shift clock and tick progression continue, and the hard deadline is
+  neither moved nor extended;
+- existing non-saw player work remains governed by its ordinary contracts;
+- no manual repair action and no `LINE_JAMMED`/`REPAIRING` substitution is
+  introduced for this effect;
+- after exactly 8 seconds the saw automatically becomes available again, and
+  ordinary automatic saw-start behaviour may resume once its normal
+  preconditions are met.
+
+This decision authorizes no audio, UI, scoring, actor-scoped penalty, whole-line
+pause, deadline modification or manual repair, and it does not authorize
+contextual or differentiated repair mechanics; those remain separate design
+backlog work. It replaces the earlier ambiguity, recorded as blocked by the
+TLAW-043 audit, that `time_penalty` might stop the whole line or modify the
+shift clock. It is a separate bounded increment and is not combined with D-014.
+
+Sources: [Issue #109 comment 5238424632](https://github.com/baroentgray/the-logs-are-wrong/issues/109#issuecomment-5238424632), `docs/FIRST_SHIFT_SPEC.md`, `docs/ANOMALY_MATRIX.md`, `data/anomalies.prototype.yaml`, `docs/agent/GATE1_EXIT_AUDIT.md`, and [Issue #107](https://github.com/baroentgray/the-logs-are-wrong/issues/107).
+
+## D-016 — Resin nearest-line-button lock execution is deferred to Gate 2
+
+The owner accepted TLAW-043 option A for `lock` / `nearest_line_button`:
+Gate 1 keeps descriptor-only treatment and mechanical execution is deferred to
+the Gate 2 control-surface and spatial representation.
+
+The accepted fiction is unchanged: unsealed Resin reaching the saw, or holy
+water applied to Resin before the saw, activates anomalous resin that blocks the
+nearest physical line-control button for ten seconds. The retained effect stays
+exactly `lock` / `RESIN_BUTTON_LOCK` / target `nearest_line_button` / duration
+10 seconds.
+
+For Gate 1 this means the descriptor and the existing wrong-action semantics are
+retained as they are — the holy water is still consumed and the object remains
+processable — and Gate 1 must not invent an abstract substitute target and must
+not add a lock executor. Gate 1 has no button, control-surface or actor-position
+model, so `nearest_line_button` has no Gate-1 referent. Gate 2 resolves physical
+nearest-button selection and presentation against the actual control surfaces.
+
+Sources: [Issue #109 comment 5238424632](https://github.com/baroentgray/the-logs-are-wrong/issues/109#issuecomment-5238424632), `docs/PROTOTYPE_SCOPE.md`, `docs/FIRST_SHIFT_SPEC.md`, `docs/ANOMALY_MATRIX.md`, `data/anomalies.prototype.yaml`, and `docs/agent/GATE1_EXIT_AUDIT.md`.
