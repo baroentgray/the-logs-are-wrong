@@ -45,6 +45,8 @@ public sealed class ShiftSnapshotRestoreCorrelationTests
         ShiftSnapshot source,
         SnapshotSchedulerState? scheduler = null,
         ImmutableArray<SnapshotLog>? logs = null,
+        SnapshotLineState? lineState = null,
+        SnapshotContainmentState? containmentState = null,
         SnapshotObjectives? objectives = null,
         ServerTick? serverTick = null) => new(
         source.ShiftId,
@@ -53,8 +55,8 @@ public sealed class ShiftSnapshotRestoreCorrelationTests
         source.LastEventSequence,
         scheduler ?? source.SchedulerState,
         logs ?? source.Logs,
-        source.LineState,
-        source.ContainmentState,
+        lineState ?? source.LineState,
+        containmentState ?? source.ContainmentState,
         source.Inventory,
         source.Quota,
         objectives ?? source.Objectives);
@@ -62,6 +64,25 @@ public sealed class ShiftSnapshotRestoreCorrelationTests
     private static SnapshotSchedulerState WithSaw(SnapshotSchedulerState source, SnapshotSawCycle? cycle) => new(
         source.PendingFeed, source.ActiveIntakeDeadline, source.ActiveProcedureHold, source.ActiveConfirmationTest,
         cycle, source.ProcessedIntentIds, source.Progression);
+
+    private static SnapshotSchedulerState WithPendingFeed(SnapshotSchedulerState source, SnapshotPendingFeed? feed) => new(
+        feed, source.ActiveIntakeDeadline, source.ActiveProcedureHold, source.ActiveConfirmationTest,
+        source.ActiveSawCycle, source.ProcessedIntentIds, source.Progression);
+
+    private static SnapshotSchedulerState WithProcedureHold(SnapshotSchedulerState source, SnapshotProcedureHold? hold) => new(
+        source.PendingFeed, source.ActiveIntakeDeadline, hold, source.ActiveConfirmationTest,
+        source.ActiveSawCycle, source.ProcessedIntentIds, source.Progression);
+
+    private static SnapshotSchedulerState WithConfirmation(SnapshotSchedulerState source, SnapshotConfirmationTest? confirmation) => new(
+        source.PendingFeed, source.ActiveIntakeDeadline, source.ActiveProcedureHold, confirmation,
+        source.ActiveSawCycle, source.ProcessedIntentIds, source.Progression);
+
+    private static ShiftSnapshotRestoreRejected AssertContradictory(ShiftSnapshot snapshot, ShiftConfiguration configuration)
+    {
+        var rejected = Assert.IsType<ShiftSnapshotRestoreRejected>(Restore.Restore(snapshot, configuration));
+        Assert.Equal(ShiftSnapshotRestoreRejection.ContradictoryEvidence, rejected.Reason);
+        return rejected;
+    }
 
     private static SnapshotLog WithState(SnapshotLog source, LogState state) => new(
         source.LogId, source.TrueSpecies, source.DeclaredSpecies, source.Anomaly, state,
@@ -136,6 +157,140 @@ public sealed class ShiftSnapshotRestoreCorrelationTests
         var rejected = Assert.IsType<ShiftSnapshotRestoreRejected>(Restore.Restore(With(sawSnapshot, logs: logs), configuration.Shift));
         Assert.Equal(ShiftSnapshotRestoreRejection.ContradictoryEvidence, rejected.Reason);
         Assert.Equal(SawOwnershipViolation, rejected.Detail);
+    }
+
+    // ----- remaining directly restored active-runtime correlations -----
+
+    [Fact]
+    public void An_active_pending_feed_whose_owner_is_no_longer_scheduled_is_rejected()
+    {
+        var (configuration, _, run) = Execute(FullP0HostScenarioScript.LearningCorrectPath);
+        var snapshot = CaptureAt(run, candidate => candidate.SchedulerState.PendingFeed is not null);
+        var owner = snapshot.SchedulerState.PendingFeed!.LogId;
+        var logs = snapshot.Logs
+            .Select(log => log.LogId == owner ? WithState(log, LogState.AT_FEED_GATE) : log)
+            .ToImmutableArray();
+
+        var rejected = AssertContradictory(With(snapshot, logs: logs), configuration.Shift);
+        Assert.Contains("pending feed", rejected.Detail, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void An_active_procedure_hold_whose_owner_leaves_the_procedure_position_is_rejected()
+    {
+        var (configuration, _, run) = Execute(FullP0HostScenarioScript.LearningCorrectPath);
+        var snapshot = CaptureAt(run, candidate => candidate.SchedulerState.ActiveProcedureHold is not null);
+        var owner = snapshot.SchedulerState.ActiveProcedureHold!.LogId;
+        var logs = snapshot.Logs
+            .Select(log => log.LogId == owner ? WithState(log, LogState.AT_INTAKE) : log)
+            .ToImmutableArray();
+
+        var rejected = AssertContradictory(With(snapshot, logs: logs), configuration.Shift);
+        Assert.Contains("procedure", rejected.Detail, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void An_active_procedure_hold_with_an_owner_anomaly_mismatch_is_rejected()
+    {
+        var (configuration, _, run) = Execute(FullP0HostScenarioScript.LearningCorrectPath);
+        var snapshot = CaptureAt(run, candidate => candidate.SchedulerState.ActiveProcedureHold is not null);
+        var hold = snapshot.SchedulerState.ActiveProcedureHold!;
+        var contradictory = new SnapshotProcedureHold(
+            hold.LogId,
+            AnomalyId.From("SNAPSHOT_CONTRADICTION"),
+            hold.AttemptedItem,
+            hold.ProcedureStepIndex,
+            hold.StartedAt,
+            hold.Duration);
+
+        var rejected = AssertContradictory(
+            With(snapshot, scheduler: WithProcedureHold(snapshot.SchedulerState, contradictory)),
+            configuration.Shift);
+        Assert.Contains("anomaly", rejected.Detail, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void An_active_confirmation_test_whose_owner_leaves_intake_is_rejected()
+    {
+        var (configuration, _, run) = Execute(FullP0HostScenarioScript.LearningCorrectPath);
+        var snapshot = CaptureAt(run, candidate => candidate.SchedulerState.ActiveConfirmationTest is not null);
+        var owner = snapshot.SchedulerState.ActiveConfirmationTest!.LogId;
+        var logs = snapshot.Logs
+            .Select(log => log.LogId == owner ? WithState(log, LogState.AT_PROCEDURE) : log)
+            .ToImmutableArray();
+
+        var rejected = AssertContradictory(With(snapshot, logs: logs), configuration.Shift);
+        Assert.Contains("confirmation", rejected.Detail, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void An_active_confirmation_test_with_an_owner_anomaly_mismatch_is_rejected()
+    {
+        var (configuration, _, run) = Execute(FullP0HostScenarioScript.LearningCorrectPath);
+        var snapshot = CaptureAt(run, candidate => candidate.SchedulerState.ActiveConfirmationTest is not null);
+        var active = snapshot.SchedulerState.ActiveConfirmationTest!;
+        var contradictory = new SnapshotConfirmationTest(
+            active.LogId,
+            AnomalyId.From("SNAPSHOT_CONTRADICTION"),
+            active.RequiredTools,
+            active.PlanDuration,
+            active.Continuous,
+            active.RequiredLineNoise,
+            active.ResetWhenConditionLost,
+            active.Result,
+            active.AccumulatedValidDuration,
+            active.SegmentStartedAt,
+            active.IsRunning,
+            active.LastConditionBoundaryAt);
+
+        var rejected = AssertContradictory(
+            With(snapshot, scheduler: WithConfirmation(snapshot.SchedulerState, contradictory)),
+            configuration.Shift);
+        Assert.Contains("anomaly", rejected.Detail, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void An_active_intake_deadline_whose_owner_leaves_intake_is_rejected()
+    {
+        var (configuration, _, run) = Execute(FullP0HostScenarioScript.LearningCorrectPath);
+        var snapshot = CaptureAt(run, candidate => candidate.SchedulerState.ActiveIntakeDeadline is not null);
+        var owner = snapshot.SchedulerState.ActiveIntakeDeadline!.LogId;
+        var logs = snapshot.Logs
+            .Select(log => log.LogId == owner ? WithState(log, LogState.AT_FEED_GATE) : log)
+            .ToImmutableArray();
+
+        var rejected = AssertContradictory(With(snapshot, logs: logs), configuration.Shift);
+        Assert.Contains("intake deadline", rejected.Detail, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void An_active_containment_ritual_in_stable_containment_is_rejected()
+    {
+        var (configuration, _, run) = Execute(FullP0HostScenarioScript.LearningCorrectPath);
+        var snapshot = CaptureAt(run, candidate => candidate.ContainmentState.ActiveRitual is not null);
+        var containment = snapshot.ContainmentState;
+        var contradictory = new SnapshotContainmentState(
+            ContainmentState.STABLE,
+            containment.EnteredAt,
+            containment.DeadlineAt,
+            containment.ActiveRitual);
+
+        var rejected = AssertContradictory(With(snapshot, containmentState: contradictory), configuration.Shift);
+        Assert.Contains("ritual", rejected.Detail, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void An_active_line_repair_whose_pending_owner_is_not_in_its_frozen_source_state_is_rejected()
+    {
+        var (configuration, _, run) = Execute(FullP0HostScenarioScript.LearningCorrectPath);
+        var snapshot = CaptureAt(run, candidate => candidate.LineState.ActiveRepairHold is not null);
+        var owner = snapshot.LineState.PendingLogId!.Value;
+        var logs = snapshot.Logs
+            .Select(log => log.LogId == owner ? WithState(log, LogState.QUEUED_FOR_SAW) : log)
+            .ToImmutableArray();
+
+        var rejected = AssertContradictory(With(snapshot, logs: logs), configuration.Shift);
+        Assert.Contains("repair", rejected.Detail, StringComparison.Ordinal);
     }
 
     // ----- lifecycle and progression correlation -----
@@ -245,6 +400,37 @@ public sealed class ShiftSnapshotRestoreCorrelationTests
 
         var rejected = Assert.IsType<ShiftSnapshotRestoreRejected>(Restore.Restore(tampered, configuration.Shift));
         Assert.Equal(ShiftSnapshotRestoreRejection.ContradictoryEvidence, rejected.Reason);
+    }
+
+    [Fact]
+    public void A_pristine_snapshot_cannot_claim_a_completed_shift_receipt_without_a_completed_tick()
+    {
+        var configuration = Fixture.LoadP0();
+        var initial = Capture.CreateInitial(configuration.Shift, ProfileId.From("learning"));
+        var scheduler = initial.SchedulerState;
+        var contradictory = With(initial, scheduler: new SnapshotSchedulerState(
+            scheduler.PendingFeed, scheduler.ActiveIntakeDeadline, scheduler.ActiveProcedureHold,
+            scheduler.ActiveConfirmationTest, scheduler.ActiveSawCycle, scheduler.ProcessedIntentIds,
+            new SnapshotProgression(false, true)));
+
+        var rejected = AssertContradictory(contradictory, configuration.Shift);
+        Assert.Contains("receipt", rejected.Detail, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void A_completed_lifecycle_requires_its_completed_tick_receipt_to_report_completion()
+    {
+        var (configuration, _, run) = Execute(FullP0HostScenarioScript.LearningCorrectPath);
+        var completed = Assert.IsType<ShiftSnapshotCaptured>(Capture.Capture(run.Executions[^1])).Snapshot;
+        Assert.NotNull(completed.Objectives.Completion);
+        var scheduler = completed.SchedulerState;
+        var contradictory = With(completed, scheduler: new SnapshotSchedulerState(
+            scheduler.PendingFeed, scheduler.ActiveIntakeDeadline, scheduler.ActiveProcedureHold,
+            scheduler.ActiveConfirmationTest, scheduler.ActiveSawCycle, scheduler.ProcessedIntentIds,
+            new SnapshotProgression(true, false)));
+
+        var rejected = AssertContradictory(contradictory, configuration.Shift);
+        Assert.Contains("completed", rejected.Detail, StringComparison.Ordinal);
     }
 
     // ----- valid evidence is untouched -----

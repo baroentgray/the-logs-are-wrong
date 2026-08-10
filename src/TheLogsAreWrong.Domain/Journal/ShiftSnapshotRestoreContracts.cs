@@ -390,6 +390,7 @@ internal static class ShiftSnapshotCorrelationValidation
         // and the active-saw invariant (the cycle owner exists, is IN_SAW, is the only saw occupant, and its timing is
         // coherent). Reusing the frozen boundary avoids duplicating any gameplay rule here.
         ShiftCompletionValidation.ValidateActiveCorrelation(lifecycle, shift, quota, snapshot.ServerTick, configuration);
+        ValidateDirectlyRestoredActiveRuntimeEvidence(snapshot, shift);
 
         var processedCount = 0;
         var writtenOffCount = 0;
@@ -417,6 +418,172 @@ internal static class ShiftSnapshotCorrelationValidation
         }
 
         ValidateProgression(snapshot, lifecycle);
+    }
+
+    /// <summary>
+    /// Correlates every remaining active value that the snapshot seam installs directly with the exact owner/state
+    /// relationship that the frozen live runtime preserves. These checks reconstruct no gameplay and deliberately use
+    /// only evidence already retained by the snapshot and immutable runtime values.
+    /// </summary>
+    private static void ValidateDirectlyRestoredActiveRuntimeEvidence(ShiftSnapshot snapshot, ShiftRuntimeState shift)
+    {
+        ValidatePendingFeed(snapshot, shift);
+        ValidateActiveProcedureHold(snapshot, shift);
+        ValidateActiveConfirmation(snapshot, shift);
+        ValidateActiveIntakeDeadline(snapshot, shift);
+        ValidateActiveContainmentRitual(snapshot, shift);
+        ValidateActiveLineRepair(snapshot, shift);
+    }
+
+    private static void ValidatePendingFeed(ShiftSnapshot snapshot, ShiftRuntimeState shift)
+    {
+        if (shift.PendingFeed is not { } feed)
+        {
+            return;
+        }
+
+        if (!shift.TryGetLog(feed.LogId, out var owner) || owner.State != LogState.SCHEDULED)
+        {
+            throw new InvalidOperationException("An active pending feed must retain an existing scheduled owner.");
+        }
+
+        if (feed.CausedByIntentId is { } intentId && !shift.ProcessedIntentIds.Contains(intentId))
+        {
+            throw new InvalidOperationException("An active pending feed must retain its exact processed-intent causation.");
+        }
+
+        if (feed.ScheduledAt > snapshot.ServerTick || snapshot.ServerTick >= feed.DueAt)
+        {
+            throw new InvalidOperationException("An active pending feed timing window must contain the snapshot tick.");
+        }
+    }
+
+    private static void ValidateActiveProcedureHold(ShiftSnapshot snapshot, ShiftRuntimeState shift)
+    {
+        if (shift.ActiveProcedureHold is not { } hold)
+        {
+            return;
+        }
+
+        if (!shift.TryGetLog(hold.LogId, out var owner) || owner.State != LogState.AT_PROCEDURE)
+        {
+            throw new InvalidOperationException("An active procedure hold must retain an existing owner at procedure.");
+        }
+
+        if (owner.Anomaly != hold.AnomalyId)
+        {
+            throw new InvalidOperationException("An active procedure hold anomaly must match its owner log.");
+        }
+
+        if (shift.TryGetProcedureProgress(hold.LogId, out var progress))
+        {
+            if (progress.AnomalyId != hold.AnomalyId || progress.IsComplete || progress.CompletedStepCount != hold.ProcedureStepIndex)
+            {
+                throw new InvalidOperationException("An active procedure hold must retain coherent owner progress.");
+            }
+        }
+        else if (hold.ProcedureStepIndex != 0)
+        {
+            throw new InvalidOperationException("The first active procedure hold must retain step zero without prior progress.");
+        }
+
+        ValidateActiveWindow("procedure hold", hold.StartedAt, hold.DueAt, snapshot.ServerTick);
+    }
+
+    private static void ValidateActiveConfirmation(ShiftSnapshot snapshot, ShiftRuntimeState shift)
+    {
+        if (shift.ActiveConfirmationTest is not { } active)
+        {
+            return;
+        }
+
+        if (!shift.TryGetLog(active.LogId, out var owner) || owner.State != LogState.AT_INTAKE)
+        {
+            throw new InvalidOperationException("An active confirmation test must retain an existing owner at intake.");
+        }
+
+        if (owner.Anomaly != active.AnomalyId)
+        {
+            throw new InvalidOperationException("An active confirmation test anomaly must match its owner log.");
+        }
+
+        if (shift.TryGetConfirmationResult(active.LogId, out _))
+        {
+            throw new InvalidOperationException("An active confirmation test cannot retain a completed result for its owner.");
+        }
+
+        if (active.LastConditionBoundaryAt > snapshot.ServerTick)
+        {
+            throw new InvalidOperationException("An active confirmation test cannot retain a future condition boundary.");
+        }
+
+        if (active.IsRunning)
+        {
+            ValidateActiveWindow("confirmation test", active.SegmentStartedAt!.Value, active.DueAt!.Value, snapshot.ServerTick);
+        }
+    }
+
+    private static void ValidateActiveIntakeDeadline(ShiftSnapshot snapshot, ShiftRuntimeState shift)
+    {
+        if (shift.ActiveIntakeDeadline is not { } deadline)
+        {
+            return;
+        }
+
+        if (!shift.TryGetLog(deadline.LogId, out var owner) || owner.State != LogState.AT_INTAKE)
+        {
+            throw new InvalidOperationException("An active intake deadline must retain an existing owner at intake.");
+        }
+
+        ValidateActiveWindow("intake deadline", deadline.StartedAt, deadline.DueAt, snapshot.ServerTick);
+    }
+
+    private static void ValidateActiveContainmentRitual(ShiftSnapshot snapshot, ShiftRuntimeState shift)
+    {
+        if (shift.ActiveContainmentRitual is not { } ritual)
+        {
+            return;
+        }
+
+        if (shift.Containment.State == ContainmentState.STABLE)
+        {
+            throw new InvalidOperationException("An active containment ritual cannot retain stable containment.");
+        }
+
+        ValidateActiveWindow("containment ritual", ritual.StartedAt, ritual.DueAt, snapshot.ServerTick);
+    }
+
+    private static void ValidateActiveLineRepair(ShiftSnapshot snapshot, ShiftRuntimeState shift)
+    {
+        if (shift.Line.ActiveRepairHold is not { } hold)
+        {
+            return;
+        }
+
+        if (!LineRuntimeState.TryGetActiveCause(shift.Line.Cause, out var cause) || shift.Line.PendingLogId is not { } pendingLogId ||
+            !shift.TryGetLog(pendingLogId, out var owner))
+        {
+            throw new InvalidOperationException("An active line repair must retain its exact pending owner.");
+        }
+
+        var expectedOwnerState = cause == JamCause.FEED_GATE_BLOCKED ? LogState.AT_FEED_GATE : LogState.AT_INTAKE;
+        if (owner.State != expectedOwnerState)
+        {
+            throw new InvalidOperationException("An active line repair owner must remain in its frozen blocking source state.");
+        }
+
+        if (hold.StartedAt > snapshot.ServerTick)
+        {
+            throw new InvalidOperationException("An active line repair cannot start after the snapshot tick.");
+        }
+    }
+
+    private static void ValidateActiveWindow(string evidenceName, ServerTick startedAt, ServerTick dueAt, ServerTick snapshotTick)
+    {
+        if (startedAt > snapshotTick || snapshotTick >= dueAt)
+        {
+            throw new InvalidOperationException($"An active {evidenceName} timing window must contain the snapshot tick.");
+        }
     }
 
     /// <summary>
@@ -498,6 +665,16 @@ internal static class ShiftSnapshotCorrelationValidation
         var progression = snapshot.SchedulerState.Progression;
         if (!progression.HasCompletedTick)
         {
+            if (progression.LastReceiptCompletedShift)
+            {
+                throw new InvalidOperationException("A snapshot without a completed host tick cannot claim a completed-shift receipt.");
+            }
+
+            if (lifecycle.IsCompleted)
+            {
+                throw new InvalidOperationException("A completed restored lifecycle requires a completed host-tick receipt.");
+            }
+
             if (snapshot.ServerTick != ServerTick.Zero || snapshot.StateVersion != StateVersion.Zero || snapshot.LastEventSequence != EventSequence.None)
             {
                 throw new InvalidOperationException("A snapshot without a completed host tick must still be the pristine pre-execution projection.");
@@ -506,9 +683,9 @@ internal static class ShiftSnapshotCorrelationValidation
             return;
         }
 
-        if (progression.LastReceiptCompletedShift && !lifecycle.IsCompleted)
+        if (progression.LastReceiptCompletedShift != lifecycle.IsCompleted)
         {
-            throw new InvalidOperationException("A checkpoint receipt cannot report a completed shift while the restored lifecycle is still active.");
+            throw new InvalidOperationException("A completed host-tick receipt must agree exactly with the restored lifecycle completion state.");
         }
     }
 }
