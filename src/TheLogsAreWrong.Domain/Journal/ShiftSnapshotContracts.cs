@@ -74,8 +74,13 @@ public sealed record SnapshotLog
         ArgumentNullException.ThrowIfNull(other);
         return LogId == other.LogId && TrueSpecies == other.TrueSpecies && DeclaredSpecies == other.DeclaredSpecies &&
             Anomaly == other.Anomaly && State == other.State && Flags.SequenceEqual(other.Flags) &&
-            ProcedureProgress == other.ProcedureProgress && ConfirmationResult == other.ConfirmationResult;
+            ProcedureProgress == other.ProcedureProgress &&
+            (ConfirmationResult is null ? other.ConfirmationResult is null : other.ConfirmationResult is not null && ConfirmationResult.StructurallyEquals(other.ConfirmationResult));
     }
+
+    /// <summary>A compact deterministic description used only for diagnostics.</summary>
+    public string Describe() =>
+        $"{State}|flags=[{string.Join('+', Flags)}]|progress={(ProcedureProgress is { } progress ? $"{progress.AnomalyId}/{progress.CompletedStepCount}/{progress.IsComplete}" : "-")}|confirmation={(ConfirmationResult is { } result ? $"{result.AnomalyId}/{result.Result}/{result.CompletedAt}/[{string.Join('+', result.RequiredTools)}]/{result.Duration}" : "-")}";
 }
 
 /// <summary>Immutable per-log procedure progress evidence.</summary>
@@ -687,7 +692,7 @@ public sealed class ShiftSnapshot
         {
             if (!Logs[index].StructurallyEquals(other.Logs[index]))
             {
-                return $"log {Logs[index].LogId}";
+                return $"log {Logs[index].LogId}: {Logs[index].Describe()} != {other.Logs[index].Describe()}";
             }
         }
 

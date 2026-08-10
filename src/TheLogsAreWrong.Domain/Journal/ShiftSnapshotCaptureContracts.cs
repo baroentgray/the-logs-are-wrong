@@ -120,6 +120,24 @@ public sealed class ShiftSnapshotCaptureService
             EventSequence.None);
     }
 
+    /// <summary>
+    /// Re-projects a restoration result back into the frozen snapshot shape. This is the round-trip counterpart of
+    /// <see cref="Capture"/>: it reads only the reconstructed separate runtime values and runs no gameplay.
+    /// </summary>
+    public ShiftSnapshot CaptureRestored(ShiftSnapshotRestored restored)
+    {
+        ArgumentNullException.ThrowIfNull(restored);
+        return Project(
+            restored.ShiftState,
+            restored.QuotaState,
+            restored.MovementNoise,
+            restored.LineNoise,
+            restored.Progression,
+            restored.Lifecycle,
+            restored.ServerTick,
+            restored.Boundary.LastEventSequence);
+    }
+
     /// <summary>Projects the exact separate host-owned runtime values into the frozen snapshot shape.</summary>
     internal static ShiftSnapshot Project(
         ShiftRuntimeState shift,
