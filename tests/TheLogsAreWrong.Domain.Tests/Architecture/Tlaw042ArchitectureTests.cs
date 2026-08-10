@@ -55,27 +55,26 @@ public sealed class Tlaw042ArchitectureTests
     }
 
     /// <summary>
-    /// LOW-1 — the exact authorized TLAW-042 range must contain no production edit at all, whether or not the edit
-    /// mentions this increment. The range is pinned to the authorized Gate-1 baseline, so this guard is scoped to the
-    /// TLAW-042 branch by construction and must be retargeted or retired by the increment that next changes
-    /// <c>src/**</c> on <c>main</c>.
+    /// The accepted TLAW-042 range must contain no production edit at all, whether or not the edit mentions this
+    /// increment. The range is a fixed historical pair — the authorized Gate-1 baseline and the accepted TLAW-042
+    /// merge — so this proof stays true for the accepted history and does not depend on wherever <c>HEAD</c> later
+    /// moves. Neither endpoint may be replaced by a dynamic revision.
     /// </summary>
     [Fact]
-    public void Exact_tlaw042_commit_range_changes_only_test_project_paths()
+    public void Accepted_tlaw042_historical_range_changed_only_test_project_paths()
     {
         var root = FindRepositoryRoot();
-        var changed = RunGit(root, "diff", "--name-only", AuthorizedBaseline, "HEAD");
+        var changed = RunGit(root, "diff", "--name-only", AuthorizedBaseline, AcceptedMergeCommit);
 
-        // Non-vacuous: the range really is the TLAW-042 implementation.
-        Assert.NotEmpty(changed);
-        Assert.Contains("tests/TheLogsAreWrong.Domain.Tests/Determinism/FullP0/FullP0HostScenarioDriver.cs", changed);
+        // Non-vacuous: the range really is the exact six accepted TLAW-042 files.
+        Assert.Equal(AcceptedTlaw042Paths, changed);
         Assert.All(changed, path => Assert.StartsWith(AuthorizedPathPrefix, path, StringComparison.Ordinal));
         Assert.All(
             UnauthorizedRootPrefixes,
             prefix => Assert.DoesNotContain(changed, path => path.StartsWith(prefix, StringComparison.Ordinal)));
 
-        // The baseline really is an ancestor of the corrected candidate, so the range above is the whole increment.
-        Assert.Equal([AuthorizedBaseline], RunGit(root, "merge-base", AuthorizedBaseline, "HEAD"));
+        // The baseline really is an ancestor of the accepted merge, so the range above is the whole increment.
+        Assert.Equal([AuthorizedBaseline], RunGit(root, "merge-base", AuthorizedBaseline, AcceptedMergeCommit));
     }
 
     [Fact]
@@ -234,9 +233,23 @@ public sealed class Tlaw042ArchitectureTests
     }
 
     /// <summary>The exact authorized Gate-1 baseline this increment was implemented from.</summary>
-    private const string AuthorizedBaseline = "71aee1cc4138c2996e974afc9008eb3536b98ff9";
+    internal const string AuthorizedBaseline = "71aee1cc4138c2996e974afc9008eb3536b98ff9";
+
+    /// <summary>The exact accepted TLAW-042 merge commit. Together with the baseline it fixes the historical range.</summary>
+    internal const string AcceptedMergeCommit = "6e4ed1e1a9337af2e5149cbd16f3b971f274a0ab";
 
     private const string AuthorizedPathPrefix = "tests/TheLogsAreWrong.Domain.Tests/";
+
+    /// <summary>The exact six files the accepted TLAW-042 range changed, in git's own ordering.</summary>
+    private static readonly string[] AcceptedTlaw042Paths =
+    [
+        "tests/TheLogsAreWrong.Domain.Tests/Architecture/Tlaw042ArchitectureTests.cs",
+        "tests/TheLogsAreWrong.Domain.Tests/Determinism/FullP0/FullP0HostDeterminismTests.cs",
+        "tests/TheLogsAreWrong.Domain.Tests/Determinism/FullP0/FullP0HostScenarioDriver.cs",
+        "tests/TheLogsAreWrong.Domain.Tests/Determinism/FullP0/FullP0HostScenarioScript.cs",
+        "tests/TheLogsAreWrong.Domain.Tests/Determinism/FullP0/FullP0HostScenarioTests.cs",
+        "tests/TheLogsAreWrong.Domain.Tests/Determinism/FullP0/FullP0HostTraceProjection.cs"
+    ];
 
     private static readonly string[] UnauthorizedRootPrefixes = ["src/", "data/", "docs/", "source/", "tools/"];
 
