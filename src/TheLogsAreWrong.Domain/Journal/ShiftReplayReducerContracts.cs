@@ -456,6 +456,12 @@ public sealed class ShiftReplayService
             return context.Contradiction("only one active saw cycle is permitted");
         }
 
+        if (context.State.ActiveSawFailureWindow is { } failureWindow &&
+            new SawFailureWindow(failureWindow.StartedAt, failureWindow.Duration).IsActiveAt(context.Envelope.ServerTick))
+        {
+            return context.Contradiction("a saw cycle cannot start while the saw failure window is active");
+        }
+
         if (!context.State.TryGetLog(payload.Cycle.LogId, out var log))
         {
             return context.UnknownLog(payload.Cycle.LogId);
@@ -507,8 +513,36 @@ public sealed class ShiftReplayService
             return Fail(ShiftReplaySemanticFailure.QuotaSettlementMismatch, context.Position, context.Envelope.EventType, "quota evidence does not belong to the completed cycle");
         }
 
+        if (payload.Resolution.LogId != payload.Cycle.LogId || payload.Resolution.TerminalState != LogState.PROCESSED ||
+            payload.CompletedAt != context.Envelope.ServerTick)
+        {
+            return context.Contradiction("saw completion resolution or timing does not match the completed cycle");
+        }
+
         context.State.SetLogState(payload.Cycle.LogId, LogState.PROCESSED);
         context.State.ActiveSawCycle = null;
+        try
+        {
+            var window = SawFailureWindowFactory.FromCompletion(log.Anomaly, payload.Resolution, payload.CompletedAt);
+            if (window is not null &&
+                context.State.ActiveSawFailureWindow is { } existing &&
+                new SawFailureWindow(existing.StartedAt, existing.Duration).IsActiveAt(payload.CompletedAt))
+            {
+                return context.Contradiction("an incorrect Penitent saw completion cannot overlap an active saw failure window");
+            }
+
+            context.State.ActiveSawFailureWindow = window is { } value
+                ? new SnapshotSawFailureWindow(value.StartedAt, value.Duration)
+                : null;
+        }
+        catch (ArgumentException exception)
+        {
+            return context.Contradiction(exception.Message);
+        }
+        catch (InvalidOperationException exception)
+        {
+            return context.Contradiction(exception.Message);
+        }
 
         // Quota is applied exactly once from the accepted settlement evidence the host already resolved.
         if (payload.QuotaApplicationOutcome == HostStageSevenSawQuotaOutcome.Accepted)

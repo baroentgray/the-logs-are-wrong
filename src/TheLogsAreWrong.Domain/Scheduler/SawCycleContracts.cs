@@ -29,6 +29,40 @@ public sealed record ActiveSawCycle
     public ServerTick DueAt { get; }
 }
 
+/// <summary>
+/// Immutable, saw-owned availability interval produced only by the exact retained incorrect-Penitent completion
+/// evidence. It is an availability restriction, not an active saw, line state, repair state or generic effect runtime.
+/// </summary>
+public sealed record SawFailureWindow
+{
+    public SawFailureWindow(ServerTick startedAt, SimulationDuration duration)
+    {
+        if (startedAt.IsDefault || duration.IsDefault || duration <= SimulationDuration.Zero)
+        {
+            throw new ArgumentException("A saw failure window requires initialized timing with a positive duration.");
+        }
+
+        StartedAt = startedAt;
+        Duration = duration;
+        DueAt = startedAt + duration;
+    }
+
+    public ServerTick StartedAt { get; }
+    public SimulationDuration Duration { get; }
+    public ServerTick DueAt { get; }
+
+    /// <summary>The D-015 half-open interval: <c>StartedAt &lt;= tick &lt; DueAt</c>.</summary>
+    public bool IsActiveAt(ServerTick tick)
+    {
+        if (tick.IsDefault)
+        {
+            throw new ArgumentOutOfRangeException(nameof(tick), "A failure-window evaluation requires an initialized tick.");
+        }
+
+        return tick >= StartedAt && tick < DueAt;
+    }
+}
+
 public abstract record SawCycleStartResult(ShiftRuntimeState State);
 
 public sealed record SawCycleStarted(
@@ -40,6 +74,9 @@ public sealed record SawCycleStarted(
 public sealed record SawCycleStartNoQueuedOwner(ShiftRuntimeState State) : SawCycleStartResult(State);
 
 public sealed record SawCycleStartAlreadyActive(ShiftRuntimeState State, ActiveSawCycle Cycle) : SawCycleStartResult(State);
+
+/// <summary>Typed no-op: the exact supplied state retains an active D-015 saw-only failure interval.</summary>
+public sealed record SawCycleStartBlockedByFailureWindow(ShiftRuntimeState State, SawFailureWindow Window) : SawCycleStartResult(State);
 
 public sealed class SawCycleStartService
 {
@@ -59,12 +96,22 @@ public sealed class SawCycleStartService
         if (state.ActiveSawCycle is { } active)
         {
             ValidateActiveState(state, active);
+            if (state.ActiveSawFailureWindow is { } activeWindow && activeWindow.IsActiveAt(currentTick))
+            {
+                throw new InvalidOperationException("An active saw cycle cannot coexist with an active saw failure window.");
+            }
+
             return new SawCycleStartAlreadyActive(state, active);
         }
 
         if (state.GetNodeOccupancy(NodeId.SAW) != 0)
         {
             throw new InvalidOperationException("A saw occupant requires an active saw cycle.");
+        }
+
+        if (state.ActiveSawFailureWindow is { } window && window.IsActiveAt(currentTick))
+        {
+            return new SawCycleStartBlockedByFailureWindow(state, window);
         }
 
         var queued = state.Logs.Where(log => log.State == LogState.QUEUED_FOR_SAW).ToArray();
@@ -154,7 +201,12 @@ public sealed class SawCycleCompletionService
             throw new InvalidOperationException("A saw completion resolution must retain the active owner and processed terminal state.");
         }
 
-        var after = state.CompleteSawCycle(active);
+        if (state.ActiveSawFailureWindow is { } activeWindow && activeWindow.IsActiveAt(currentTick))
+        {
+            throw new InvalidOperationException("A saw completion cannot overlap an active saw failure window.");
+        }
+
+        var after = state.CompleteSawCycle(active, SawFailureWindowFactory.FromCompletion(owner.Anomaly, resolution, currentTick));
         return new SawCycleCompleted(after, active, resolution, currentTick, state.StateVersion, after.StateVersion);
     }
 
@@ -164,5 +216,36 @@ public sealed class SawCycleCompletionService
         {
             throw new InvalidOperationException("The active saw cycle must own the only saw occupant.");
         }
+    }
+}
+
+/// <summary>Internal shared D-015 trigger derivation for live completion and semantic replay.</summary>
+internal static class SawFailureWindowFactory
+{
+    internal static SawFailureWindow? FromCompletion(AnomalyId? ownerAnomaly, ProcessingResolution resolution, ServerTick completedAt)
+    {
+        ArgumentNullException.ThrowIfNull(resolution);
+        if (ownerAnomaly != AnomalyId.From("PENITENT_TRUNK") ||
+            !resolution.IsAnomalous ||
+            resolution.AllRequiredFlagsPresent is not false)
+        {
+            return null;
+        }
+
+        var matches = resolution.Effects
+            .Where(effect =>
+                effect.Type == EffectType.time_penalty &&
+                effect.Event == EffectEventId.From("FALSE_PA_ANNOUNCEMENT") &&
+                effect.DurationSeconds == 8 &&
+                effect.Target is null)
+            .ToArray();
+
+        if (matches.Length != 1)
+        {
+            throw new InvalidOperationException(
+                "An incorrect Penitent saw completion must retain exactly one time_penalty/FALSE_PA_ANNOUNCEMENT/8-second effect without a target.");
+        }
+
+        return new SawFailureWindow(completedAt, SimulationDuration.FromTicks(matches[0].DurationSeconds!.Value));
     }
 }

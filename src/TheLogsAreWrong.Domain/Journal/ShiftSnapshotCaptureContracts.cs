@@ -187,6 +187,7 @@ public sealed class ShiftSnapshotCaptureService
                     confirmation.LastConditionBoundaryAt)
                 : null,
             shift.ActiveSawCycle is { } cycle ? new SnapshotSawCycle(cycle.LogId, cycle.StartedAt, cycle.Duration) : null,
+            shift.ActiveSawFailureWindow is { } window ? new SnapshotSawFailureWindow(window.StartedAt, window.Duration) : null,
             shift.ProcessedIntentIds.ToImmutableArray(),
             new SnapshotProgression(progression.HasCompletedTick, progression.LastReceipt?.ShiftCompleted ?? false));
 

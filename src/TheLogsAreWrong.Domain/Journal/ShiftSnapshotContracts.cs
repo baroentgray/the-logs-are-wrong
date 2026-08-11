@@ -133,6 +133,20 @@ public sealed record SnapshotIntakeDeadline(LogId LogId, ServerTick StartedAt, S
 /// <summary>Immutable active saw-cycle evidence.</summary>
 public sealed record SnapshotSawCycle(LogId LogId, ServerTick StartedAt, SimulationDuration Duration);
 
+/// <summary>Immutable retained D-015 saw-only failure-window evidence; <c>DueAt</c> remains derived.</summary>
+public sealed record SnapshotSawFailureWindow
+{
+    public SnapshotSawFailureWindow(ServerTick startedAt, SimulationDuration duration)
+    {
+        _ = new SawFailureWindow(startedAt, duration);
+        StartedAt = startedAt;
+        Duration = duration;
+    }
+
+    public ServerTick StartedAt { get; }
+    public SimulationDuration Duration { get; }
+}
+
 /// <summary>Immutable active procedure-hold evidence.</summary>
 public sealed record SnapshotProcedureHold(LogId LogId, AnomalyId AnomalyId, ItemId AttemptedItem, int ProcedureStepIndex, ServerTick StartedAt, SimulationDuration Duration);
 
@@ -235,6 +249,27 @@ public sealed record SnapshotSchedulerState
         SnapshotSawCycle? activeSawCycle,
         ImmutableArray<IntentId> processedIntentIds,
         SnapshotProgression progression)
+        : this(
+            pendingFeed,
+            activeIntakeDeadline,
+            activeProcedureHold,
+            activeConfirmationTest,
+            activeSawCycle,
+            null,
+            processedIntentIds,
+            progression)
+    {
+    }
+
+    public SnapshotSchedulerState(
+        SnapshotPendingFeed? pendingFeed,
+        SnapshotIntakeDeadline? activeIntakeDeadline,
+        SnapshotProcedureHold? activeProcedureHold,
+        SnapshotConfirmationTest? activeConfirmationTest,
+        SnapshotSawCycle? activeSawCycle,
+        SnapshotSawFailureWindow? activeSawFailureWindow,
+        ImmutableArray<IntentId> processedIntentIds,
+        SnapshotProgression progression)
     {
         ArgumentNullException.ThrowIfNull(progression);
         if (processedIntentIds.IsDefault || processedIntentIds.Any(intentId => intentId.IsDefault))
@@ -247,6 +282,7 @@ public sealed record SnapshotSchedulerState
         ActiveProcedureHold = activeProcedureHold;
         ActiveConfirmationTest = activeConfirmationTest;
         ActiveSawCycle = activeSawCycle;
+        ActiveSawFailureWindow = activeSawFailureWindow;
         ProcessedIntentIds = SnapshotOrdering.SortIntents(processedIntentIds);
         Progression = progression;
     }
@@ -256,6 +292,7 @@ public sealed record SnapshotSchedulerState
     public SnapshotProcedureHold? ActiveProcedureHold { get; }
     public SnapshotConfirmationTest? ActiveConfirmationTest { get; }
     public SnapshotSawCycle? ActiveSawCycle { get; }
+    public SnapshotSawFailureWindow? ActiveSawFailureWindow { get; }
 
     /// <summary>Accepted intent identities in deterministic ordinal order.</summary>
     public ImmutableArray<IntentId> ProcessedIntentIds { get; }
@@ -268,7 +305,8 @@ public sealed record SnapshotSchedulerState
         return PendingFeed == other.PendingFeed && ActiveIntakeDeadline == other.ActiveIntakeDeadline &&
             ActiveProcedureHold == other.ActiveProcedureHold &&
             (ActiveConfirmationTest is null ? other.ActiveConfirmationTest is null : other.ActiveConfirmationTest is not null && ActiveConfirmationTest.StructurallyEquals(other.ActiveConfirmationTest)) &&
-            ActiveSawCycle == other.ActiveSawCycle && ProcessedIntentIds.SequenceEqual(other.ProcessedIntentIds) &&
+            ActiveSawCycle == other.ActiveSawCycle && ActiveSawFailureWindow == other.ActiveSawFailureWindow &&
+            ProcessedIntentIds.SequenceEqual(other.ProcessedIntentIds) &&
             Progression == other.Progression;
     }
 }
