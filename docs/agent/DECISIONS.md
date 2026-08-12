@@ -171,3 +171,54 @@ model, so `nearest_line_button` has no Gate-1 referent. Gate 2 resolves physical
 nearest-button selection and presentation against the actual control surfaces.
 
 Sources: [Issue #109 comment 5238424632](https://github.com/baroentgray/the-logs-are-wrong/issues/109#issuecomment-5238424632), `docs/PROTOTYPE_SCOPE.md`, `docs/FIRST_SHIFT_SPEC.md`, `docs/ANOMALY_MATRIX.md`, `data/anomalies.prototype.yaml`, and `docs/agent/GATE1_EXIT_AUDIT.md`.
+
+## D-017 — Exact Unity/network package pins are accepted
+
+The owner accepted the exact matrix that TLAW-049 proved, after that task closed
+`PACKAGE_MATRIX_SMOKE_PASS` and was merged and exact-main verified. The accepted
+pins are exactly:
+
+- Unity Editor `6000.3.21f1`, changeset `c02631ffc030`;
+- FishNet `4.7.2`, upstream tag resolving to commit
+  `de19b5d66459f60400ffd0edc443c4da173a01e7`;
+- Steamworks.NET `2025.164.1`, annotated tag object
+  `d6930827976de076964a97f713fea0b557783a54` peeling to commit
+  `c21a8f0e31c56ae8707130967faf491f7dd7c0d8`;
+- FishySteamworks `4.1.1`, upstream tag resolving to commit
+  `21e858249249e2c322365fe9fefbe865f290b0d9`, installed from the official release
+  asset `FishySteamworks.4.1.1.unitypackage`, `17,188` bytes, independently
+  computed SHA-256
+  `5698D16BD29B8B08D35E12A9B817CE69992F70D7C14B64810961691ECD9AFC57`.
+
+The smoke evidence is the prerequisite, not a formality: the exact matrix
+imported and compiled with zero C# errors and zero warnings, the FishySteamworks
+transport attached and was selected on a FishNet `NetworkManager`, Steamworks.NET
+initialized under Steam App ID `480`, a same-process host started and stopped
+cleanly, and a Windows x64 Development build loaded the native Steamworks plugin.
+
+For the accepted Steam P2P path, FishySteamworks `_peerToPeer=true` is part of
+this acceptance and must be carried explicitly into Gate-3 setup and handoff. The
+shipped default `_peerToPeer=false` is **not** the accepted configuration: it
+takes the IP listen-socket path, which failed server start during TLAW-049 with
+no diagnostic output at all, because `ServerSocket.StartConnection` swallows its
+exception in a bare `catch`. This is configuration, not a package patch; no
+package source is forked or modified.
+
+Accepting these pins does not start any gate. Gate 2 remains a single local Unity
+process with one local authoritative host and **no FishNet, Steamworks or other
+networking dependency**; `docs/PROTOTYPE_SCOPE.md` and frozen
+`docs/NETWORK_RULES.md` keep networking out of Gate 1 and Gate 2. FishNet,
+FishySteamworks and Steamworks.NET are for Gate 3+ networking work only.
+
+Frozen Gate-0 files are deliberately left byte-for-byte unchanged, including the
+two unchecked post-Gate-1 network rows in `GATE_0_EXIT_CHECKLIST.md` and the
+`PROPOSED` stack wording in `docs/NETWORK_RULES.md`. Both are protected by exact
+SHA-256 in `tools/Tlaw.Verify/Gate0/gate0-baseline.json`. Their text is historical
+Gate-0 baseline, not a reversal of this later acceptance; the acceptance lives
+append-only under `docs/agent/**` per D-002.
+
+Any later change to an accepted version or resolved identity requires a new
+explicit owner decision recorded as a new entry, not a silent rewrite of D-017
+(D-012).
+
+Sources: [Issue #121](https://github.com/baroentgray/the-logs-are-wrong/issues/121), [Issue #118](https://github.com/baroentgray/the-logs-are-wrong/issues/118), [PR #120](https://github.com/baroentgray/the-logs-are-wrong/pull/120), `docs/agent/PACKAGE_SMOKE_TEST.md`, and `docs/agent/PACKAGE_PIN_ACCEPTANCE.md`.
