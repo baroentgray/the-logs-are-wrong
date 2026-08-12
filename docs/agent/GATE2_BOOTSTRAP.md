@@ -11,7 +11,7 @@ Date: `2026-08-12`.
 | GitHub contract | [Issue #123](https://github.com/baroentgray/the-logs-are-wrong/issues/123) |
 | Baseline exact main | `d046f89b851a83a6c2abd7eee8784adea528529c` |
 | Candidate | this commit — the head of `task/TLAW-052-gate2-unity-bootstrap`; the exact SHA is recorded in the PR and the executor return, since a commit cannot contain its own hash |
-| Superseded candidate | `9c77831fbc117811bdb66033b53cf3db3da48309` — the pre-amendment commit; it failed the verifier's diff-check lane and is replaced by the amended candidate |
+| Superseded candidates | `9c77831fbc117811bdb66033b53cf3db3da48309` — pre-amendment, failed the verifier's diff-check lane; `38d5ddf4b4f8375b493578b0c24428809cebb288` — amended and fully green, superseded only by the docs-only changed-path-count correction below |
 | Branch | `task/TLAW-052-gate2-unity-bootstrap` |
 | Worktree | `C:\Projects\TheLogsAreWrong-worktrees\TLAW-052` |
 | Unity project | `unity/TheLogsAreWrong` |
@@ -252,10 +252,31 @@ unity/TheLogsAreWrong/Assets/Gate2/Tests/Editor/TheLogsAreWrong.Gate2.Tests.Edit
 unity/TheLogsAreWrong/Assets/Gate2/Tests/Editor/TheLogsAreWrong.Gate2.Tests.Editor.asmdef.meta
 unity/TheLogsAreWrong/Packages/manifest.json
 unity/TheLogsAreWrong/Packages/packages-lock.json
-unity/TheLogsAreWrong/ProjectSettings/*.asset (18 files)
+unity/TheLogsAreWrong/ProjectSettings/AudioManager.asset
+unity/TheLogsAreWrong/ProjectSettings/ClusterInputManager.asset
+unity/TheLogsAreWrong/ProjectSettings/DynamicsManager.asset
+unity/TheLogsAreWrong/ProjectSettings/EditorBuildSettings.asset
+unity/TheLogsAreWrong/ProjectSettings/EditorSettings.asset
+unity/TheLogsAreWrong/ProjectSettings/GraphicsSettings.asset
+unity/TheLogsAreWrong/ProjectSettings/InputManager.asset
+unity/TheLogsAreWrong/ProjectSettings/MemorySettings.asset
+unity/TheLogsAreWrong/ProjectSettings/MultiplayerManager.asset
+unity/TheLogsAreWrong/ProjectSettings/NavMeshAreas.asset
+unity/TheLogsAreWrong/ProjectSettings/Physics2DSettings.asset
+unity/TheLogsAreWrong/ProjectSettings/PresetManager.asset
+unity/TheLogsAreWrong/ProjectSettings/ProjectSettings.asset
+unity/TheLogsAreWrong/ProjectSettings/QualitySettings.asset
+unity/TheLogsAreWrong/ProjectSettings/TagManager.asset
+unity/TheLogsAreWrong/ProjectSettings/TimeManager.asset
+unity/TheLogsAreWrong/ProjectSettings/UnityConnectSettings.asset
+unity/TheLogsAreWrong/ProjectSettings/VFXManager.asset
+unity/TheLogsAreWrong/ProjectSettings/VersionControlSettings.asset
 unity/TheLogsAreWrong/ProjectSettings/ProjectVersion.txt
 unity/TheLogsAreWrong/ProjectSettings/SceneTemplateSettings.json
 ```
+
+That is **42** changed paths in total: `.gitattributes`, this document, 17 under `Assets/`, 2 under `Packages/`
+and 21 under `ProjectSettings/` (19 `.asset` plus `ProjectVersion.txt` and `SceneTemplateSettings.json`).
 
 All are inside the §4 authorized set as amended — `.gitattributes` is authorized only for the three scoped
 Unity-serialization rules above. `src/**`, `tests/**`, `data/**`, `Directory.Build.props`,
@@ -284,6 +305,12 @@ remains `net10.0`.
   comment `5271997049`), limited to the three scoped Unity-serialization rules. The first candidate
   `9c77831f` was reported `BLOCKED` rather than resolving this silently; the broader rule form was refused by
   the control centre and is not used.
+
+- Control-center pre-review returned `PRE_REVIEW_BLOCKED_EVIDENCE_PATH_COUNT` against candidate `38d5ddf4`: this
+  document recorded `ProjectSettings/*.asset (18 files)` while the changed-path set contains **19**. The 19 paths
+  are now enumerated explicitly instead of summarised by count, which removes the ambiguity that caused the
+  defect. The total of 42 changed paths was correct throughout and is unchanged. This correction is documentation
+  only — no Unity input, package, `.gitattributes`, code, verifier or scope change accompanied it.
 
 ### Evidence reuse after the amendment
 
