@@ -11,6 +11,7 @@ Date: `2026-08-12`.
 | GitHub contract | [Issue #123](https://github.com/baroentgray/the-logs-are-wrong/issues/123) |
 | Baseline exact main | `d046f89b851a83a6c2abd7eee8784adea528529c` |
 | Candidate | this commit — the head of `task/TLAW-052-gate2-unity-bootstrap`; the exact SHA is recorded in the PR and the executor return, since a commit cannot contain its own hash |
+| Superseded candidate | `9c77831fbc117811bdb66033b53cf3db3da48309` — the pre-amendment commit; it failed the verifier's diff-check lane and is replaced by the amended candidate |
 | Branch | `task/TLAW-052-gate2-unity-bootstrap` |
 | Worktree | `C:\Projects\TheLogsAreWrong-worktrees\TLAW-052` |
 | Unity project | `unity/TheLogsAreWrong` |
@@ -187,6 +188,39 @@ The built player was launched with `-tlaw-bootstrap-smoke`.
 Because no `.gitignore` rule was added, there is no risk of a new rule shadowing the tracked root
 `TheLogsAreWrong.sln`; that file remains tracked and visible.
 
+### Unity YAML whitespace exemption (contract amendment)
+
+The first candidate `9c77831f` failed the verifier's diff-check lane with **296** trailing-whitespace findings:
+274 in `.asset`, 21 in `.meta`, 1 in `.unity`, and **0 in any hand-written file**. All of them are Unity's own
+canonical serialization of empty keys (`userData: `, `assetBundleName: `, `assetBundleVariant: `, `m_Name: `),
+which the editor regenerates on every save. Stripping them would be undone by the next editor run and would
+mean hand-editing editor-generated files, which §5.1 forbids.
+
+The control-center amendment on Issue #123 added `.gitattributes` to the authorized paths for exactly three
+scoped rules, and explicitly refused the broader `unity/TheLogsAreWrong/** -whitespace` form because it would
+also silence future hand-written sources:
+
+```gitattributes
+unity/TheLogsAreWrong/**/*.asset -whitespace
+unity/TheLogsAreWrong/**/*.meta -whitespace
+unity/TheLogsAreWrong/**/*.unity -whitespace
+```
+
+Resolution proof via `git check-attr whitespace`:
+
+| Path | `whitespace` |
+| --- | --- |
+| `unity/…/ProjectSettings/ProjectSettings.asset` | `unset` (exempt) |
+| `unity/…/Assets/Gate2.meta` | `unset` (exempt) |
+| `unity/…/Assets/Gate2/Bootstrap/Gate2Bootstrap.unity` | `unset` (exempt) |
+| `unity/…/Assets/Gate2/Bootstrap/Gate2BootstrapRoot.cs` | `unspecified` (still checked) |
+| `unity/…/Assets/Gate2/Tests/Editor/TheLogsAreWrong.Gate2.Tests.Editor.asmdef` | `unspecified` (still checked) |
+| `unity/…/Packages/manifest.json` | `unspecified` (still checked) |
+| `src/TheLogsAreWrong.Domain/Runtime/ShiftRuntimeState.cs` | `unspecified` (still checked) |
+
+Only whitespace linting is affected. No `text`/`eol`/LFS behaviour changed, no other `.gitattributes` entry was
+touched, `tools/**` was not modified, and `Tlaw.Verify` was not weakened or replaced.
+
 No Unity-generated IDE solution or project files exist under `unity/**`: the project carries no
 `com.unity.ide.*` package, so the editor generated none. No crash dumps or editor-local state were produced.
 Nothing under `Library/`, `Temp/`, `Logs/`, `UserSettings/` or `Build/` is tracked.
@@ -197,6 +231,7 @@ executor handoff rather than pasted here.
 ## Changed paths
 
 ```text
+.gitattributes
 docs/agent/GATE2_BOOTSTRAP.md
 unity/TheLogsAreWrong/Assets/Gate2.meta
 unity/TheLogsAreWrong/Assets/Gate2/Bootstrap.meta
@@ -222,7 +257,8 @@ unity/TheLogsAreWrong/ProjectSettings/ProjectVersion.txt
 unity/TheLogsAreWrong/ProjectSettings/SceneTemplateSettings.json
 ```
 
-All are inside the §4 authorized set. `src/**`, `tests/**`, `data/**`, `Directory.Build.props`,
+All are inside the §4 authorized set as amended — `.gitattributes` is authorized only for the three scoped
+Unity-serialization rules above. `src/**`, `tests/**`, `data/**`, `Directory.Build.props`,
 `TheLogsAreWrong.sln`, `global.json`, `tools/**`, `.github/**` and every frozen Gate-0 file are unchanged.
 
 ## Existing .NET solution
@@ -244,6 +280,19 @@ remains `net10.0`.
   rules already cover every generated path, so no rule was required and none was added.
 - Two package changes were made relative to the bare template — adding `com.unity.test-framework` and removing
   `com.unity.multiplayer.center` — both justified above and recorded rather than made silently.
+- `.gitattributes` was changed under an explicit **contract amendment** to §4 (Issue #123, control-center
+  comment `5271997049`), limited to the three scoped Unity-serialization rules. The first candidate
+  `9c77831f` was reported `BLOCKED` rather than resolving this silently; the broader rule form was refused by
+  the control centre and is not used.
+
+### Evidence reuse after the amendment
+
+The amended commit changes only `.gitattributes` and this document. Neither is an input to the Unity editor
+lanes: no file under `unity/TheLogsAreWrong/Assets/**`, `Packages/**` or `ProjectSettings/**` changed, and
+`.gitattributes` affects only Git's whitespace linting, not Unity's compile, test, build or player behaviour.
+The Unity compile, EditMode test, Windows build and player launch/exit evidence above is therefore **reused
+unchanged from candidate `9c77831f`**, and this reuse is stated explicitly as the amendment requires. The
+`git diff --check`, `Tlaw.Verify`, and .NET build/test lanes were re-run in full against the amended candidate.
 
 ## Explicitly not performed
 
