@@ -222,3 +222,41 @@ explicit owner decision recorded as a new entry, not a silent rewrite of D-017
 (D-012).
 
 Sources: [Issue #121](https://github.com/baroentgray/the-logs-are-wrong/issues/121), [Issue #118](https://github.com/baroentgray/the-logs-are-wrong/issues/118), [PR #120](https://github.com/baroentgray/the-logs-are-wrong/pull/120), `docs/agent/PACKAGE_SMOKE_TEST.md`, and `docs/agent/PACKAGE_PIN_ACCEPTANCE.md`.
+
+## D-018 — Owner rejects Domain↔Unity architecture candidates for now
+
+After TLAW-056 Phase A, the owner deliberately decided **REJECT ALL FOR NOW**.
+No Domain↔Unity production architecture is accepted.
+
+- Candidate A, an additive portable target on the existing Domain, is not
+  accepted now.
+- Candidate B, an extracted portable authoritative core shared by net10 Domain
+  and Unity, is not accepted now.
+- Candidate C, direct source linking / Unity asmdef compilation, is not selected
+  under the current evidence.
+- Candidate D remains supplementary only; contracts or a facade are not an
+  executable authority architecture.
+
+This is a deliberate rejection for now, not a conclusion that A or B is
+technically impossible. TLAW-056 Phase A showed that A and B remained blocked at
+portable compilation, before Unity load, by the exposed `netstandard2.1`
+framework API surface. It authorizes no production source, target, project, or
+package migration.
+
+The owner-approved next direction is a separately scoped, scratch-only
+portability proof over the already-known 26-file authoritative cut. That later
+proof may use semantic-equivalent compatibility replacements for the currently
+exposed framework API blockers, then attempt this bounded sequence:
+
+~~~text
+portable compile
+-> pinned Unity Editor load
+-> EditMode authoritative execution
+-> exact net10/Unity parity
+~~~
+
+It must stop at the first material blocker. This later proof does not pre-accept
+Candidate A or Candidate B and must not become a production migration or
+architecture acceptance.
+
+Sources: [Issue #131](https://github.com/baroentgray/the-logs-are-wrong/issues/131), [PR #132 owner decision comment 5280644387](https://github.com/baroentgray/the-logs-are-wrong/pull/132#issuecomment-5280644387), `docs/agent/GATE2_DOMAIN_UNITY_ARCHITECTURE_DECISION.md`, and [Grok authoritative PASS record 4926080180](https://github.com/baroentgray/the-logs-are-wrong/pull/132#issuecomment-4926080180).

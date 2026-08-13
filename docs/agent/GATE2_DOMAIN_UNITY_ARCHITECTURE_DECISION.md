@@ -336,3 +336,52 @@ D-018; Ready transition; merge; or cleanup.
 
 NO_RECOMMENDATION
 OWNER_ARCHITECTURE_DECISION_REQUIRED
+
+## Phase B — owner decision finalization
+
+The Phase-A evidence and its historical conclusion immediately above remain
+unchanged: `NO_RECOMMENDATION` and
+`OWNER_ARCHITECTURE_DECISION_REQUIRED` recorded that Phase A did not itself make
+an owner architecture choice. This separate finalization records the subsequent
+owner decision; it does not rewrite Phase A as a recommendation to reject an
+architecture.
+
+### Owner decision and decision-log record
+
+The owner decision is **REJECT ALL FOR NOW**, recorded in [PR #132 owner decision
+comment 5280644387](https://github.com/baroentgray/the-logs-are-wrong/pull/132#issuecomment-5280644387).
+It is appended as [D-018](DECISIONS.md#d-018--owner-rejects-domainunity-architecture-candidates-for-now).
+
+- Candidate A is not accepted now, but is not disproven.
+- Candidate B is not accepted now, but is not disproven.
+- Candidate C is not selected under the current evidence.
+- Candidate D remains supplementary only and is not an executable authority
+  architecture.
+
+Accordingly, no Domain↔Unity production architecture is accepted. No production
+source, target, project, package, portable-core, bridge, facade, adapter, Unity,
+host/tick, gameplay, D-016, or networking implementation is authorized by this
+Phase-B finalization.
+
+### Owner-approved later investigation direction
+
+The next direction is the separately scoped, scratch-only portability proof
+recorded by D-018. It is limited to the already-known 26-file authoritative cut
+and may make semantic-equivalent compatibility replacements for the currently
+exposed framework API blockers. It must attempt, in order:
+
+~~~text
+portable compile
+-> pinned Unity Editor load
+-> EditMode authoritative execution
+-> exact net10/Unity parity
+~~~
+
+It must stop at the first material blocker. That later proof does not pre-accept
+Candidate A or Candidate B, must not silently become a production migration, and
+does not select a Domain↔Unity architecture.
+
+PR #132 remains Draft pending verification and review of this amended exact-head
+candidate, followed by a separate owner Ready gate.
+
+Sources: [Issue #131](https://github.com/baroentgray/the-logs-are-wrong/issues/131), [PR #132 owner decision comment 5280644387](https://github.com/baroentgray/the-logs-are-wrong/pull/132#issuecomment-5280644387), [D-018](DECISIONS.md#d-018--owner-rejects-domainunity-architecture-candidates-for-now), and [Grok authoritative PASS record 4926080180](https://github.com/baroentgray/the-logs-are-wrong/pull/132#issuecomment-4926080180).
