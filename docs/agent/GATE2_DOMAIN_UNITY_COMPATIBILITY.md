@@ -101,14 +101,43 @@ Unity.exe -batchmode -nographics -quit -projectPath C:\Temp\TLAW-053\ProbeA\repo
 | Scratch Domain Release build | PASS — 0 warnings, 0 errors |
 | Assembly identity | `TheLogsAreWrong.Domain, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null` |
 | Assembly SHA-256 | `1464E613AB6CE54073010EEDFDB90001F17BC16E008C768AA024768836C84104` |
-| Unity batch compile | PASS — process exit `0`; no C# compiler error or script-compilation-error record |
+| Unity CSC/Tundra static compilation against the imported DLL | PASS — `Assembly-CSharp.dll` compiled; Tundra reported success and no C# compiler error or script-compilation-error record |
+| Subsequent Unity Editor assembly load in the same valid session | FAIL — `MonoManager ReloadAssembly` refused the imported Domain DLL because `System.Collections.Immutable` could not be resolved; `Assembly-CSharp.dll` then could not load because the Domain assembly had errors |
+| Unity batch process | Exit `0`; this process result does not turn the failed Editor assembly load into a compatibility pass |
 | Representative type | `TheLogsAreWrong.Domain.Runtime.ShiftRuntimeState` |
 
 The Unity compiler response includes the imported DLL as
 `-r:"Assets/Tlaw053ProbeA/Plugins/TheLogsAreWrong.Domain.dll"` and successfully
-compiled the static `ShiftRuntimeState` reference. This proves the contracted
-Editor batch-compile boundary for the existing binary only. Probe A did not
-include an EditMode execution test or player build/launch; neither is claimed.
+compiled the static `ShiftRuntimeState` reference. That CSC/Tundra outcome is
+distinct from the subsequent Editor assembly-load outcome below. It does **not**
+prove Unity Editor consumption or Editor compatibility of the existing binary.
+
+#### Editor assembly-load evidence
+
+In the same valid Unity session, immediately after Tundra reported successful
+`Assembly-CSharp.dll` compilation, `MonoManager ReloadAssembly` reported:
+
+```text
+Assembly 'Assets/Tlaw053ProbeA/Plugins/TheLogsAreWrong.Domain.dll'
+will not be loaded due to errors:
+Unable to resolve reference 'System.Collections.Immutable'.
+Is the assembly missing or incompatible with the current platform?
+```
+
+It then reported:
+
+```text
+Assembly 'Library/ScriptAssemblies/Assembly-CSharp.dll' will not be loaded due to errors:
+Reference has errors 'TheLogsAreWrong.Domain'.
+```
+
+No dependency DLL was copied into Unity, no Unity reference validation was
+disabled, and no workaround probe was run. Under this exact DLL-only procedure,
+Editor assembly load is **DISPROVEN/equivalent**: static Unity C# compilation
+against the existing `net10.0` DLL succeeded, but Unity could not load that DLL.
+Therefore direct existing `net10.0` DLL consumption is **not proven**. Player
+and runtime behavior remain unprobed. Probe A did not include an EditMode
+execution test or player build/launch.
 
 #### Scratch correction
 
@@ -189,7 +218,7 @@ This audit's only Unity representative type is Probe A's
 
 | Option | Empirical status | Production changes required in a later task | Existing `net10.0` tests/tooling | Duplication / Unity coupling / deterministic-semantics risk | Expected next-task size |
 | --- | --- | --- | --- | --- | --- |
-| Direct existing `net10.0` binary reference | **PROVEN for Unity Editor batch compile only**; runtime/player behavior remains unprobed | Unity-side import/reference and a bounded runtime validation hook; no Domain source change is evidenced by this audit | Existing Domain tests/tooling remain on the same binary | None / low-to-medium / low if the exact binary is used, but runtime compatibility is not yet proven | Small bounded runtime-and-player validation task before any adoption decision |
+| Direct existing `net10.0` binary reference | **DISPROVEN for Unity Editor assembly load under the exact DLL-only Probe A procedure.** CSC/Tundra static compilation passed, but `MonoManager` could not load the DLL because `System.Collections.Immutable` was unresolved. Player/runtime behavior remains unprobed. | Dependency/load resolution is unresolved; any later experiment or architecture decision must define and validate a permitted remedy before Unity-side import/reference can be adopted. No Domain source change is evidenced by this audit. | Existing Domain tests/tooling remain on the same binary, but do not prove Unity loader resolution. | None / unresolved / low within the existing Domain, with Unity-load behavior unproven | Separately scoped future experiment and explicit architecture decision; size is not determined by this audit |
 | Additive Domain multitargeting (`net10.0` + Unity-compatible target) with unchanged source | **DISPROVEN** for clean `netstandard2.1` under this contract | At minimum targeting metadata plus explicit language metadata; currently also an immutable-collections dependency and record/required-member shims or source work, none of which this task may add | Must retain and run the `net10.0` suite plus target-specific compatibility coverage | None / low / medium-to-high because alternate framework behavior and shims create a second semantic surface | Large; requires an explicit owner decision and a separately scoped compatibility plan |
 | Source inclusion/linking into a Unity asmdef | **UNPROBED** | Unity asmdef/project changes and linked/copied Domain source selection; likely build metadata changes | Requires a way to preserve current .NET compilation and tests independently | High / high / high due divergence and Unity compilation context | Large architecture task |
 | Extract a portable Domain/core boundary plus adapters | **UNPROBED** | New portable project(s), Domain reference changes, Unity adapter(s), and expanded tests/tooling | Requires regression/replay parity across the extracted boundary | Low-to-medium / managed but nonzero / medium-to-high during extraction | Large architecture task |
@@ -203,12 +232,14 @@ recommended here.
 
 `NO_RECOMMENDATION`.
 
-The direct `net10.0` binary has positive Editor compile evidence, while the
-source-identical portable `netstandard2.1` path is blocked by dependencies and
-compiler/runtime support that this audit expressly forbids adding. That evidence
-does not establish a production runtime/player boundary or select a bridge.
-Any future bridge choice requires an explicit owner decision and a bounded
-implementation task. No architecture decision is accepted by this task.
+The direct `net10.0` binary has positive CSC/Tundra compile evidence but fails
+the subsequent Unity Editor assembly load under the exact DLL-only procedure;
+it therefore does not establish Unity consumption or a production
+runtime/player boundary. The source-identical portable `netstandard2.1` path is
+blocked by dependencies and compiler/runtime support that this audit expressly
+forbids adding. Any future experiment or bridge choice requires an explicit
+owner decision and a separately scoped task. No architecture decision is
+accepted by this task.
 
 ## Repository verification
 
