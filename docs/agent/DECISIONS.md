@@ -260,3 +260,79 @@ Candidate A or Candidate B and must not become a production migration or
 architecture acceptance.
 
 Sources: [Issue #131](https://github.com/baroentgray/the-logs-are-wrong/issues/131), [PR #132 owner decision comment 5280644387](https://github.com/baroentgray/the-logs-are-wrong/pull/132#issuecomment-5280644387), `docs/agent/GATE2_DOMAIN_UNITY_ARCHITECTURE_DECISION.md`, and [Grok authoritative PASS record 4926080180](https://github.com/baroentgray/the-logs-are-wrong/pull/132#issuecomment-4926080180).
+
+## D-019 — Owner selects extracted portable authoritative core for Domain↔Unity
+
+After the accepted TLAW-057/TLAW-058 evidence, control-center pre-review PASS,
+and D-011 Grok authoritative PASS, the owner explicitly selected Candidate B
+for the Domain↔Unity production architecture direction.
+
+Candidate B is an extracted coherent Unity-free portable authoritative core. It
+preserves **one semantic authoritative implementation**: net10 Domain
+composition and tests consume that core, and later Unity consumes that same
+core. There must be no duplicated net10-versus-portable authority
+implementation, promoted scratch authority copy, or target-specific gameplay
+algorithm fork.
+
+### D-018 history and supersession
+
+D-018 remains an unmodified historical record. Its **REJECT ALL FOR NOW**
+decision applied to the earlier evidence state, when the bounded portable path
+was still blocked before Unity load. It is superseded by this entry only for the
+architecture selection of Candidate B; it is not erased or rewritten.
+
+The evidence state materially changed:
+
+- TLAW-057 compiled the exact 26-file authoritative cut for netstandard2.1
+  after exactly 157 accepted semantic-equivalent compatibility replacements:
+  131 ArgumentNullException.ThrowIfNull replacements, 25 generic
+  Enum.IsDefined<TEnum> replacements, and 1 generic Enum.GetValues<TEnum>
+  replacement.
+- TLAW-058 established pinned-Editor load, one real authoritative EditMode
+  execution chain, and exact fresh net10/Unity parity for the bounded tested
+  vector.
+
+These results support selecting Candidate B as the production architecture
+direction. They do not make the bounded proof a production migration.
+
+### Bounds retained after selection
+
+The accepted proof remains limited to the proven 26-file cut and tested vector.
+This decision does not claim universal parity, full portability of all 60
+current Domain files, or a proven production extraction/reference graph. Player
+authority execution/parity remains unproven. No host/tick integration, D-016
+implementation, networking, FishNet, or Steamworks is authorized by this
+decision.
+
+### Required post-selection order
+
+1. The first post-selection implementation is a separately scoped
+   scratch/non-production Player authority/load/parity proof using the
+   already-proven 26-file portable authority cut and official dependency
+   closure.
+2. That Player proof must PASS before **any** production migration.
+3. Only under a later separate owner implementation-start authorization may a
+   production Candidate-B migration atomically establish:
+   - single-source extraction of the proven 26-file cut;
+   - the 157 accepted semantic-equivalent compatibility replacements on that
+     one moved production source implementation: 131 ThrowIfNull replacements,
+     25 Enum.IsDefined<TEnum> replacements, and 1 Enum.GetValues<TEnum>
+     replacement;
+   - an auditable compatibility manifest/count inventory and mandatory
+     stop-and-review on unexpected count drift;
+   - the portable authoritative-core target;
+   - compiler compatibility-definition ownership;
+   - System.Collections.Immutable and resolved dependency-closure policy;
+   - the existing net10 Domain consuming the core;
+   - deterministic regressions; and
+   - D-014 snapshot/replay regressions.
+4. A later separately gated production Unity import consumes that same core.
+5. Host/tick integration and later gameplay/networking work remain separate
+   gates and require their own authorization.
+
+This Phase-B decision-log append does not authorize the Player proof,
+production source compatibility edits, core extraction, any production
+migration, Unity import, host/tick work, D-016, networking, Ready, merge, or
+cleanup.
+
+Sources: [Issue #137](https://github.com/baroentgray/the-logs-are-wrong/issues/137), [owner SELECT_B comment 5298433797](https://github.com/baroentgray/the-logs-are-wrong/issues/137#issuecomment-5298433797), [Phase-B implementation-start comment 5298463080](https://github.com/baroentgray/the-logs-are-wrong/issues/137#issuecomment-5298463080), [control-center pre-review PASS](https://github.com/baroentgray/the-logs-are-wrong/pull/138#pullrequestreview-4941178892), [D-011 Grok authoritative PASS](https://github.com/baroentgray/the-logs-are-wrong/pull/138#pullrequestreview-4941343853), [TLAW-059 Phase-A dossier](GATE2_DOMAIN_UNITY_ARCHITECTURE_REFRESH.md), [TLAW-057 portable authority runtime/parity proof](GATE2_PORTABLE_AUTHORITY_RUNTIME_PARITY_PROOF.md), [TLAW-058 portable dependency-closure probe](GATE2_PORTABLE_DEPENDENCY_CLOSURE_PROBE.md), and [D-018](#d-018--owner-rejects-domainunity-architecture-candidates-for-now).
