@@ -56,9 +56,9 @@ public sealed record RepairPendingTransitionExecuted : RepairPendingTransitionEx
         RepairPendingTransitionFollowUp followUpRequirement)
         : base(state)
     {
-        ArgumentNullException.ThrowIfNull(state);
-        ArgumentNullException.ThrowIfNull(pendingTransition);
-        if (appliedAt.IsDefault || !Enum.IsDefined(followUpRequirement) ||
+        if (state is null) { throw new ArgumentNullException("state"); }
+        if (pendingTransition is null) { throw new ArgumentNullException("pendingTransition"); }
+        if (appliedAt.IsDefault || !Enum.IsDefined(typeof(RepairPendingTransitionFollowUp), followUpRequirement) ||
             currentStateVersion != priorStateVersion.Next() || state.StateVersion != currentStateVersion)
         {
             throw new ArgumentException("An accepted pending transition execution requires exact state, timing, version, and follow-up data.");
@@ -96,8 +96,8 @@ public sealed class RepairPendingTransitionExecutionService
         LineRepairCompleted completion,
         ServerTick currentTick)
     {
-        ArgumentNullException.ThrowIfNull(state);
-        ArgumentNullException.ThrowIfNull(completion);
+        if (state is null) { throw new ArgumentNullException("state"); }
+        if (completion is null) { throw new ArgumentNullException("completion"); }
         if (currentTick.IsDefault)
         {
             throw new ArgumentOutOfRangeException(nameof(currentTick), "The authoritative execution tick must be initialized.");
@@ -201,7 +201,7 @@ public sealed class RepairPendingTransitionExecutionService
 
     private static bool IsExactPendingMapping(PendingLineTransitionDescriptor pending)
     {
-        if (pending.LogId.IsDefault || !Enum.IsDefined(pending.Cause) || !Enum.IsDefined(pending.FromState) || !Enum.IsDefined(pending.ToState))
+        if (pending.LogId.IsDefault || !Enum.IsDefined(typeof(JamCause), pending.Cause) || !Enum.IsDefined(typeof(LogState), pending.FromState) || !Enum.IsDefined(typeof(LogState), pending.ToState))
         {
             return false;
         }

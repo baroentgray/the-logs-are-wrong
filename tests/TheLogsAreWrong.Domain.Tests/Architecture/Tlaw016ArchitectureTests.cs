@@ -9,9 +9,9 @@ public sealed class Tlaw016ArchitectureTests
         var root = FindRepositoryRoot();
         var sourcePaths = new[]
         {
-            Path.Combine(root, "src", "TheLogsAreWrong.Domain", "Scheduler", "IntakeDeadlineContracts.cs"),
-            Path.Combine(root, "src", "TheLogsAreWrong.Domain", "Runtime", "ShiftRuntimeState.cs"),
-            Path.Combine(root, "src", "TheLogsAreWrong.Domain", "Runtime", "LogTransitionServices.cs")
+            Path.Combine(root, "src", "TheLogsAreWrong.PortableAuthority", "Scheduler", "IntakeDeadlineContracts.cs"),
+            Path.Combine(root, "src", "TheLogsAreWrong.PortableAuthority", "Runtime", "ShiftRuntimeState.cs"),
+            Path.Combine(root, "src", "TheLogsAreWrong.PortableAuthority", "Runtime", "LogTransitionServices.cs")
         };
         Assert.All(sourcePaths, path => Assert.True(File.Exists(path)));
         var source = sourcePaths.Select(File.ReadAllText).ToArray();

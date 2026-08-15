@@ -25,7 +25,7 @@ public sealed record PendingFeedSchedule
         SimulationDuration delay,
         IntentId? causedByIntentId)
     {
-        if (logId.IsDefault || !Enum.IsDefined(kind) || scheduledAt.IsDefault || delay.IsDefault)
+        if (logId.IsDefault || !Enum.IsDefined(typeof(FeedScheduleKind), kind) || scheduledAt.IsDefault || delay.IsDefault)
         {
             throw new ArgumentException("A pending feed requires initialized identity, kind, timing, and delay.");
         }
@@ -229,7 +229,7 @@ public sealed class EarlyFeedIntentHandler
         ServerTick currentTick,
         SchedulerConfiguration configuration)
     {
-        ArgumentNullException.ThrowIfNull(intent);
+        if (intent is null) { throw new ArgumentNullException("intent"); }
         FeedPlanningGuards.Validate(state, currentTick, configuration);
 
         if (intent.ShiftId != state.ShiftId)
@@ -302,8 +302,8 @@ internal static class FeedPlanningGuards
 {
     internal static void Validate(ShiftRuntimeState state, ServerTick currentTick, SchedulerConfiguration configuration)
     {
-        ArgumentNullException.ThrowIfNull(state);
-        ArgumentNullException.ThrowIfNull(configuration);
+        if (state is null) { throw new ArgumentNullException("state"); }
+        if (configuration is null) { throw new ArgumentNullException("configuration"); }
         if (currentTick.IsDefault)
         {
             throw new ArgumentOutOfRangeException(nameof(currentTick), "Current scheduler tick must be initialized.");

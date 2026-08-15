@@ -39,15 +39,15 @@ public sealed class QuotaRuntimeState
 
     public static QuotaRuntimeState Create(ShiftConfiguration configuration)
     {
-        ArgumentNullException.ThrowIfNull(configuration);
+        if (configuration is null) { throw new ArgumentNullException("configuration"); }
         return Create(configuration.Objectives);
     }
 
     public static QuotaRuntimeState Create(ObjectivesDefinition objectives)
     {
-        ArgumentNullException.ThrowIfNull(objectives);
-        ArgumentNullException.ThrowIfNull(objectives.Quota);
-        ArgumentNullException.ThrowIfNull(objectives.Quota.BySpecies);
+        if (objectives is null) { throw new ArgumentNullException("objectives"); }
+        if (objectives.Quota is null) { throw new ArgumentNullException("objectives.Quota"); }
+        if (objectives.Quota.BySpecies is null) { throw new ArgumentNullException("objectives.Quota.BySpecies"); }
 
         if (objectives.Quota.Total < 0)
         {
@@ -207,8 +207,8 @@ public sealed class QuotaSettlementService
 {
     public QuotaSettlementResult Apply(QuotaRuntimeState state, QuotaSettlement settlement)
     {
-        ArgumentNullException.ThrowIfNull(state);
-        ArgumentNullException.ThrowIfNull(settlement);
+        if (state is null) { throw new ArgumentNullException("state"); }
+        if (settlement is null) { throw new ArgumentNullException("settlement"); }
 
         if (state.IsSettled(settlement.LogId))
         {

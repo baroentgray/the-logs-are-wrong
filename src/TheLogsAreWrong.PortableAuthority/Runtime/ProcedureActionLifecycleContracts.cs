@@ -121,7 +121,7 @@ public sealed class ProcedureActionStartService
         AnomalyCatalog catalog,
         IntentId? processedIntentId)
     {
-        ArgumentNullException.ThrowIfNull(state);
+        if (state is null) { throw new ArgumentNullException("state"); }
         if (logId.IsDefault)
         {
             throw new ArgumentException("Log identifier must be initialized.", nameof(logId));
@@ -137,7 +137,7 @@ public sealed class ProcedureActionStartService
             throw new ArgumentException("Current tick must be initialized.", nameof(currentTick));
         }
 
-        ArgumentNullException.ThrowIfNull(catalog);
+        if (catalog is null) { throw new ArgumentNullException("catalog"); }
         if (!state.TryGetLog(logId, out var log))
         {
             return Reject(state, ProcedureActionStartRejectionReason.TargetNotFound);
@@ -274,7 +274,7 @@ public sealed class ProcedureActionCancellationService
 {
     public ProcedureActionCancellationResult Cancel(ShiftRuntimeState state, LogId logId)
     {
-        ArgumentNullException.ThrowIfNull(state);
+        if (state is null) { throw new ArgumentNullException("state"); }
         if (logId.IsDefault)
         {
             throw new ArgumentException("Log identifier must be initialized.", nameof(logId));
@@ -327,13 +327,13 @@ public sealed class ProcedureActionDueCompletionService
 
     public ProcedureActionDueCompletionResult CompleteDue(ShiftRuntimeState state, ServerTick currentTick, AnomalyCatalog catalog)
     {
-        ArgumentNullException.ThrowIfNull(state);
+        if (state is null) { throw new ArgumentNullException("state"); }
         if (currentTick.IsDefault)
         {
             throw new ArgumentException("Current tick must be initialized.", nameof(currentTick));
         }
 
-        ArgumentNullException.ThrowIfNull(catalog);
+        if (catalog is null) { throw new ArgumentNullException("catalog"); }
         if (state.ActiveProcedureHold is not { } hold)
         {
             return new ProcedureActionNoActiveHold(state);

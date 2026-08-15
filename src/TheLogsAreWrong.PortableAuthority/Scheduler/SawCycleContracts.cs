@@ -82,8 +82,8 @@ public sealed class SawCycleStartService
 {
     public SawCycleStartResult Start(ShiftRuntimeState state, ServerTick currentTick, SchedulerConfiguration configuration)
     {
-        ArgumentNullException.ThrowIfNull(state);
-        ArgumentNullException.ThrowIfNull(configuration);
+        if (state is null) { throw new ArgumentNullException("state"); }
+        if (configuration is null) { throw new ArgumentNullException("configuration"); }
         if (currentTick.IsDefault)
         {
             throw new ArgumentOutOfRangeException(nameof(currentTick), "Current scheduler tick must be initialized.");
@@ -162,8 +162,8 @@ public sealed class SawCycleCompletionService
 {
     public SawCycleCompletionResult Complete(ShiftRuntimeState state, ServerTick currentTick, AnomalyCatalog catalog)
     {
-        ArgumentNullException.ThrowIfNull(state);
-        ArgumentNullException.ThrowIfNull(catalog);
+        if (state is null) { throw new ArgumentNullException("state"); }
+        if (catalog is null) { throw new ArgumentNullException("catalog"); }
         if (currentTick.IsDefault)
         {
             throw new ArgumentOutOfRangeException(nameof(currentTick), "Current scheduler tick must be initialized.");
@@ -224,7 +224,7 @@ internal static class SawFailureWindowFactory
 {
     internal static SawFailureWindow? FromCompletion(AnomalyId? ownerAnomaly, ProcessingResolution resolution, ServerTick completedAt)
     {
-        ArgumentNullException.ThrowIfNull(resolution);
+        if (resolution is null) { throw new ArgumentNullException("resolution"); }
         if (ownerAnomaly != AnomalyId.From("PENITENT_TRUNK") ||
             !resolution.IsAnomalous ||
             resolution.AllRequiredFlagsPresent is not false)

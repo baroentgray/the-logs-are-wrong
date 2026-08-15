@@ -22,6 +22,7 @@
     <Content Include="..\..\src\TheLogsAreWrong.Config.Yaml\YamlConfigurationLoader.cs" CopyToOutputDirectory="PreserveNewest" Link="ProductionSources\YamlConfigurationLoader.cs" />
     <Content Include="..\..\src\TheLogsAreWrong.Config.Yaml\Parsing\YamlDocumentParser.cs" CopyToOutputDirectory="PreserveNewest" Link="ProductionSources\YamlDocumentParser.cs" />
     <Content Include="..\..\src\TheLogsAreWrong.Domain\**\*.cs" Exclude="..\..\src\TheLogsAreWrong.Domain\bin\**\*;..\..\src\TheLogsAreWrong.Domain\obj\**\*" CopyToOutputDirectory="PreserveNewest" Link="DomainSources\%(RecursiveDir)%(Filename)%(Extension)" />
+    <Content Include="..\..\src\TheLogsAreWrong.PortableAuthority\**\*.cs" Exclude="..\..\src\TheLogsAreWrong.PortableAuthority\bin\**\*;..\..\src\TheLogsAreWrong.PortableAuthority\obj\**\*;..\..\src\TheLogsAreWrong.PortableAuthority\Support\**\*" CopyToOutputDirectory="PreserveNewest" Link="DomainSources\%(RecursiveDir)%(Filename)%(Extension)" />
     <Content Include="..\..\src\TheLogsAreWrong.Domain\TheLogsAreWrong.Domain.csproj" CopyToOutputDirectory="PreserveNewest" Link="DomainSources\TheLogsAreWrong.Domain.csproj" />
     <Content Include="Verification\Fixtures\*.json" CopyToOutputDirectory="PreserveNewest" Link="VerificationFixtures\%(Filename)%(Extension)" />
     <Content Include="Verification\Fixtures\*.trx" CopyToOutputDirectory="PreserveNewest" Link="VerificationFixtures\%(Filename)%(Extension)" />

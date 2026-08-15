@@ -7,7 +7,7 @@ public sealed class Tlaw013ArchitectureTests
     public void Scheduler_sources_are_non_vacuous_cross_platform_and_do_not_introduce_forbidden_runtime_or_journal_work()
     {
         var repositoryRoot = FindRepositoryRoot();
-        var schedulerRoot = Path.Combine(repositoryRoot, "src", "TheLogsAreWrong.Domain", "Scheduler");
+        var schedulerRoot = Path.Combine(repositoryRoot, "src", "TheLogsAreWrong.PortableAuthority", "Scheduler");
         var files = new[] { Path.Combine(schedulerRoot, "FeedPlanningContracts.cs") };
 
         Assert.NotEmpty(files);

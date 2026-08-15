@@ -53,10 +53,10 @@ public sealed record ProcedurePlan
             throw new ArgumentException("Procedure plan steps must be initialized.", nameof(steps));
         }
 
-        ArgumentNullException.ThrowIfNull(grantedFlags);
+        if (grantedFlags is null) { throw new ArgumentNullException("grantedFlags"); }
         foreach (var step in steps)
         {
-            ArgumentNullException.ThrowIfNull(step);
+            if (step is null) { throw new ArgumentNullException("step"); }
         }
 
         foreach (var flag in grantedFlags)
@@ -84,8 +84,8 @@ public sealed class ProcedurePlanResolver
 
     public ProcedurePlanResolver(AnomalyCatalog catalog)
     {
-        ArgumentNullException.ThrowIfNull(catalog);
-        ArgumentNullException.ThrowIfNull(catalog.Definitions);
+        if (catalog is null) { throw new ArgumentNullException("catalog"); }
+        if (catalog.Definitions is null) { throw new ArgumentNullException("catalog.Definitions"); }
 
         var plans = ImmutableDictionary.CreateBuilder<AnomalyId, ProcedurePlan>();
         foreach (var pair in catalog.Definitions)
@@ -96,13 +96,13 @@ public sealed class ProcedurePlanResolver
             }
 
             var definition = AnomalyDefinitionGuard.RequireDefinition(pair.Key, pair.Value);
-            ArgumentNullException.ThrowIfNull(definition.Procedure);
+            if (definition.Procedure is null) { throw new ArgumentNullException("definition.Procedure"); }
             if (definition.Procedure.Steps.IsDefault)
             {
                 throw new ArgumentException("Procedure steps must be initialized.", nameof(catalog));
             }
 
-            ArgumentNullException.ThrowIfNull(definition.Procedure.GrantsFlags);
+            if (definition.Procedure.GrantsFlags is null) { throw new ArgumentNullException("definition.Procedure.GrantsFlags"); }
             var steps = ImmutableArray.CreateBuilder<ProcedurePlanStep>(definition.Procedure.Steps.Length);
             foreach (var step in definition.Procedure.Steps)
             {
@@ -134,7 +134,7 @@ public sealed class ProcedurePlanResolver
 
     public bool TryGetPlan(LogRuntimeState log, out ProcedurePlan? plan)
     {
-        ArgumentNullException.ThrowIfNull(log);
+        if (log is null) { throw new ArgumentNullException("log"); }
         if (log.Anomaly is not { } anomalyId)
         {
             plan = null;
@@ -171,7 +171,7 @@ public sealed record ProcessingResolution
             throw new ArgumentException("Current processing outcomes must terminate in PROCESSED.", nameof(terminalState));
         }
 
-        ArgumentNullException.ThrowIfNull(settlement);
+        if (settlement is null) { throw new ArgumentNullException("settlement"); }
         if (settlement.LogId != logId)
         {
             throw new ArgumentException("Settlement log identity must equal the resolved log identity.", nameof(settlement));
@@ -213,8 +213,8 @@ public static class AnomalyProcessingResolver
 {
     public static ProcessingResolution Resolve(LogRuntimeState log, AnomalyCatalog catalog)
     {
-        ArgumentNullException.ThrowIfNull(log);
-        ArgumentNullException.ThrowIfNull(catalog);
+        if (log is null) { throw new ArgumentNullException("log"); }
+        if (catalog is null) { throw new ArgumentNullException("catalog"); }
 
         if (log.Anomaly is not { } anomalyId)
         {
@@ -228,12 +228,12 @@ public static class AnomalyProcessingResolver
         }
 
         var definition = AnomalyDefinitionGuard.Find(catalog, anomalyId);
-        ArgumentNullException.ThrowIfNull(definition.Processing);
-        ArgumentNullException.ThrowIfNull(definition.Processing.RequiredFlags);
+        if (definition.Processing is null) { throw new ArgumentNullException("definition.Processing"); }
+        if (definition.Processing.RequiredFlags is null) { throw new ArgumentNullException("definition.Processing.RequiredFlags"); }
 
         var allRequiredFlagsPresent = definition.Processing.RequiredFlags.IsSubsetOf(log.Flags);
         var outcome = allRequiredFlagsPresent ? definition.Processing.OnCorrect : definition.Processing.OnIncorrect;
-        ArgumentNullException.ThrowIfNull(outcome);
+        if (outcome is null) { throw new ArgumentNullException("outcome"); }
 
         var creditedSpecies = ResolveCreditedSpecies(outcome.QuotaCredit, log);
         var effects = AnomalyDefinitionGuard.CopyEffects(outcome.Effects);
@@ -248,7 +248,7 @@ public static class AnomalyProcessingResolver
 
     private static SpeciesId? ResolveCreditedSpecies(QuotaCreditDefinition quotaCredit, LogRuntimeState log)
     {
-        ArgumentNullException.ThrowIfNull(quotaCredit);
+        if (quotaCredit is null) { throw new ArgumentNullException("quotaCredit"); }
         return quotaCredit.Species switch
         {
             SpeciesCreditRule.true_species => log.TrueSpecies,
@@ -304,7 +304,7 @@ public sealed record ConfiguredWrongActionResolution : WrongActionResolution
             throw new ArgumentException("A state-changing wrong action must specify a terminal state.", nameof(terminalState));
         }
 
-        if (terminalState is { } state && !Enum.IsDefined(state))
+        if (terminalState is { } state && !Enum.IsDefined(typeof(LogState), state))
         {
             throw new ArgumentOutOfRangeException(nameof(terminalState), "Wrong-action terminal state is not defined.");
         }
@@ -349,26 +349,26 @@ public static class WrongActionResolver
 {
     public static WrongActionResolution Resolve(LogRuntimeState log, ItemId attemptedItem, AnomalyCatalog catalog)
     {
-        ArgumentNullException.ThrowIfNull(log);
+        if (log is null) { throw new ArgumentNullException("log"); }
         if (attemptedItem.IsDefault)
         {
             throw new ArgumentException("Attempted item identifier must be initialized.", nameof(attemptedItem));
         }
 
-        ArgumentNullException.ThrowIfNull(catalog);
+        if (catalog is null) { throw new ArgumentNullException("catalog"); }
         if (log.Anomaly is not { } anomalyId)
         {
             return new WrongActionNotConfigured(log.LogId, null, attemptedItem);
         }
 
         var definition = AnomalyDefinitionGuard.Find(catalog, anomalyId);
-        ArgumentNullException.ThrowIfNull(definition.WrongActions);
+        if (definition.WrongActions is null) { throw new ArgumentNullException("definition.WrongActions"); }
         if (!definition.WrongActions.TryGetValue(attemptedItem, out var wrongAction))
         {
             return new WrongActionNotConfigured(log.LogId, anomalyId, attemptedItem);
         }
 
-        ArgumentNullException.ThrowIfNull(wrongAction);
+        if (wrongAction is null) { throw new ArgumentNullException("wrongAction"); }
         return new ConfiguredWrongActionResolution(
             log.LogId,
             anomalyId,
@@ -384,8 +384,8 @@ internal static class AnomalyDefinitionGuard
 {
     internal static AnomalyDefinition Find(AnomalyCatalog catalog, AnomalyId anomalyId)
     {
-        ArgumentNullException.ThrowIfNull(catalog);
-        ArgumentNullException.ThrowIfNull(catalog.Definitions);
+        if (catalog is null) { throw new ArgumentNullException("catalog"); }
+        if (catalog.Definitions is null) { throw new ArgumentNullException("catalog.Definitions"); }
         if (anomalyId.IsDefault)
         {
             throw new ArgumentException("Anomaly identifier must be initialized.", nameof(anomalyId));
@@ -403,7 +403,7 @@ internal static class AnomalyDefinitionGuard
             throw new ArgumentException("Anomaly catalog keys must be initialized.", nameof(key));
         }
 
-        ArgumentNullException.ThrowIfNull(definition);
+        if (definition is null) { throw new ArgumentNullException("definition"); }
         if (definition.Id.IsDefault || definition.Id != key)
         {
             throw new ArgumentException("Anomaly definition identity must match its catalog key.", nameof(definition));
@@ -421,7 +421,7 @@ internal static class AnomalyDefinitionGuard
 
         foreach (var effect in effects)
         {
-            ArgumentNullException.ThrowIfNull(effect);
+            if (effect is null) { throw new ArgumentNullException("effect"); }
             if (effect.Event.IsDefault)
             {
                 throw new ArgumentException("Effect event identifiers must be initialized.", nameof(effects));
@@ -432,7 +432,7 @@ internal static class AnomalyDefinitionGuard
                 throw new ArgumentOutOfRangeException(nameof(effects), "Effect durations cannot be negative.");
             }
 
-            if (!Enum.IsDefined(effect.Type))
+            if (!Enum.IsDefined(typeof(EffectType), effect.Type))
             {
                 throw new ArgumentOutOfRangeException(nameof(effects), "Effect type is not defined.");
             }

@@ -38,10 +38,10 @@ public sealed record FeedDueResolved : FeedDueResolutionResult
         StateVersion currentStateVersion)
         : base(state)
     {
-        ArgumentNullException.ThrowIfNull(state);
-        ArgumentNullException.ThrowIfNull(consumedSchedule);
+        if (state is null) { throw new ArgumentNullException("state"); }
+        if (consumedSchedule is null) { throw new ArgumentNullException("consumedSchedule"); }
         if (resolvedAt.IsDefault || priorStateVersion.IsDefault || currentStateVersion.IsDefault ||
-            !Enum.IsDefined(disposition) || !Enum.IsDefined(followUpRequirement))
+            !Enum.IsDefined(typeof(FeedDueDisposition), disposition) || !Enum.IsDefined(typeof(FeedDueFollowUpRequirement), followUpRequirement))
         {
             throw new ArgumentException("Feed-due acceptance requires initialized exact values.");
         }
@@ -77,7 +77,7 @@ public sealed class FeedDueResolutionService
 {
     public FeedDueResolutionResult Resolve(ShiftRuntimeState state, ServerTick currentTick)
     {
-        ArgumentNullException.ThrowIfNull(state);
+        if (state is null) { throw new ArgumentNullException("state"); }
         if (currentTick.IsDefault)
         {
             throw new ArgumentOutOfRangeException(nameof(currentTick), "Current feed-due tick must be initialized.");

@@ -42,9 +42,9 @@ public sealed class IntakeDeadlineStartService
 {
     public IntakeDeadlineStartResult Start(ShiftRuntimeState state, FeedDueResolved admission, ShiftProfile selectedProfile)
     {
-        ArgumentNullException.ThrowIfNull(state);
-        ArgumentNullException.ThrowIfNull(admission);
-        ArgumentNullException.ThrowIfNull(selectedProfile);
+        if (state is null) { throw new ArgumentNullException("state"); }
+        if (admission is null) { throw new ArgumentNullException("admission"); }
+        if (selectedProfile is null) { throw new ArgumentNullException("selectedProfile"); }
         if (selectedProfile.IntakeTimeoutSeconds <= 0)
         {
             throw new ArgumentOutOfRangeException(nameof(selectedProfile), "Selected profile intake timeout must be positive.");
@@ -69,9 +69,9 @@ public sealed class IntakeDeadlineStartService
         RepairPendingTransitionExecuted repairedAdmission,
         ShiftProfile selectedProfile)
     {
-        ArgumentNullException.ThrowIfNull(state);
-        ArgumentNullException.ThrowIfNull(repairedAdmission);
-        ArgumentNullException.ThrowIfNull(selectedProfile);
+        if (state is null) { throw new ArgumentNullException("state"); }
+        if (repairedAdmission is null) { throw new ArgumentNullException("repairedAdmission"); }
+        if (selectedProfile is null) { throw new ArgumentNullException("selectedProfile"); }
         ValidateRepairedFeedGateAdmission(repairedAdmission);
 
         return StartFromValidatedAdmission(
@@ -208,7 +208,7 @@ public sealed class IntakeDeadlineExpirationService
 {
     public IntakeDeadlineExpirationResult Expire(ShiftRuntimeState state, ServerTick currentTick)
     {
-        ArgumentNullException.ThrowIfNull(state);
+        if (state is null) { throw new ArgumentNullException("state"); }
         if (currentTick.IsDefault)
         {
             throw new ArgumentOutOfRangeException(nameof(currentTick), "Current intake-deadline tick must be initialized.");

@@ -3,4 +3,7 @@
     <AssemblyName>TheLogsAreWrong.Domain</AssemblyName>
     <RootNamespace>TheLogsAreWrong</RootNamespace>
   </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\TheLogsAreWrong.PortableAuthority\TheLogsAreWrong.PortableAuthority.csproj" />
+  </ItemGroup>
 </Project>

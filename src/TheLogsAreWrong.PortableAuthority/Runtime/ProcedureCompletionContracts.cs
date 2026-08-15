@@ -20,9 +20,9 @@ public sealed class RuntimeInventory
 
     public static RuntimeInventory Create(ResourcesConfiguration resources)
     {
-        ArgumentNullException.ThrowIfNull(resources);
-        ArgumentNullException.ThrowIfNull(resources.Consumable);
-        ArgumentNullException.ThrowIfNull(resources.Reusable);
+        if (resources is null) { throw new ArgumentNullException("resources"); }
+        if (resources.Consumable is null) { throw new ArgumentNullException("resources.Consumable"); }
+        if (resources.Reusable is null) { throw new ArgumentNullException("resources.Reusable"); }
 
         var consumables = ImmutableDictionary.CreateBuilder<ItemId, int>();
         foreach (var quantity in resources.Consumable)
@@ -171,7 +171,7 @@ public sealed class ItemActionCompletionService
 {
     public ItemActionCompletionResult Complete(ShiftRuntimeState state, LogId logId, ItemId attemptedItem, AnomalyCatalog catalog)
     {
-        ArgumentNullException.ThrowIfNull(state);
+        if (state is null) { throw new ArgumentNullException("state"); }
         return CompleteCore(state, logId, attemptedItem, catalog, state.ActiveProcedureHold, null);
     }
 
@@ -182,7 +182,7 @@ public sealed class ItemActionCompletionService
         AnomalyCatalog catalog,
         IntentId processedIntentId)
     {
-        ArgumentNullException.ThrowIfNull(state);
+        if (state is null) { throw new ArgumentNullException("state"); }
         if (processedIntentId.IsDefault)
         {
             throw new ArgumentException("Processed intent identity must be initialized.", nameof(processedIntentId));
@@ -193,8 +193,8 @@ public sealed class ItemActionCompletionService
 
     internal ItemActionCompletionResult CompleteActiveProcedureHold(ShiftRuntimeState state, ActiveProcedureHold activeProcedureHold, AnomalyCatalog catalog)
     {
-        ArgumentNullException.ThrowIfNull(state);
-        ArgumentNullException.ThrowIfNull(activeProcedureHold);
+        if (state is null) { throw new ArgumentNullException("state"); }
+        if (activeProcedureHold is null) { throw new ArgumentNullException("activeProcedureHold"); }
         return CompleteCore(state, activeProcedureHold.LogId, activeProcedureHold.AttemptedItem, catalog, null, null);
     }
 
@@ -216,7 +216,7 @@ public sealed class ItemActionCompletionService
             throw new ArgumentException("Attempted item identifier must be initialized.", nameof(attemptedItem));
         }
 
-        ArgumentNullException.ThrowIfNull(catalog);
+        if (catalog is null) { throw new ArgumentNullException("catalog"); }
         if (!state.TryGetLog(logId, out var log))
         {
             return Reject(state, ProcedureCompletionRejectionReason.TargetNotFound);

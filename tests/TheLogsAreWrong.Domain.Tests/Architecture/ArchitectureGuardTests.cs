@@ -1,8 +1,10 @@
 using System.Reflection;
+using System.Text.RegularExpressions;
 using TheLogsAreWrong.Config.Yaml;
 using TheLogsAreWrong.Domain.Configuration.Diagnostics;
 using TheLogsAreWrong.Domain.Events;
 using TheLogsAreWrong.Domain.Journal;
+using TheLogsAreWrong.Domain.Runtime;
 
 namespace TheLogsAreWrong.Domain.Tests.Architecture;
 
@@ -32,7 +34,10 @@ public sealed class ArchitectureGuardTests
     public void Domain_sources_contain_no_wall_clock_timer_or_filesystem_dependencies()
     {
         var sourceRoot = Path.Combine(AppContext.BaseDirectory, "DomainSources");
-        var source = Directory.GetFiles(sourceRoot, "*.cs", SearchOption.AllDirectories)
+        var sourcePaths = Directory.GetFiles(sourceRoot, "*.cs", SearchOption.AllDirectories);
+        Assert.Equal(60, sourcePaths.Length);
+
+        var source = sourcePaths
             .Select(File.ReadAllText)
             .ToArray();
         var forbidden = new[] { "DateTime", "DateTimeOffset", "Stopwatch", "Environment.TickCount", "Task", "Thread.Sleep", "System.IO", "UnityEngine", "FishNet", "Steamworks" };
@@ -48,5 +53,92 @@ public sealed class ArchitectureGuardTests
 
         Assert.All(types, type => Assert.DoesNotContain(type.GetMethods(BindingFlags.Public | BindingFlags.Instance | BindingFlags.Static | BindingFlags.DeclaredOnly), method =>
             method.GetParameters().Any(parameter => parameter.ParameterType == typeof(long)) || method.ReturnType == typeof(long)));
+    }
+
+    [Fact]
+    public void Portable_authority_core_is_the_single_owner_of_the_accepted_26_file_cut()
+    {
+        var root = FindRepositoryRoot();
+        var domainRoot = Path.Combine(root, "src", "TheLogsAreWrong.Domain");
+        var portableRoot = Path.Combine(root, "src", "TheLogsAreWrong.PortableAuthority");
+        var moved = new[]
+        {
+            "Anomalies/AnomalyResolutionContracts.cs", "Anomalies/ConfirmationTestContracts.cs", "Configuration/ValidatedConfiguration.cs",
+            "Containment/ContainmentLifecycleContracts.cs", "Enums/DomainEnums.cs", "Events/EventContracts.cs", "Identifiers/Identifiers.cs",
+            "Intents/IntentContracts.cs", "Line/LineJamRepairContracts.cs", "Line/LineNoiseRuntimeContracts.cs",
+            "Line/MovementNoiseRuntimeContracts.cs", "Logs/LogTransitionPolicy.cs", "Primitives/Primitives.cs", "Quota/QuotaContracts.cs",
+            "Runtime/ConfirmationTestLifecycleContracts.cs", "Runtime/LogTransitionServices.cs", "Runtime/ProcedureActionLifecycleContracts.cs",
+            "Runtime/ProcedureCompletionContracts.cs", "Runtime/ShiftRuntimeState.cs", "Scheduler/DefaultIntakeAutoRouteContracts.cs",
+            "Scheduler/FeedDueResolutionContracts.cs", "Scheduler/FeedPlanningContracts.cs", "Scheduler/IntakeDeadlineContracts.cs",
+            "Scheduler/RepairPendingTransitionExecutionContracts.cs", "Scheduler/SawCycleContracts.cs", "Time/SimulationTime.cs"
+        };
+
+        var domainSources = RelativeSources(domainRoot);
+        var portableSources = RelativeSources(portableRoot).Where(path => !path.StartsWith("Support/", StringComparison.Ordinal)).ToArray();
+        Assert.Equal(34, domainSources.Length);
+        Assert.Equal(moved.OrderBy(path => path, StringComparer.Ordinal), portableSources.OrderBy(path => path, StringComparer.Ordinal));
+        Assert.All(moved, path => Assert.False(File.Exists(Path.Combine(domainRoot, path))));
+
+        var portableProject = File.ReadAllText(Path.Combine(portableRoot, "TheLogsAreWrong.PortableAuthority.csproj"));
+        var domainProject = File.ReadAllText(Path.Combine(domainRoot, "TheLogsAreWrong.Domain.csproj"));
+        var compilerCompatibility = File.ReadAllText(Path.Combine(portableRoot, "Support", "CompilerCompatibility.cs"));
+        Assert.Contains("<TargetFramework>netstandard2.1</TargetFramework>", portableProject, StringComparison.Ordinal);
+        Assert.Contains("<LangVersion>latest</LangVersion>", portableProject, StringComparison.Ordinal);
+        Assert.Contains("<AssemblyName>TheLogsAreWrong.PortableAuthority</AssemblyName>", portableProject, StringComparison.Ordinal);
+        Assert.Single(Regex.Matches(portableProject, "<PackageReference").Cast<Match>());
+        Assert.Contains("PackageReference Include=\"System.Collections.Immutable\" Version=\"8.0.0\"", portableProject, StringComparison.Ordinal);
+        Assert.DoesNotContain("<ProjectReference", portableProject, StringComparison.Ordinal);
+        Assert.Contains("TheLogsAreWrong.PortableAuthority", domainProject, StringComparison.Ordinal);
+        Assert.All(new[] { "IsExternalInit", "RequiredMemberAttribute", "CompilerFeatureRequiredAttribute", "SetsRequiredMembersAttribute" }, definition => Assert.Contains(definition, compilerCompatibility, StringComparison.Ordinal));
+
+        var domainAssembly = typeof(ConfigurationLoadResult).Assembly;
+        var portableAssembly = typeof(ShiftRuntimeState).Assembly;
+        Assert.Equal("TheLogsAreWrong.PortableAuthority", portableAssembly.GetName().Name);
+        Assert.Contains(domainAssembly.GetReferencedAssemblies(), reference => reference.Name == "TheLogsAreWrong.PortableAuthority");
+        Assert.DoesNotContain(portableAssembly.GetReferencedAssemblies(), reference => reference.Name == "TheLogsAreWrong.Domain");
+        var portableReferences = portableAssembly.GetReferencedAssemblies().Select(reference => reference.Name ?? string.Empty).ToArray();
+        Assert.DoesNotContain(portableReferences, reference =>
+            reference.Contains("Yaml", StringComparison.OrdinalIgnoreCase) ||
+            reference.Contains("Unity", StringComparison.OrdinalIgnoreCase) ||
+            reference.Contains("Fish", StringComparison.OrdinalIgnoreCase) ||
+            reference.Contains("Steam", StringComparison.OrdinalIgnoreCase) ||
+            reference.Contains("Sockets", StringComparison.OrdinalIgnoreCase) ||
+            reference.Contains("Net.Http", StringComparison.OrdinalIgnoreCase));
+
+        var portableSource = RelativeSources(portableRoot)
+            .Select(path => File.ReadAllText(Path.Combine(portableRoot, path)))
+            .ToArray();
+        Assert.All(portableSource, source =>
+        {
+            Assert.DoesNotContain("UnityEngine", source, StringComparison.Ordinal);
+            Assert.DoesNotContain("FishNet", source, StringComparison.Ordinal);
+            Assert.DoesNotContain("Steamworks", source, StringComparison.Ordinal);
+            Assert.DoesNotContain("System.Net", source, StringComparison.Ordinal);
+            Assert.DoesNotContain("HttpClient", source, StringComparison.Ordinal);
+            Assert.DoesNotContain("Socket", source, StringComparison.Ordinal);
+        });
+    }
+
+    private static string[] RelativeSources(string root) => Directory.GetFiles(root, "*.cs", SearchOption.AllDirectories)
+        .Where(path =>
+        {
+            var relativePath = Path.GetRelativePath(root, path);
+            return !relativePath.StartsWith($"bin{Path.DirectorySeparatorChar}", StringComparison.OrdinalIgnoreCase)
+                   && !relativePath.StartsWith($"obj{Path.DirectorySeparatorChar}", StringComparison.OrdinalIgnoreCase);
+        })
+        .Select(path => Path.GetRelativePath(root, path).Replace('\\', '/'))
+        .ToArray();
+
+    private static string FindRepositoryRoot()
+    {
+        for (var current = new DirectoryInfo(AppContext.BaseDirectory); current is not null; current = current.Parent)
+        {
+            if (File.Exists(Path.Combine(current.FullName, "AGENTS.md")))
+            {
+                return current.FullName;
+            }
+        }
+
+        throw new DirectoryNotFoundException("The repository root containing AGENTS.md was not found.");
     }
 }

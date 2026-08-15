@@ -43,7 +43,7 @@ public sealed class HostLogTransitionService
 {
     public HostLogTransitionResult Apply(ShiftRuntimeState state, LogId logId, LogState toState)
     {
-        ArgumentNullException.ThrowIfNull(state);
+        if (state is null) { throw new ArgumentNullException("state"); }
         if (state.PendingFeed is { } pending && pending.LogId == logId)
         {
             return new HostLogTransitionRejected(state, HostLogTransitionFailure.PendingFeedReserved);
@@ -85,8 +85,8 @@ public sealed class ManualLogIntentHandler
 {
     public ManualLogIntentResult Handle(ShiftRuntimeState state, IntentEnvelope intent, ActorId? authoritativeActor)
     {
-        ArgumentNullException.ThrowIfNull(state);
-        ArgumentNullException.ThrowIfNull(intent);
+        if (state is null) { throw new ArgumentNullException("state"); }
+        if (intent is null) { throw new ArgumentNullException("intent"); }
 
         if (intent.ShiftId != state.ShiftId)
         {
