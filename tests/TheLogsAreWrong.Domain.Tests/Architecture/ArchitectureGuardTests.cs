@@ -102,7 +102,12 @@ public sealed class ArchitectureGuardTests
     }
 
     private static string[] RelativeSources(string root) => Directory.GetFiles(root, "*.cs", SearchOption.AllDirectories)
-        .Where(path => !path.Contains("\\bin\\", StringComparison.OrdinalIgnoreCase) && !path.Contains("\\obj\\", StringComparison.OrdinalIgnoreCase))
+        .Where(path =>
+        {
+            var relativePath = Path.GetRelativePath(root, path);
+            return !relativePath.StartsWith($"bin{Path.DirectorySeparatorChar}", StringComparison.OrdinalIgnoreCase)
+                   && !relativePath.StartsWith($"obj{Path.DirectorySeparatorChar}", StringComparison.OrdinalIgnoreCase);
+        })
         .Select(path => Path.GetRelativePath(root, path).Replace('\\', '/'))
         .ToArray();
 
