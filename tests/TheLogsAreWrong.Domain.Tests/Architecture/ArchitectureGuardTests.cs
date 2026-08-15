@@ -34,7 +34,10 @@ public sealed class ArchitectureGuardTests
     public void Domain_sources_contain_no_wall_clock_timer_or_filesystem_dependencies()
     {
         var sourceRoot = Path.Combine(AppContext.BaseDirectory, "DomainSources");
-        var source = Directory.GetFiles(sourceRoot, "*.cs", SearchOption.AllDirectories)
+        var sourcePaths = Directory.GetFiles(sourceRoot, "*.cs", SearchOption.AllDirectories);
+        Assert.Equal(60, sourcePaths.Length);
+
+        var source = sourcePaths
             .Select(File.ReadAllText)
             .ToArray();
         var forbidden = new[] { "DateTime", "DateTimeOffset", "Stopwatch", "Environment.TickCount", "Task", "Thread.Sleep", "System.IO", "UnityEngine", "FishNet", "Steamworks" };
@@ -93,11 +96,26 @@ public sealed class ArchitectureGuardTests
         Assert.Equal("TheLogsAreWrong.PortableAuthority", portableAssembly.GetName().Name);
         Assert.Contains(domainAssembly.GetReferencedAssemblies(), reference => reference.Name == "TheLogsAreWrong.PortableAuthority");
         Assert.DoesNotContain(portableAssembly.GetReferencedAssemblies(), reference => reference.Name == "TheLogsAreWrong.Domain");
-        Assert.All(Directory.GetFiles(portableRoot, "*.cs", SearchOption.AllDirectories).Select(File.ReadAllText), source =>
+        var portableReferences = portableAssembly.GetReferencedAssemblies().Select(reference => reference.Name ?? string.Empty).ToArray();
+        Assert.DoesNotContain(portableReferences, reference =>
+            reference.Contains("Yaml", StringComparison.OrdinalIgnoreCase) ||
+            reference.Contains("Unity", StringComparison.OrdinalIgnoreCase) ||
+            reference.Contains("Fish", StringComparison.OrdinalIgnoreCase) ||
+            reference.Contains("Steam", StringComparison.OrdinalIgnoreCase) ||
+            reference.Contains("Sockets", StringComparison.OrdinalIgnoreCase) ||
+            reference.Contains("Net.Http", StringComparison.OrdinalIgnoreCase));
+
+        var portableSource = RelativeSources(portableRoot)
+            .Select(path => File.ReadAllText(Path.Combine(portableRoot, path)))
+            .ToArray();
+        Assert.All(portableSource, source =>
         {
             Assert.DoesNotContain("UnityEngine", source, StringComparison.Ordinal);
             Assert.DoesNotContain("FishNet", source, StringComparison.Ordinal);
             Assert.DoesNotContain("Steamworks", source, StringComparison.Ordinal);
+            Assert.DoesNotContain("System.Net", source, StringComparison.Ordinal);
+            Assert.DoesNotContain("HttpClient", source, StringComparison.Ordinal);
+            Assert.DoesNotContain("Socket", source, StringComparison.Ordinal);
         });
     }
 
