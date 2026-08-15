@@ -14,6 +14,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Tlaw.AgentProtocol", "tools
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Tlaw.Dispatcher", "tools\Tlaw.Dispatcher\Tlaw.Dispatcher.csproj", "{C6E9DDB0-AB2A-4A2E-91C7-A856D2916C90}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "TheLogsAreWrong.PortableAuthority", "src\TheLogsAreWrong.PortableAuthority\TheLogsAreWrong.PortableAuthority.csproj", "{A659FC1B-0F94-47A0-A691-776BF3E37203}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -44,6 +46,10 @@ Global
 		{C6E9DDB0-AB2A-4A2E-91C7-A856D2916C90}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{C6E9DDB0-AB2A-4A2E-91C7-A856D2916C90}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{C6E9DDB0-AB2A-4A2E-91C7-A856D2916C90}.Release|Any CPU.Build.0 = Release|Any CPU
+		{A659FC1B-0F94-47A0-A691-776BF3E37203}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{A659FC1B-0F94-47A0-A691-776BF3E37203}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{A659FC1B-0F94-47A0-A691-776BF3E37203}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{A659FC1B-0F94-47A0-A691-776BF3E37203}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

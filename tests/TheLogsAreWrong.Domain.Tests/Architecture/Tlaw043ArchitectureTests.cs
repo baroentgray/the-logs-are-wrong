@@ -68,7 +68,7 @@ public sealed class Tlaw043ArchitectureTests
             concept => Assert.DoesNotContain(exported, type => type.Name.Contains(concept, StringComparison.Ordinal)));
 
         // D-015 may branch only in the saw-owned completion/replay boundary; it does not authorize a generic dispatcher.
-        var effectTypeConsumers = Directory.GetFiles(DomainSourceRoot(), "*.cs", SearchOption.AllDirectories)
+        var effectTypeConsumers = Directory.GetFiles(PortableAuthoritySourceRoot(), "*.cs", SearchOption.AllDirectories)
             .Where(path => File.ReadAllText(path).Contains("EffectType.", StringComparison.Ordinal))
             .Select(path => Path.GetFileName(path)!)
             .OrderBy(name => name, StringComparer.Ordinal)
@@ -227,6 +227,8 @@ public sealed class Tlaw043ArchitectureTests
     }
 
     private static string DomainSourceRoot() => Path.Combine(AppContext.BaseDirectory, "DomainSources");
+
+    private static string PortableAuthoritySourceRoot() => Path.Combine(RepositoryRoot(), "src", "TheLogsAreWrong.PortableAuthority");
 
     private static ImmutableArray<string> DomainSources() => Directory
         .GetFiles(DomainSourceRoot(), "*.cs", SearchOption.AllDirectories)

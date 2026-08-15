@@ -7,7 +7,7 @@ public sealed class Tlaw017ArchitectureTests
     public void Auto_route_source_is_non_vacuous_cross_platform_and_remains_host_pure()
     {
         var root = FindRepositoryRoot();
-        var path = Path.Combine(root, "src", "TheLogsAreWrong.Domain", "Scheduler", "DefaultIntakeAutoRouteContracts.cs");
+        var path = Path.Combine(root, "src", "TheLogsAreWrong.PortableAuthority", "Scheduler", "DefaultIntakeAutoRouteContracts.cs");
         Assert.True(File.Exists(path));
         var source = File.ReadAllText(path);
         Assert.False(string.IsNullOrWhiteSpace(source));

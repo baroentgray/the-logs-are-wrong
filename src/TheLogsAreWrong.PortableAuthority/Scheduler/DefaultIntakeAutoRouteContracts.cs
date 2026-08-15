@@ -49,8 +49,8 @@ public sealed class DefaultIntakeAutoRouteService
 
     public DefaultIntakeAutoRouteResult Attempt(ShiftRuntimeState state, DefaultAutoRouteRequired requirement, ServerTick currentTick)
     {
-        ArgumentNullException.ThrowIfNull(state);
-        ArgumentNullException.ThrowIfNull(requirement);
+        if (state is null) { throw new ArgumentNullException("state"); }
+        if (requirement is null) { throw new ArgumentNullException("requirement"); }
         if (currentTick.IsDefault || currentTick < requirement.DueAt)
         {
             throw new ArgumentOutOfRangeException(nameof(currentTick), "The authoritative route tick must be initialized and not precede the requirement due tick.");

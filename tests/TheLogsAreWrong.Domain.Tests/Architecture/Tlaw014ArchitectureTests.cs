@@ -7,7 +7,7 @@ public sealed class Tlaw014ArchitectureTests
     public void Feed_due_source_is_non_vacuous_cross_platform_and_excludes_journal_and_deferred_runtime_dependencies()
     {
         var repositoryRoot = FindRepositoryRoot();
-        var sourcePath = Path.Combine(repositoryRoot, "src", "TheLogsAreWrong.Domain", "Scheduler", "FeedDueResolutionContracts.cs");
+        var sourcePath = Path.Combine(repositoryRoot, "src", "TheLogsAreWrong.PortableAuthority", "Scheduler", "FeedDueResolutionContracts.cs");
         Assert.True(File.Exists(sourcePath));
 
         var source = File.ReadAllText(sourcePath);

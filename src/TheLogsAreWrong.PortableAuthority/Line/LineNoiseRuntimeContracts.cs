@@ -27,8 +27,8 @@ public sealed record LineNoiseChanged
 {
     public LineNoiseChanged(ShiftId shiftId, LineNoise previous, LineNoise current, ServerTick changedAt, LineNoiseSourceSnapshot sources)
     {
-        ArgumentNullException.ThrowIfNull(sources);
-        if (shiftId.IsDefault || !Enum.IsDefined(previous) || !Enum.IsDefined(current) || previous == current || changedAt.IsDefault || sources.DerivedValue != current)
+        if (sources is null) { throw new ArgumentNullException("sources"); }
+        if (shiftId.IsDefault || !Enum.IsDefined(typeof(LineNoise), previous) || !Enum.IsDefined(typeof(LineNoise), current) || previous == current || changedAt.IsDefault || sources.DerivedValue != current)
         {
             throw new ArgumentException("A line-noise change requires initialized, different, and source-consistent values.");
         }
@@ -103,7 +103,7 @@ public abstract record LineNoiseEvaluationResult
 {
     private protected LineNoiseEvaluationResult(LineNoiseRuntimeState state)
     {
-        ArgumentNullException.ThrowIfNull(state);
+        if (state is null) { throw new ArgumentNullException("state"); }
         State = state;
     }
 
@@ -134,9 +134,9 @@ public sealed class LineNoiseDerivationService
         MovementNoiseRuntimeState movementNoiseRuntime,
         ServerTick currentTick)
     {
-        ArgumentNullException.ThrowIfNull(runtime);
-        ArgumentNullException.ThrowIfNull(shiftState);
-        ArgumentNullException.ThrowIfNull(movementNoiseRuntime);
+        if (runtime is null) { throw new ArgumentNullException("runtime"); }
+        if (shiftState is null) { throw new ArgumentNullException("shiftState"); }
+        if (movementNoiseRuntime is null) { throw new ArgumentNullException("movementNoiseRuntime"); }
         if (currentTick.IsDefault)
         {
             throw new ArgumentOutOfRangeException(nameof(currentTick), "Line-noise evaluation requires an initialized authoritative tick.");
@@ -178,7 +178,7 @@ public sealed class LineNoiseDerivationService
 
     internal static void ValidateRuntime(LineNoiseRuntimeState runtime)
     {
-        if (runtime.ShiftId.IsDefault || !Enum.IsDefined(runtime.Current) || runtime.LatestSources is null)
+        if (runtime.ShiftId.IsDefault || !Enum.IsDefined(typeof(LineNoise), runtime.Current) || runtime.LatestSources is null)
         {
             throw new ArgumentException("Line-noise runtime must retain initialized typed values.", nameof(runtime));
         }
@@ -235,8 +235,8 @@ public sealed class LineNoiseDerivationService
 
     private static bool ValidateRepairSource(LineRuntimeState line)
     {
-        ArgumentNullException.ThrowIfNull(line);
-        if (!Enum.IsDefined(line.State) || line.EnteredAt.IsDefault)
+        if (line is null) { throw new ArgumentNullException("line"); }
+        if (!Enum.IsDefined(typeof(LineState), line.State) || line.EnteredAt.IsDefault)
         {
             throw new ArgumentException("Retained line evidence is malformed.", nameof(line));
         }
@@ -272,7 +272,7 @@ public sealed class LineNoiseDerivationService
             return;
         }
 
-        if (!Enum.IsDefined(movement.Source) || movement.LogId.IsDefault || !Enum.IsDefined(movement.SourceState) || !Enum.IsDefined(movement.DestinationState) ||
+        if (!Enum.IsDefined(typeof(MovementNoiseAcceptedSource), movement.Source) || movement.LogId.IsDefault || !Enum.IsDefined(typeof(LogState), movement.SourceState) || !Enum.IsDefined(typeof(LogState), movement.DestinationState) ||
             movement.PriorStateVersion.IsDefault || movement.CurrentStateVersion.IsDefault || movement.CurrentStateVersion != movement.PriorStateVersion.Next() || movement.AcceptedAt.IsDefault ||
             runtime.StartedAt.IsDefault || runtime.DueAt.IsDefault || runtime.DueAt <= runtime.StartedAt || movement.AcceptedAt < runtime.StartedAt || movement.AcceptedAt >= runtime.DueAt)
         {

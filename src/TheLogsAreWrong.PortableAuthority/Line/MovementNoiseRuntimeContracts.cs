@@ -30,7 +30,7 @@ public sealed record MovementNoiseAcceptedMovement
         StateVersion currentStateVersion,
         ServerTick acceptedAt)
     {
-        if (!Enum.IsDefined(source) || logId.IsDefault || !Enum.IsDefined(sourceState) || !Enum.IsDefined(destinationState) ||
+        if (!Enum.IsDefined(typeof(MovementNoiseAcceptedSource), source) || logId.IsDefault || !Enum.IsDefined(typeof(LogState), sourceState) || !Enum.IsDefined(typeof(LogState), destinationState) ||
             priorStateVersion.IsDefault || currentStateVersion.IsDefault || currentStateVersion != priorStateVersion.Next() || acceptedAt.IsDefault)
         {
             throw new ArgumentException("Accepted movement evidence must retain initialized, sequential, and typed values.");
@@ -111,7 +111,7 @@ public sealed class MovementNoiseApplicationService
         ServerTick acceptedAt,
         SchedulerConfiguration configuration)
     {
-        ArgumentNullException.ThrowIfNull(accepted);
+        if (accepted is null) { throw new ArgumentNullException("accepted"); }
         var transition = accepted.Transition;
         return ApplyNormalized(runtime, accepted.State, configuration, new MovementNoiseAcceptedMovement(
             MovementNoiseAcceptedSource.ManualLogIntent,
@@ -129,7 +129,7 @@ public sealed class MovementNoiseApplicationService
         ServerTick acceptedAt,
         SchedulerConfiguration configuration)
     {
-        ArgumentNullException.ThrowIfNull(accepted);
+        if (accepted is null) { throw new ArgumentNullException("accepted"); }
         var transition = accepted.Descriptor;
         return ApplyNormalized(runtime, accepted.State, configuration, new MovementNoiseAcceptedMovement(
             MovementNoiseAcceptedSource.HostLogTransition,
@@ -146,7 +146,7 @@ public sealed class MovementNoiseApplicationService
         FeedDueResolved accepted,
         SchedulerConfiguration configuration)
     {
-        ArgumentNullException.ThrowIfNull(accepted);
+        if (accepted is null) { throw new ArgumentNullException("accepted"); }
         var destination = accepted.Disposition switch
         {
             FeedDueDisposition.AdmittedToIntake => LogState.AT_INTAKE,
@@ -176,7 +176,7 @@ public sealed class MovementNoiseApplicationService
         DefaultIntakeAutoRouteApplied accepted,
         SchedulerConfiguration configuration)
     {
-        ArgumentNullException.ThrowIfNull(accepted);
+        if (accepted is null) { throw new ArgumentNullException("accepted"); }
         return ApplyNormalized(runtime, accepted.State, configuration, new MovementNoiseAcceptedMovement(
             MovementNoiseAcceptedSource.DefaultIntakeAutoRoute,
             accepted.LogId,
@@ -192,7 +192,7 @@ public sealed class MovementNoiseApplicationService
         RepairPendingTransitionExecuted accepted,
         SchedulerConfiguration configuration)
     {
-        ArgumentNullException.ThrowIfNull(accepted);
+        if (accepted is null) { throw new ArgumentNullException("accepted"); }
         if (accepted.PendingTransition.LogId != accepted.LogId || accepted.PendingTransition.FromState != accepted.Source || accepted.PendingTransition.ToState != accepted.Destination)
         {
             throw new ArgumentException("Repair execution evidence contradicts its retained pending transition.", nameof(accepted));
@@ -213,7 +213,7 @@ public sealed class MovementNoiseApplicationService
         SawCycleStarted accepted,
         SchedulerConfiguration configuration)
     {
-        ArgumentNullException.ThrowIfNull(accepted);
+        if (accepted is null) { throw new ArgumentNullException("accepted"); }
         ValidateCycle(accepted.Cycle);
         if (accepted.State.ActiveSawCycle != accepted.Cycle)
         {
@@ -235,7 +235,7 @@ public sealed class MovementNoiseApplicationService
         SawCycleCompleted accepted,
         SchedulerConfiguration configuration)
     {
-        ArgumentNullException.ThrowIfNull(accepted);
+        if (accepted is null) { throw new ArgumentNullException("accepted"); }
         ValidateCycle(accepted.Cycle);
         if (accepted.CompletedAt < accepted.Cycle.DueAt || accepted.State.ActiveSawCycle is not null || accepted.Resolution.LogId != accepted.Cycle.LogId || accepted.Resolution.TerminalState != LogState.PROCESSED)
         {
@@ -258,9 +258,9 @@ public sealed class MovementNoiseApplicationService
         SchedulerConfiguration configuration,
         MovementNoiseAcceptedMovement movement)
     {
-        ArgumentNullException.ThrowIfNull(runtime);
-        ArgumentNullException.ThrowIfNull(acceptedState);
-        ArgumentNullException.ThrowIfNull(configuration);
+        if (runtime is null) { throw new ArgumentNullException("runtime"); }
+        if (acceptedState is null) { throw new ArgumentNullException("acceptedState"); }
+        if (configuration is null) { throw new ArgumentNullException("configuration"); }
         if (runtime.ShiftId != acceptedState.ShiftId || acceptedState.StateVersion != movement.CurrentStateVersion ||
             !acceptedState.TryGetLog(movement.LogId, out var owner) || owner.State != movement.DestinationState)
         {
@@ -306,7 +306,7 @@ public sealed class MovementNoiseApplicationService
 
     private static void ValidateCycle(ActiveSawCycle cycle)
     {
-        ArgumentNullException.ThrowIfNull(cycle);
+        if (cycle is null) { throw new ArgumentNullException("cycle"); }
         if (cycle.LogId.IsDefault || cycle.StartedAt.IsDefault || cycle.Duration.IsDefault || cycle.Duration <= SimulationDuration.Zero || cycle.DueAt != cycle.StartedAt + cycle.Duration)
         {
             throw new ArgumentException("Saw movement evidence requires a valid retained cycle.", nameof(cycle));

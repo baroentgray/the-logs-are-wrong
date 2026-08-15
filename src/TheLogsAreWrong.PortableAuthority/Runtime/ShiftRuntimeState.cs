@@ -26,7 +26,7 @@ public sealed record LogRuntimeState
             throw new ArgumentException("A runtime log must retain initialized manifest values.");
         }
 
-        ArgumentNullException.ThrowIfNull(flags);
+        if (flags is null) { throw new ArgumentNullException("flags"); }
 
         LogId = logId;
         TrueSpecies = trueSpecies;
@@ -116,15 +116,15 @@ public sealed class ShiftRuntimeState
 
     public static ShiftRuntimeState Create(ShiftConfiguration configuration)
     {
-        ArgumentNullException.ThrowIfNull(configuration);
+        if (configuration is null) { throw new ArgumentNullException("configuration"); }
         if (configuration.ShiftId.IsDefault)
         {
             throw new ArgumentException("Shift configuration must contain an initialized shift identifier.", nameof(configuration));
         }
 
-        ArgumentNullException.ThrowIfNull(configuration.Scheduler);
-        ArgumentNullException.ThrowIfNull(configuration.Scheduler.Capacities);
-        ArgumentNullException.ThrowIfNull(configuration.Resources);
+        if (configuration.Scheduler is null) { throw new ArgumentNullException("configuration.Scheduler"); }
+        if (configuration.Scheduler.Capacities is null) { throw new ArgumentNullException("configuration.Scheduler.Capacities"); }
+        if (configuration.Resources is null) { throw new ArgumentNullException("configuration.Resources"); }
         if (configuration.Manifest.IsDefaultOrEmpty)
         {
             throw new ArgumentException("Shift configuration must contain a manifest.", nameof(configuration));
@@ -132,7 +132,7 @@ public sealed class ShiftRuntimeState
 
         var capacities = configuration.Scheduler.Capacities;
         var inventory = RuntimeInventory.Create(configuration.Resources);
-        foreach (var node in Enum.GetValues<NodeId>())
+        foreach (var node in (NodeId[])Enum.GetValues(typeof(NodeId)))
         {
             if (node == NodeId.SUPPLY_QUEUE)
             {
@@ -305,7 +305,7 @@ public sealed class ShiftRuntimeState
 
     internal ShiftRuntimeState WithPendingFeed(PendingFeedSchedule pendingFeed, IntentId? processedIntentId)
     {
-        ArgumentNullException.ThrowIfNull(pendingFeed);
+        if (pendingFeed is null) { throw new ArgumentNullException("pendingFeed"); }
         if (PendingFeed is not null)
         {
             throw new InvalidOperationException("Only one pending feed is permitted.");
@@ -408,7 +408,7 @@ public sealed class ShiftRuntimeState
 
     internal ShiftRuntimeState StartSawCycle(ActiveSawCycle cycle)
     {
-        ArgumentNullException.ThrowIfNull(cycle);
+        if (cycle is null) { throw new ArgumentNullException("cycle"); }
         if (ActiveSawCycle is not null)
         {
             throw new InvalidOperationException("Only one active saw cycle is permitted.");
@@ -444,7 +444,7 @@ public sealed class ShiftRuntimeState
 
     internal ShiftRuntimeState CompleteSawCycle(ActiveSawCycle cycle, SawFailureWindow? failureWindow)
     {
-        ArgumentNullException.ThrowIfNull(cycle);
+        if (cycle is null) { throw new ArgumentNullException("cycle"); }
         if (ActiveSawCycle is null || !ReferenceEquals(ActiveSawCycle, cycle))
         {
             throw new InvalidOperationException("Only the current active saw cycle may complete.");
@@ -480,7 +480,7 @@ public sealed class ShiftRuntimeState
 
     internal ShiftRuntimeState WithActiveIntakeDeadline(ActiveIntakeDeadline deadline)
     {
-        ArgumentNullException.ThrowIfNull(deadline);
+        if (deadline is null) { throw new ArgumentNullException("deadline"); }
         if (ActiveIntakeDeadline is not null)
         {
             throw new InvalidOperationException("Only one active intake deadline is permitted.");
@@ -532,8 +532,8 @@ public sealed class ShiftRuntimeState
             throw new ArgumentException("Item action target must resolve to a manifest log.", nameof(logId));
         }
 
-        ArgumentNullException.ThrowIfNull(inventory);
-        ArgumentNullException.ThrowIfNull(newlyGrantedFlags);
+        if (inventory is null) { throw new ArgumentNullException("inventory"); }
+        if (newlyGrantedFlags is null) { throw new ArgumentNullException("newlyGrantedFlags"); }
         var updatedLogs = newlyGrantedFlags.IsEmpty
             ? Logs
             : Logs.SetItem(_logIndexes[logId], existing.WithAdditionalFlags(newlyGrantedFlags));
@@ -560,7 +560,7 @@ public sealed class ShiftRuntimeState
 
     internal ShiftRuntimeState StartActiveProcedureHold(ActiveProcedureHold activeProcedureHold, IntentId? processedIntentId)
     {
-        ArgumentNullException.ThrowIfNull(activeProcedureHold);
+        if (activeProcedureHold is null) { throw new ArgumentNullException("activeProcedureHold"); }
         if (ActiveProcedureHold is not null)
         {
             throw new InvalidOperationException("Only one active procedure hold is permitted.");
@@ -612,7 +612,7 @@ public sealed class ShiftRuntimeState
 
     internal ShiftRuntimeState StartActiveConfirmationForAuthoritativeIntent(ActiveConfirmationTest active, IntentId processedIntentId)
     {
-        ArgumentNullException.ThrowIfNull(active);
+        if (active is null) { throw new ArgumentNullException("active"); }
         if (processedIntentId.IsDefault)
         {
             throw new ArgumentException("Processed intent identifier must be initialized.", nameof(processedIntentId));
@@ -636,7 +636,7 @@ public sealed class ShiftRuntimeState
         ActiveContainmentRitual? activeContainmentRitual,
         IntentId? processedIntentId)
     {
-        ArgumentNullException.ThrowIfNull(containment);
+        if (containment is null) { throw new ArgumentNullException("containment"); }
         if (processedIntentId is { } intentId && intentId.IsDefault)
         {
             throw new ArgumentException("A processed intent identifier must be initialized.", nameof(processedIntentId));
@@ -669,7 +669,7 @@ public sealed class ShiftRuntimeState
 
     internal ShiftRuntimeState WithLineAndProcessedIntent(LineRuntimeState line, IntentId? processedIntentId)
     {
-        ArgumentNullException.ThrowIfNull(line);
+        if (line is null) { throw new ArgumentNullException("line"); }
         if (processedIntentId is { } intentId && intentId.IsDefault)
         {
             throw new ArgumentException("A processed intent identifier must be initialized.", nameof(processedIntentId));
@@ -729,12 +729,12 @@ public sealed class ShiftRuntimeState
     {
         // Create validates the configuration, capacities and manifest exactly as the live host does.
         var pristine = Create(configuration);
-        ArgumentNullException.ThrowIfNull(inventory);
-        ArgumentNullException.ThrowIfNull(processedIntentIds);
-        ArgumentNullException.ThrowIfNull(procedureProgressByLog);
-        ArgumentNullException.ThrowIfNull(confirmationResultsByLog);
-        ArgumentNullException.ThrowIfNull(containment);
-        ArgumentNullException.ThrowIfNull(line);
+        if (inventory is null) { throw new ArgumentNullException("inventory"); }
+        if (processedIntentIds is null) { throw new ArgumentNullException("processedIntentIds"); }
+        if (procedureProgressByLog is null) { throw new ArgumentNullException("procedureProgressByLog"); }
+        if (confirmationResultsByLog is null) { throw new ArgumentNullException("confirmationResultsByLog"); }
+        if (containment is null) { throw new ArgumentNullException("containment"); }
+        if (line is null) { throw new ArgumentNullException("line"); }
 
         if (stateVersion.IsDefault)
         {

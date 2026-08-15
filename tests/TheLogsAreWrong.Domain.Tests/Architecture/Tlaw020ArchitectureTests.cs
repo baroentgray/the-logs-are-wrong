@@ -17,7 +17,7 @@ public sealed class Tlaw020ArchitectureTests
     {
         var root = FindRoot();
         var sourcePath = Path.Combine(root, "src", "TheLogsAreWrong.Domain", "Scheduler", "RepairFeedGateIntakeDeadlineContracts.cs");
-        var deadlinePath = Path.Combine(root, "src", "TheLogsAreWrong.Domain", "Scheduler", "IntakeDeadlineContracts.cs");
+        var deadlinePath = Path.Combine(root, "src", "TheLogsAreWrong.PortableAuthority", "Scheduler", "IntakeDeadlineContracts.cs");
         Assert.True(File.Exists(sourcePath));
         Assert.True(File.Exists(deadlinePath));
         var source = File.ReadAllText(sourcePath);

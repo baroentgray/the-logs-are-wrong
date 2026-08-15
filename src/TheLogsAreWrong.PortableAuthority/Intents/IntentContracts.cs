@@ -113,7 +113,7 @@ public sealed record IntentEnvelope
             throw new ArgumentException("Client-observed tick must be initialized.", nameof(clientObservedTick));
         }
 
-        ArgumentNullException.ThrowIfNull(parameters);
+        if (parameters is null) { throw new ArgumentNullException("parameters"); }
 
         ShiftId = shiftId;
         IntentId = intentId;

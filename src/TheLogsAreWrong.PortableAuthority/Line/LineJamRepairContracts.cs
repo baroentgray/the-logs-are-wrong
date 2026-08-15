@@ -35,7 +35,7 @@ public sealed record LineRuntimeState
 {
     public LineRuntimeState(LineState state, ServerTick enteredAt, JamCause? cause, LogId? pendingLogId, ActiveRepairHold? activeRepairHold)
     {
-        if (!Enum.IsDefined(state) || enteredAt.IsDefault)
+        if (!Enum.IsDefined(typeof(LineState), state) || enteredAt.IsDefault)
         {
             throw new ArgumentException("Line state and entry tick must be initialized.");
         }
@@ -85,7 +85,7 @@ public sealed record LineRuntimeState
 
     internal static bool TryGetActiveCause(JamCause? cause, out JamCause activeCause)
     {
-        if (cause is { } value && Enum.IsDefined(value))
+        if (cause is { } value && Enum.IsDefined(typeof(JamCause), value))
         {
             activeCause = value;
             return true;
@@ -100,7 +100,7 @@ public sealed record PendingLineTransitionDescriptor
 {
     public PendingLineTransitionDescriptor(LogId logId, LogState fromState, LogState toState, JamCause cause)
     {
-        if (logId.IsDefault || !Enum.IsDefined(fromState) || !Enum.IsDefined(toState) || !LineRuntimeState.TryGetActiveCause(cause, out _))
+        if (logId.IsDefault || !Enum.IsDefined(typeof(LogState), fromState) || !Enum.IsDefined(typeof(LogState), toState) || !LineRuntimeState.TryGetActiveCause(cause, out _))
         {
             throw new ArgumentException("Pending line transition must contain initialized exact values.");
         }
@@ -222,7 +222,7 @@ public sealed class LineRepairStartService
         IntentId? processedIntentId)
     {
         LineGuards.ValidateCurrent(state, currentTick);
-        ArgumentNullException.ThrowIfNull(configuration);
+        if (configuration is null) { throw new ArgumentNullException("configuration"); }
         if (state.Line.State == LineState.LINE_CLEAR)
         {
             return new LineRepairStartRejected(state, LineRepairStartRejectionReason.NO_ACTIVE_JAM);
@@ -305,7 +305,7 @@ internal static class LineGuards
 {
     internal static void ValidateCurrent(ShiftRuntimeState state, ServerTick currentTick)
     {
-        ArgumentNullException.ThrowIfNull(state);
+        if (state is null) { throw new ArgumentNullException("state"); }
         if (currentTick.IsDefault || currentTick < state.Line.EnteredAt)
         {
             throw new ArgumentOutOfRangeException(nameof(currentTick), "Current tick cannot precede line state entry.");

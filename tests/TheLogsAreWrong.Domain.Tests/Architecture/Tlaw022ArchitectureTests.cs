@@ -13,7 +13,7 @@ public sealed class Tlaw022ArchitectureTests
     [Fact]
     public void Saw_cycle_source_is_non_vacuous_domain_pure_and_has_no_orchestration_dependencies()
     {
-        var sourcePath = Path.Combine(FindRoot(), "src", "TheLogsAreWrong.Domain", "Scheduler", "SawCycleContracts.cs");
+        var sourcePath = Path.Combine(FindRoot(), "src", "TheLogsAreWrong.PortableAuthority", "Scheduler", "SawCycleContracts.cs");
         Assert.True(File.Exists(sourcePath));
         var source = File.ReadAllText(sourcePath);
 
@@ -21,9 +21,9 @@ public sealed class Tlaw022ArchitectureTests
         Assert.Contains("SawCycleCompletionService", source, StringComparison.Ordinal);
         Assert.Contains("AnomalyProcessingResolver", source, StringComparison.Ordinal);
         Assert.Contains("ProcessingResolution", source, StringComparison.Ordinal);
-        Assert.Contains("ArgumentNullException.ThrowIfNull(state)", source, StringComparison.Ordinal);
-        Assert.Contains("ArgumentNullException.ThrowIfNull(configuration)", source, StringComparison.Ordinal);
-        Assert.Contains("ArgumentNullException.ThrowIfNull(catalog)", source, StringComparison.Ordinal);
+        Assert.Contains("if (state is null) { throw new ArgumentNullException(\"state\"); }", source, StringComparison.Ordinal);
+        Assert.Contains("if (configuration is null) { throw new ArgumentNullException(\"configuration\"); }", source, StringComparison.Ordinal);
+        Assert.Contains("if (catalog is null) { throw new ArgumentNullException(\"catalog\"); }", source, StringComparison.Ordinal);
         Assert.Contains("resolution.LogId != active.LogId || resolution.TerminalState != LogState.PROCESSED", source, StringComparison.Ordinal);
         Assert.Contains("The active saw cycle must own the only saw occupant.", source, StringComparison.Ordinal);
         Assert.All(new[]

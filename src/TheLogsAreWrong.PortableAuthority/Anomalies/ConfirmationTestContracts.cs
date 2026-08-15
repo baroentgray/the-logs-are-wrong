@@ -13,10 +13,10 @@ public sealed record ConfirmationTestPlan
     public ConfirmationTestPlan(AnomalyId anomalyId, ImmutableHashSet<ItemId> requiredTools, SimulationDuration duration, bool continuous, LineNoise? requiredLineNoise, bool resetWhenConditionLost, string result)
     {
         if (anomalyId.IsDefault) throw new ArgumentException("Confirmation anomaly identifier must be initialized.", nameof(anomalyId));
-        ArgumentNullException.ThrowIfNull(requiredTools);
+        if (requiredTools is null) { throw new ArgumentNullException("requiredTools"); }
         if (requiredTools.IsEmpty || requiredTools.Any(tool => tool.IsDefault)) throw new ArgumentException("Confirmation tools must be initialized and non-empty.", nameof(requiredTools));
         if (duration.IsDefault || duration.Value <= 0) throw new ArgumentOutOfRangeException(nameof(duration));
-        if (requiredLineNoise is { } noise && !Enum.IsDefined(noise)) throw new ArgumentOutOfRangeException(nameof(requiredLineNoise));
+        if (requiredLineNoise is { } noise && !Enum.IsDefined(typeof(LineNoise), noise)) throw new ArgumentOutOfRangeException(nameof(requiredLineNoise));
         if (string.IsNullOrWhiteSpace(result)) throw new ArgumentException("Confirmation result must be non-blank.", nameof(result));
         AnomalyId = anomalyId; RequiredTools = requiredTools; Duration = duration; Continuous = continuous; RequiredLineNoise = requiredLineNoise; ResetWhenConditionLost = resetWhenConditionLost; Result = result;
     }
@@ -34,7 +34,7 @@ public sealed class ConfirmationTestPlanResolver
     private readonly ImmutableDictionary<AnomalyId, ConfirmationTestPlan> _plans;
     public ConfirmationTestPlanResolver(AnomalyCatalog catalog)
     {
-        ArgumentNullException.ThrowIfNull(catalog); ArgumentNullException.ThrowIfNull(catalog.Definitions);
+        if (catalog is null) { throw new ArgumentNullException("catalog"); } if (catalog.Definitions is null) { throw new ArgumentNullException("catalog.Definitions"); }
         var plans = ImmutableDictionary.CreateBuilder<AnomalyId, ConfirmationTestPlan>();
         foreach (var pair in catalog.Definitions)
         {
@@ -50,7 +50,7 @@ public sealed class ConfirmationTestPlanResolver
     public ConfirmationTestPlan GetPlan(AnomalyId anomalyId) => anomalyId.IsDefault ? throw new ArgumentException("Anomaly identifier must be initialized.", nameof(anomalyId)) : _plans.TryGetValue(anomalyId, out var plan) ? plan : throw new AnomalyDefinitionNotFoundException(anomalyId);
     public bool TryGetPlan(LogRuntimeState log, out ConfirmationTestPlan? plan)
     {
-        ArgumentNullException.ThrowIfNull(log);
+        if (log is null) { throw new ArgumentNullException("log"); }
         if (log.Anomaly is not { } anomaly) { plan = null; return false; }
         plan = GetPlan(anomaly); return true;
     }

@@ -73,10 +73,10 @@ public sealed class ConfirmationTestStartService
             ? state.StartActiveConfirmationForAuthoritativeIntent(active, intentId)
             : state.WithActiveConfirmation(active));
     }
-    internal static void Guard(ShiftRuntimeState state, ImmutableHashSet<ItemId> tools, ServerTick tick, AnomalyCatalog catalog) { ArgumentNullException.ThrowIfNull(state); ArgumentNullException.ThrowIfNull(tools); ArgumentNullException.ThrowIfNull(catalog); if (tick.IsDefault || tools.Any(tool => tool.IsDefault)) throw new ArgumentException("Invalid confirmation input."); }
+    internal static void Guard(ShiftRuntimeState state, ImmutableHashSet<ItemId> tools, ServerTick tick, AnomalyCatalog catalog) { if (state is null) { throw new ArgumentNullException("state"); } if (tools is null) { throw new ArgumentNullException("tools"); } if (catalog is null) { throw new ArgumentNullException("catalog"); } if (tick.IsDefault || tools.Any(tool => tool.IsDefault)) throw new ArgumentException("Invalid confirmation input."); }
     private static void ValidateStartLineNoise(ShiftRuntimeState state, LineNoiseRuntimeState runtime, ServerTick tick)
     {
-        ArgumentNullException.ThrowIfNull(runtime);
+        if (runtime is null) { throw new ArgumentNullException("runtime"); }
         if (state.ShiftId.IsDefault || runtime.ShiftId != state.ShiftId)
         {
             throw new ArgumentException("Line-noise runtime must belong to the exact confirmation shift.", nameof(runtime));
@@ -103,8 +103,8 @@ public sealed class ConfirmationTestConditionService
 
     private static void ValidateCurrentLineNoiseEvaluation(ShiftRuntimeState state, ServerTick tick, LineNoiseEvaluationResult evaluation)
     {
-        ArgumentNullException.ThrowIfNull(evaluation);
-        ArgumentNullException.ThrowIfNull(evaluation.State);
+        if (evaluation is null) { throw new ArgumentNullException("evaluation"); }
+        if (evaluation.State is null) { throw new ArgumentNullException("evaluation.State"); }
         var runtime = evaluation.State;
         if (state.ShiftId.IsDefault || runtime.ShiftId != state.ShiftId || runtime.LastEvaluatedAt != tick)
         {
@@ -115,7 +115,7 @@ public sealed class ConfirmationTestConditionService
         switch (evaluation)
         {
             case LineNoiseEvaluatedWithChange withChange:
-                ArgumentNullException.ThrowIfNull(withChange.Change);
+                if (withChange.Change is null) { throw new ArgumentNullException("withChange.Change"); }
                 var change = withChange.Change;
                 if (change.ShiftId != runtime.ShiftId || change.Current != runtime.Current || change.Sources != runtime.LatestSources || change.ChangedAt != tick || runtime.LastChangedAt != tick)
                 {
@@ -139,7 +139,7 @@ public sealed class ConfirmationTestDueCompletionService
 {
     public ConfirmationTestDueCompletionResult CompleteDue(ShiftRuntimeState state, ServerTick tick, AnomalyCatalog catalog)
     {
-        ArgumentNullException.ThrowIfNull(state); ArgumentNullException.ThrowIfNull(catalog); if (tick.IsDefault) throw new ArgumentException(nameof(tick)); if (state.ActiveConfirmationTest is not { } active) return new ConfirmationTestNoActive(state); if (!active.IsRunning) return new ConfirmationTestPaused(state); if (tick < active.DueAt!.Value) return new ConfirmationTestNotDue(state);
+        if (state is null) { throw new ArgumentNullException("state"); } if (catalog is null) { throw new ArgumentNullException("catalog"); } if (tick.IsDefault) throw new ArgumentException(nameof(tick)); if (state.ActiveConfirmationTest is not { } active) return new ConfirmationTestNoActive(state); if (!active.IsRunning) return new ConfirmationTestPaused(state); if (tick < active.DueAt!.Value) return new ConfirmationTestNotDue(state);
         if (!state.TryGetLog(active.LogId, out var log) || log.State != LogState.AT_INTAKE || log.Anomaly != active.AnomalyId || state.TryGetConfirmationResult(active.LogId, out _)) return new ConfirmationTestDueFailed(state);
         var result = new ConfirmationTestResult(active.LogId, active.AnomalyId, active.Plan.Result, active.Plan.RequiredTools, active.Plan.Duration, tick);
         return new ConfirmationTestDueCompleted(state.WithActiveConfirmation(null, result));
@@ -148,5 +148,5 @@ public sealed class ConfirmationTestDueCompletionService
 public sealed class ConfirmationTestCancellationService
 {
     public ConfirmationTestCancellationResult Cancel(ShiftRuntimeState state, LogId logId)
-    { ArgumentNullException.ThrowIfNull(state); if (logId.IsDefault) throw new ArgumentException(nameof(logId)); if (state.ActiveConfirmationTest is not { } active) return new ConfirmationTestCancellationRejected(state, ConfirmationTestCancellationRejectionReason.NoActiveConfirmation); return active.LogId != logId ? new ConfirmationTestCancellationRejected(state, ConfirmationTestCancellationRejectionReason.TargetMismatch) : new ConfirmationTestCancelled(state.WithActiveConfirmation(null)); }
+    { if (state is null) { throw new ArgumentNullException("state"); } if (logId.IsDefault) throw new ArgumentException(nameof(logId)); if (state.ActiveConfirmationTest is not { } active) return new ConfirmationTestCancellationRejected(state, ConfirmationTestCancellationRejectionReason.NoActiveConfirmation); return active.LogId != logId ? new ConfirmationTestCancellationRejected(state, ConfirmationTestCancellationRejectionReason.TargetMismatch) : new ConfirmationTestCancelled(state.WithActiveConfirmation(null)); }
 }

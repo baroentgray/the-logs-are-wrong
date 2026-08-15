@@ -11,7 +11,7 @@ public sealed record ContainmentRuntimeState
 {
     public ContainmentRuntimeState(ContainmentState state, ServerTick enteredAt, ServerTick? deadlineAt)
     {
-        if (!Enum.IsDefined(state) || enteredAt.IsDefault)
+        if (!Enum.IsDefined(typeof(ContainmentState), state) || enteredAt.IsDefault)
         {
             throw new ArgumentException("Containment state and entered tick must be initialized.");
         }
@@ -88,9 +88,9 @@ public static class DangerWeightResolver
 {
     public static int Resolve(ShiftRuntimeState state, AnomalyCatalog catalog)
     {
-        ArgumentNullException.ThrowIfNull(state);
-        ArgumentNullException.ThrowIfNull(catalog);
-        ArgumentNullException.ThrowIfNull(catalog.Definitions);
+        if (state is null) { throw new ArgumentNullException("state"); }
+        if (catalog is null) { throw new ArgumentNullException("catalog"); }
+        if (catalog.Definitions is null) { throw new ArgumentNullException("catalog.Definitions"); }
 
         var total = 0;
         foreach (var log in state.Logs)
@@ -305,7 +305,7 @@ public sealed class ContainmentRitualCancellationService
 {
     public ContainmentRitualCancellationResult Cancel(ShiftRuntimeState state)
     {
-        ArgumentNullException.ThrowIfNull(state);
+        if (state is null) { throw new ArgumentNullException("state"); }
         if (state.ActiveContainmentRitual is null)
         {
             return new ContainmentRitualCancellationRejected(state);
@@ -319,8 +319,8 @@ internal static class ContainmentGuards
 {
     internal static void Validate(ShiftRuntimeState state, ServerTick currentTick, ContainmentConfiguration configuration, AnomalyCatalog? catalog = null)
     {
-        ArgumentNullException.ThrowIfNull(state);
-        ArgumentNullException.ThrowIfNull(configuration);
+        if (state is null) { throw new ArgumentNullException("state"); }
+        if (configuration is null) { throw new ArgumentNullException("configuration"); }
         if (currentTick.IsDefault || currentTick < state.Containment.EnteredAt)
         {
             throw new ArgumentOutOfRangeException(nameof(currentTick), "Current tick cannot precede containment state entry.");
@@ -328,7 +328,7 @@ internal static class ContainmentGuards
 
         if (catalog is not null)
         {
-            ArgumentNullException.ThrowIfNull(catalog.Definitions);
+            if (catalog.Definitions is null) { throw new ArgumentNullException("catalog.Definitions"); }
         }
     }
 }
@@ -342,7 +342,7 @@ internal static class ContainmentIntervals
             throw new ArgumentOutOfRangeException(nameof(dangerWeight), "Containment interval requires positive danger weight.");
         }
 
-        ArgumentNullException.ThrowIfNull(configuration.IntervalByDangerWeight);
+        if (configuration.IntervalByDangerWeight is null) { throw new ArgumentNullException("configuration.IntervalByDangerWeight"); }
         var key = dangerWeight == 1 ? "1" : dangerWeight == 2 ? "2" : "3_or_more";
         if (!configuration.IntervalByDangerWeight.TryGetValue(key, out var seconds))
         {
