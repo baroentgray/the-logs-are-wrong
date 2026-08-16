@@ -28,6 +28,13 @@ namespace TheLogsAreWrong.Gate2.Tests
         private const string ImmutableHash = "5B1B1C83BA3D135C2FDFE425842FBE9C7432878B7E468623ACB554C69B4C130F";
         private const string UnsafeHash = "01748200F2400C742AA689F1F5101BD6298EFDFD92C00C18F4FA473847235BA9";
 
+        // Before this test runs, the caller must materialize the fresh candidate deployment output with:
+        // dotnet build src/TheLogsAreWrong.PortableAuthority/TheLogsAreWrong.PortableAuthority.csproj
+        //     --configuration Release -p:IncludeSourceRevisionInInformationalVersion=false -p:DebugSymbols=false
+        // These non-persisted deployment properties remove the revision stamp and PDB/SourceLink debug metadata,
+        // making the byte-equality target reproducible across the implementation commit.
+        private const string DeploymentInformationalVersion = "1.0.0";
+
         [Test]
         public void Committed_plugin_set_is_exactly_the_three_authorized_dlls()
         {
@@ -57,11 +64,17 @@ namespace TheLogsAreWrong.Gate2.Tests
         public void Committed_portable_plugin_is_byte_identical_to_the_fresh_candidate_release_output()
         {
             var committed = PluginPath("TheLogsAreWrong.PortableAuthority.dll");
-            var fresh = Path.Combine(RepositoryRoot(), "src", "TheLogsAreWrong.PortableAuthority", "bin", "Release", "netstandard2.1", "TheLogsAreWrong.PortableAuthority.dll");
+            var fresh = FreshCandidateDeploymentOutputPath();
 
-            Assert.IsTrue(File.Exists(fresh), "Fresh candidate PortableAuthority Release output is missing.");
+            Assert.IsTrue(File.Exists(fresh), "Fresh candidate PortableAuthority deployment output is missing.");
             CollectionAssert.AreEqual(File.ReadAllBytes(fresh), File.ReadAllBytes(committed));
             AssertAssembly(committed, "TheLogsAreWrong.PortableAuthority", new Version(1, 0, 0, 0), null, Sha256(File.ReadAllBytes(fresh)));
+            var informationalVersion = typeof(ShiftRuntimeState).Assembly
+                .GetCustomAttributes(typeof(AssemblyInformationalVersionAttribute), false)
+                .Cast<AssemblyInformationalVersionAttribute>()
+                .Single()
+                .InformationalVersion;
+            Assert.AreEqual(DeploymentInformationalVersion, informationalVersion);
         }
 
         [Test]
@@ -149,6 +162,11 @@ namespace TheLogsAreWrong.Gate2.Tests
         private static string PluginPath(string fileName)
         {
             return Path.Combine(AssetsRoot(), "Gate2", "Plugins", "PortableAuthority", fileName);
+        }
+
+        private static string FreshCandidateDeploymentOutputPath()
+        {
+            return Path.Combine(RepositoryRoot(), "src", "TheLogsAreWrong.PortableAuthority", "bin", "Release", "netstandard2.1", "TheLogsAreWrong.PortableAuthority.dll");
         }
 
         private static void AssertAssembly(string path, string name, Version version, string token, string expectedHash)
