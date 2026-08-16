@@ -297,3 +297,35 @@ D-016, FishNet, FishySteamworks, Steamworks, networking, Gate 3 work,
 
 Repository regression, exact-head verification, Draft PR, and CI artifact
 evidence are recorded in the finalization update to this dossier.
+
+## Repository regression and finalization
+
+The first evidence commit opened Draft PR #146 to `main`; its body is exactly
+`Closes #145`. The PR remains Draft.
+
+Before this final dossier commit, the clean evidence worktree passed:
+
+| Gate | Result |
+| --- | --- |
+| `git diff --check` | PASS |
+| `dotnet restore TheLogsAreWrong.sln` | PASS |
+| `dotnet build TheLogsAreWrong.sln --configuration Release --no-restore` | PASS — 0 warnings, 0 errors |
+| Full Release tests | PASS — 1633 passed, 0 failed, 0 skipped |
+| D-014 snapshot/capture/restore/journal/replay (`Scope=TLAW-046`) | PASS — 87 passed, 0 failed, 0 skipped |
+| Canonical production PortableAuthority regression | PASS — `CB58349E77C6F85970D64DE3610B6B4FEC6CD4AB6C3A383B0B9513E1FDEECA5F` |
+
+Because a commit cannot know its own immutable object ID, exact-head
+`Tlaw.Verify`, Gate0/object-reader, architecture/domain dependency checks, and
+Repository verification are executed after this finalization commit against its
+actual SHA and are reported with the Draft PR evidence. No later source change
+is authorized or needed.
+
+The candidate’s changed tracked-path inventory is exactly this dossier. Relative
+to the baseline: `src/** = 0`, `unity/** = 0`, `Packages/** = 0`,
+`ProjectSettings/** = 0`, scenes = 0, and prefabs = 0.
+
+```text
+UNITY_HOST_TICK_ARCHITECTURE_PROOF_PASS
+NO_PRODUCTION_HOST_INTEGRATION
+NO_GAMEPLAY_OR_NETWORKING
+```
