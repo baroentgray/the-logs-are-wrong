@@ -336,3 +336,121 @@ migration, Unity import, host/tick work, D-016, networking, Ready, merge, or
 cleanup.
 
 Sources: [Issue #137](https://github.com/baroentgray/the-logs-are-wrong/issues/137), [owner SELECT_B comment 5298433797](https://github.com/baroentgray/the-logs-are-wrong/issues/137#issuecomment-5298433797), [Phase-B implementation-start comment 5298463080](https://github.com/baroentgray/the-logs-are-wrong/issues/137#issuecomment-5298463080), [control-center pre-review PASS](https://github.com/baroentgray/the-logs-are-wrong/pull/138#pullrequestreview-4941178892), [D-011 Grok authoritative PASS](https://github.com/baroentgray/the-logs-are-wrong/pull/138#pullrequestreview-4941343853), [TLAW-059 Phase-A dossier](GATE2_DOMAIN_UNITY_ARCHITECTURE_REFRESH.md), [TLAW-057 portable authority runtime/parity proof](GATE2_PORTABLE_AUTHORITY_RUNTIME_PARITY_PROOF.md), [TLAW-058 portable dependency-closure probe](GATE2_PORTABLE_DEPENDENCY_CLOSURE_PROBE.md), and [D-018](#d-018--owner-rejects-domainunity-architecture-candidates-for-now).
+
+## D-020 — Owner selects H2 for the Unity host-tick composition boundary
+
+After the TLAW-063 scratch/non-production host-tick architecture proof, the
+owner explicitly selected **H2** as the production direction for the Unity
+host-tick composition boundary. Production migration is **not** performed or
+authorized by this entry.
+
+### Evidence and decision context
+
+The selection followed, in order:
+
+- the TLAW-063 scratch/non-production architecture proof;
+- control-center Phase-A pre-review PASS 4947116130;
+- D-011 authoritative Phase-A review PASS 4947130838.
+
+It was taken against the exact Phase-A candidate
+`37c76d3a9f8122be5ae9a380f9e16b4da568370b` over the exact baseline
+`5692f9200b191c2c56d1e119b4d6b5ae3003c673`.
+
+TLAW-063 established:
+
+- the exact `HostTickExecutionService.Execute` cut is 54 logical source files:
+  the 26 existing PortableAuthority files plus 28 outer-Domain files;
+- H2 scratch achieved a `netstandard2.1` compile PASS, a pinned Unity
+  6000.3.21f1 / `c02631ffc030` PASS, and an exact host-tick parity PASS;
+- the canonical host-tick parity SHA-256 was
+  `287BD37030A1F1875B6067D00D0C4EA2B1A3018C8A40490716B4B54987C25949`;
+- H2 required 195 additional known semantic-equivalent compatibility
+  replacements: 193 `ArgumentNullException.ThrowIfNull` plus 2
+  `Enum.IsDefined`;
+- the existing PortableAuthority accepted compatibility surface is
+  `131 + 25 + 1 = 157`;
+- the known combined H2 compatibility surface is therefore 352.
+
+These counts are evidence bounds measured in scratch. They are not an
+authorization to perform those production edits inside TLAW-063, and none of
+them have been applied to production source.
+
+### Selected architecture
+
+The measured host-tick composition joins `TheLogsAreWrong.PortableAuthority`.
+
+The intended production ownership boundary becomes 54 logical authoritative
+files: the existing 26 PortableAuthority files plus the measured 28-file
+`HostTickExecutionService.Execute` cut.
+
+`TheLogsAreWrong.PortableAuthority` remains the shared portable semantic
+authority consumed by net10 Domain composition and tests, and later by Unity.
+
+The existing production `HostTickExecutionService` remains the single semantic
+seven-stage orchestration authority. No second Unity-side orchestration
+implementation is allowed.
+
+### Frozen seven-stage semantic order
+
+H2 preserves one authoritative composition with the existing order:
+
+~~~text
+1. HostStageOneCompletionExecutor
+2. AcceptedIntentStageExecutor
+3. HostStageThreeDeadlineExecutor
+4. HostStageFourSawExecutor
+5. HostStageFiveFeedExecutor
+6. HostStageSixDerivedExecutor
+7. HostStageSevenEventExecutor
+~~~
+
+Those stages are not redefined by this decision.
+
+### Treatment of alternatives
+
+- **H1** is not selected for this increment because a separate portable host
+  assembly requires a separately reviewed friend/public-API boundary change
+  under the current production internals arrangement. H1 is not claimed to be
+  technically impossible.
+- **H3** is not selected because it is wider than the proven execution cut: 60
+  logical files versus H2's 54. H3 was scratch-technically viable and is not
+  invalid.
+- **H4** is not selected because independently recreating the seven-stage
+  orchestration inside Unity would violate the one-semantic-authority rule of
+  D-019. A future thin Unity driver that invokes the one shared portable
+  `HostTickExecutionService` is explicitly **not** H4.
+
+### Relationship to D-019
+
+D-019 remains intact and authoritative. D-020 does not supersede or replace it.
+
+D-019 established the extracted portable authoritative-core architecture. D-020
+extends D-019 for the separately gated host/tick composition boundary by
+selecting how the subsequently proven host-tick composition joins that
+architecture.
+
+### Production migration is still NOT authorized
+
+This decision-log append does **not** authorize:
+
+- moving the 28 production files;
+- applying the 195 additional compatibility replacements;
+- changing PortableAuthority production ownership;
+- editing `src/**`;
+- changing csproj/props/targets;
+- changing package or dependency policy;
+- rebuilding or deploying a new Unity plugin;
+- a production Unity host driver;
+- a MonoBehaviour or frame-driven host loop;
+- gameplay, input, or presentation work;
+- D-016 implementation;
+- FishNet, FishySteamworks, Steamworks, or any networking;
+- Gate 3;
+- `Packages/**`, `ProjectSettings/**`, scenes, or prefabs;
+- Ready, merge, or cleanup.
+
+The architecture is selected; the production migration is not performed. A
+production H2 migration requires a new, separately scoped owner
+implementation-start authorization after TLAW-063 is accepted.
+
+Sources: [Issue #145](https://github.com/baroentgray/the-logs-are-wrong/issues/145), [owner H2 selection comment 5309295556](https://github.com/baroentgray/the-logs-are-wrong/issues/145#issuecomment-5309295556), [Phase-B implementation-start comment 5309314299](https://github.com/baroentgray/the-logs-are-wrong/issues/145#issuecomment-5309314299), [authoritative handoff comment 5309325502](https://github.com/baroentgray/the-logs-are-wrong/issues/145#issuecomment-5309325502), [control-center Phase-A pre-review PASS](https://github.com/baroentgray/the-logs-are-wrong/pull/146#pullrequestreview-4947116130), [D-011 Phase-A authoritative review PASS](https://github.com/baroentgray/the-logs-are-wrong/pull/146#pullrequestreview-4947130838), [TLAW-063 Phase-A dossier](GATE2_UNITY_HOST_TICK_ARCHITECTURE_PROOF.md), and [D-019](#d-019--owner-selects-extracted-portable-authoritative-core-for-domainunity).
