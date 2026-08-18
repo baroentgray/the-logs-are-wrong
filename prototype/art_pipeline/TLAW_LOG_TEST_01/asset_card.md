@@ -25,4 +25,4 @@ Approved visual deliverables:
 - `TLAW_LOG_TEST_01 · BARK · R01` — **APPROVED**
 - `TLAW_LOG_TEST_01 · REFERENCE · R01` — **APPROVED**
 
-The visual package is not available to Claude until the approved image files are physically stored in this GitHub package and `provenance.md` marks the package ready.
+Both approved image files are stored in this GitHub package. `provenance.md` marks revision `R01` as **APPROVED_READY_FOR_CLAUDE**. The Claude gate is open for this experiment.
