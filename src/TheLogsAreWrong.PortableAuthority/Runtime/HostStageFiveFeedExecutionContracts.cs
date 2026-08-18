@@ -12,8 +12,8 @@ public sealed class InitialFeedPlanningStageStep
 {
     internal InitialFeedPlanningStageStep(ShiftRuntimeState beforeState, InitialFeedPlanningResult result)
     {
-        ArgumentNullException.ThrowIfNull(beforeState);
-        ArgumentNullException.ThrowIfNull(result);
+        if (beforeState is null) { throw new ArgumentNullException("beforeState"); }
+        if (result is null) { throw new ArgumentNullException("result"); }
         BeforeState = beforeState;
         Result = result;
     }
@@ -28,7 +28,7 @@ public sealed class RepairPendingTransitionStageStep
 {
     internal RepairPendingTransitionStageStep(ShiftRuntimeState beforeState, RepairPendingTransitionExecutionResult? result)
     {
-        ArgumentNullException.ThrowIfNull(beforeState);
+        if (beforeState is null) { throw new ArgumentNullException("beforeState"); }
         BeforeState = beforeState;
         Result = result;
     }
@@ -46,7 +46,7 @@ public sealed class RepairFollowUpStageStep
         IntakeDeadlineStartResult? deadlineStart,
         NormalFeedPlanningResult? normalPlanning)
     {
-        ArgumentNullException.ThrowIfNull(beforeState);
+        if (beforeState is null) { throw new ArgumentNullException("beforeState"); }
         if (deadlineStart is not null && normalPlanning is not null)
         {
             throw new ArgumentException("A repaired follow-up cannot use both service families at once.");
@@ -68,7 +68,7 @@ public sealed class DefaultIntakeAutoRouteStageStep
 {
     internal DefaultIntakeAutoRouteStageStep(ShiftRuntimeState beforeState, DefaultIntakeAutoRouteResult? result)
     {
-        ArgumentNullException.ThrowIfNull(beforeState);
+        if (beforeState is null) { throw new ArgumentNullException("beforeState"); }
         BeforeState = beforeState;
         Result = result;
     }
@@ -83,7 +83,7 @@ public sealed class GenericNormalFeedPlanningStageStep
 {
     internal GenericNormalFeedPlanningStageStep(ShiftRuntimeState beforeState, bool required, NormalFeedPlanningResult? result)
     {
-        ArgumentNullException.ThrowIfNull(beforeState);
+        if (beforeState is null) { throw new ArgumentNullException("beforeState"); }
         if (required != (result is not null))
         {
             throw new ArgumentException("A generic normal-planning result must be present exactly when the derived trigger required it.");
@@ -105,8 +105,8 @@ public sealed class FeedDueResolutionStageStep
 {
     internal FeedDueResolutionStageStep(ShiftRuntimeState beforeState, FeedDueResolutionResult result)
     {
-        ArgumentNullException.ThrowIfNull(beforeState);
-        ArgumentNullException.ThrowIfNull(result);
+        if (beforeState is null) { throw new ArgumentNullException("beforeState"); }
+        if (result is null) { throw new ArgumentNullException("result"); }
         BeforeState = beforeState;
         Result = result;
     }
@@ -121,7 +121,7 @@ public sealed class OrdinaryIntakeDeadlineStartStageStep
 {
     internal OrdinaryIntakeDeadlineStartStageStep(ShiftRuntimeState beforeState, IntakeDeadlineStartResult? result)
     {
-        ArgumentNullException.ThrowIfNull(beforeState);
+        if (beforeState is null) { throw new ArgumentNullException("beforeState"); }
         BeforeState = beforeState;
         Result = result;
     }
@@ -151,16 +151,16 @@ public sealed class HostStageFiveFeedExecution
         FeedDueResolutionStageStep feedDue,
         OrdinaryIntakeDeadlineStartStageStep ordinaryDeadlineStart)
     {
-        ArgumentNullException.ThrowIfNull(initialState);
-        ArgumentNullException.ThrowIfNull(lineRepairSource);
-        ArgumentNullException.ThrowIfNull(intakeExpirationSource);
-        ArgumentNullException.ThrowIfNull(initialFeedPlanning);
-        ArgumentNullException.ThrowIfNull(repair);
-        ArgumentNullException.ThrowIfNull(repairFollowUp);
-        ArgumentNullException.ThrowIfNull(defaultRoute);
-        ArgumentNullException.ThrowIfNull(genericNormalPlanning);
-        ArgumentNullException.ThrowIfNull(feedDue);
-        ArgumentNullException.ThrowIfNull(ordinaryDeadlineStart);
+        if (initialState is null) { throw new ArgumentNullException("initialState"); }
+        if (lineRepairSource is null) { throw new ArgumentNullException("lineRepairSource"); }
+        if (intakeExpirationSource is null) { throw new ArgumentNullException("intakeExpirationSource"); }
+        if (initialFeedPlanning is null) { throw new ArgumentNullException("initialFeedPlanning"); }
+        if (repair is null) { throw new ArgumentNullException("repair"); }
+        if (repairFollowUp is null) { throw new ArgumentNullException("repairFollowUp"); }
+        if (defaultRoute is null) { throw new ArgumentNullException("defaultRoute"); }
+        if (genericNormalPlanning is null) { throw new ArgumentNullException("genericNormalPlanning"); }
+        if (feedDue is null) { throw new ArgumentNullException("feedDue"); }
+        if (ordinaryDeadlineStart is null) { throw new ArgumentNullException("ordinaryDeadlineStart"); }
 
         // Exact ordered before/after reference chain — the closed trace defends itself.
         if (!ReferenceEquals(initialFeedPlanning.BeforeState, initialState) ||
@@ -284,17 +284,17 @@ public sealed class HostStageFiveFeedExecutor
         SchedulerConfiguration schedulerConfiguration,
         ShiftProfile selectedProfile)
     {
-        ArgumentNullException.ThrowIfNull(stageOne);
-        ArgumentNullException.ThrowIfNull(stageTwo);
-        ArgumentNullException.ThrowIfNull(stageThree);
-        ArgumentNullException.ThrowIfNull(stageFour);
+        if (stageOne is null) { throw new ArgumentNullException("stageOne"); }
+        if (stageTwo is null) { throw new ArgumentNullException("stageTwo"); }
+        if (stageThree is null) { throw new ArgumentNullException("stageThree"); }
+        if (stageFour is null) { throw new ArgumentNullException("stageFour"); }
         if (currentTick.IsDefault)
         {
             throw new ArgumentException("Current tick must be initialized.", nameof(currentTick));
         }
 
-        ArgumentNullException.ThrowIfNull(schedulerConfiguration);
-        ArgumentNullException.ThrowIfNull(selectedProfile);
+        if (schedulerConfiguration is null) { throw new ArgumentNullException("schedulerConfiguration"); }
+        if (selectedProfile is null) { throw new ArgumentNullException("selectedProfile"); }
 
         if (!ReferenceEquals(stageTwo.InitialState, stageOne.FinalState) ||
             !ReferenceEquals(stageThree.InitialState, stageTwo.FinalState) ||

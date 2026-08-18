@@ -85,7 +85,11 @@ public sealed class Tlaw046ArchitectureTests
             Assert.DoesNotContain(sources, source => source.Text.Contains(concept, StringComparison.Ordinal));
         }
 
-        var exported = typeof(ShiftReplayService).Assembly.GetExportedTypes();
+        // TLAW-064 / D-020 H2: the host-tick cut now lives in TheLogsAreWrong.PortableAuthority, so the
+        // authority surface this guard scans spans both production owners.
+        var exported = typeof(ShiftReplayService).Assembly.GetExportedTypes()
+            .Concat(typeof(HostTickExecutionService).Assembly.GetExportedTypes())
+            .ToArray();
         Assert.True(exported.Length > 50, $"The exported-type scan is vacuous: {exported.Length} types.");
         foreach (var concept in ForbiddenConcepts)
         {

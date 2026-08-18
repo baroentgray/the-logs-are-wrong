@@ -7,7 +7,7 @@ public sealed class Tlaw018ArchitectureTests
     public void Jam_derivation_source_is_non_vacuous_cross_platform_and_host_pure()
     {
         var root = FindRoot();
-        var path = Path.Combine(root, "src", "TheLogsAreWrong.Domain", "Scheduler", "IntakeAutoFeedJamDerivationContracts.cs");
+        var path = Path.Combine(root, "src", "TheLogsAreWrong.PortableAuthority", "Scheduler", "IntakeAutoFeedJamDerivationContracts.cs");
         Assert.True(File.Exists(path));
         var source = File.ReadAllText(path);
         Assert.False(string.IsNullOrWhiteSpace(source));

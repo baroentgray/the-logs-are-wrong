@@ -62,7 +62,7 @@ public sealed class ShiftLifecycleRuntimeState
 
     internal ShiftLifecycleRuntimeState Complete(ShiftCompletionEvidence completion)
     {
-        ArgumentNullException.ThrowIfNull(completion);
+        if (completion is null) { throw new ArgumentNullException("completion"); }
         if (Completion is not null)
         {
             throw new InvalidOperationException("A completed shift lifecycle cannot be completed again.");
@@ -77,7 +77,7 @@ public sealed class ShiftQuotaProgressSummary
 {
     internal ShiftQuotaProgressSummary(QuotaRuntimeState quota)
     {
-        ArgumentNullException.ThrowIfNull(quota);
+        if (quota is null) { throw new ArgumentNullException("quota"); }
         TargetTotal = quota.TargetTotal;
         TargetBySpecies = quota.TargetBySpecies;
         MinimumCorrectlyProcessedAnomalies = quota.MinimumCorrectlyProcessedAnomalies;
@@ -117,8 +117,8 @@ public sealed class ShiftCompletionEvidence
         ShiftRuntimeState finalShiftState,
         QuotaRuntimeState finalQuotaState)
     {
-        ArgumentNullException.ThrowIfNull(finalShiftState);
-        ArgumentNullException.ThrowIfNull(finalQuotaState);
+        if (finalShiftState is null) { throw new ArgumentNullException("finalShiftState"); }
+        if (finalQuotaState is null) { throw new ArgumentNullException("finalQuotaState"); }
         if (completedAt.IsDefault || hardDeadlineAt.IsDefault || processedCount < 0 || writtenOffCount < 0)
         {
             throw new ArgumentException("Completion evidence requires initialized timing and non-negative terminal counts.");
@@ -228,10 +228,10 @@ public sealed class ShiftCompletionEvaluationService
         ServerTick currentTick,
         ShiftConfiguration configuration)
     {
-        ArgumentNullException.ThrowIfNull(lifecycle);
-        ArgumentNullException.ThrowIfNull(shift);
-        ArgumentNullException.ThrowIfNull(quota);
-        ArgumentNullException.ThrowIfNull(configuration);
+        if (lifecycle is null) { throw new ArgumentNullException("lifecycle"); }
+        if (shift is null) { throw new ArgumentNullException("shift"); }
+        if (quota is null) { throw new ArgumentNullException("quota"); }
+        if (configuration is null) { throw new ArgumentNullException("configuration"); }
 
         if (lifecycle.Completion is { } existing)
         {
@@ -288,13 +288,13 @@ internal static class ShiftCompletionValidation
 {
     internal static ShiftProfile ValidateConfiguration(ShiftConfiguration configuration, ProfileId selectedProfileId)
     {
-        ArgumentNullException.ThrowIfNull(configuration);
+        if (configuration is null) { throw new ArgumentNullException("configuration"); }
         if (configuration.ShiftId.IsDefault || selectedProfileId.IsDefault)
         {
             throw new ArgumentException("Shift and selected-profile identities must be initialized.");
         }
 
-        ArgumentNullException.ThrowIfNull(configuration.Profiles);
+        if (configuration.Profiles is null) { throw new ArgumentNullException("configuration.Profiles"); }
         if (configuration.Profiles.IsEmpty)
         {
             throw new ArgumentException("Shift configuration must contain profiles.", nameof(configuration));
@@ -318,7 +318,7 @@ internal static class ShiftCompletionValidation
             throw new ArgumentException("The selected profile must exist exactly in the configuration.", nameof(selectedProfileId));
         }
 
-        ArgumentNullException.ThrowIfNull(configuration.Supply);
+        if (configuration.Supply is null) { throw new ArgumentNullException("configuration.Supply"); }
         if (configuration.Manifest.IsDefaultOrEmpty || configuration.Supply.Total != configuration.Manifest.Length || configuration.Supply.FreeWriteoffBuffer < 0)
         {
             throw new ArgumentException("Shift supply evidence must agree with the exact manifest.", nameof(configuration));

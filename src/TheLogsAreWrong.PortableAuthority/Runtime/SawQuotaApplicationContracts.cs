@@ -38,8 +38,8 @@ public sealed class SawQuotaApplicationService
 
     public SawQuotaApplicationResult Apply(SawCycleCompleted completion, QuotaRuntimeState quota)
     {
-        ArgumentNullException.ThrowIfNull(completion);
-        ArgumentNullException.ThrowIfNull(quota);
+        if (completion is null) { throw new ArgumentNullException("completion"); }
+        if (quota is null) { throw new ArgumentNullException("quota"); }
         ValidateCompletion(completion);
 
         return _quotaSettlements.Apply(quota, completion.Resolution.Settlement) switch
@@ -62,10 +62,10 @@ public sealed class SawQuotaApplicationService
 
     private static void ValidateCompletion(SawCycleCompleted completion)
     {
-        ArgumentNullException.ThrowIfNull(completion.State);
-        ArgumentNullException.ThrowIfNull(completion.Cycle);
-        ArgumentNullException.ThrowIfNull(completion.Resolution);
-        ArgumentNullException.ThrowIfNull(completion.Resolution.Settlement);
+        if (completion.State is null) { throw new ArgumentNullException("completion.State"); }
+        if (completion.Cycle is null) { throw new ArgumentNullException("completion.Cycle"); }
+        if (completion.Resolution is null) { throw new ArgumentNullException("completion.Resolution"); }
+        if (completion.Resolution.Settlement is null) { throw new ArgumentNullException("completion.Resolution.Settlement"); }
 
         var cycle = completion.Cycle;
         var resolution = completion.Resolution;

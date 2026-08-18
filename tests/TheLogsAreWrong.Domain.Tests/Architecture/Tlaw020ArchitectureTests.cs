@@ -16,7 +16,7 @@ public sealed class Tlaw020ArchitectureTests
     public void Repaired_feed_gate_deadline_source_is_non_vacuous_cross_platform_and_domain_pure()
     {
         var root = FindRoot();
-        var sourcePath = Path.Combine(root, "src", "TheLogsAreWrong.Domain", "Scheduler", "RepairFeedGateIntakeDeadlineContracts.cs");
+        var sourcePath = Path.Combine(root, "src", "TheLogsAreWrong.PortableAuthority", "Scheduler", "RepairFeedGateIntakeDeadlineContracts.cs");
         var deadlinePath = Path.Combine(root, "src", "TheLogsAreWrong.PortableAuthority", "Scheduler", "IntakeDeadlineContracts.cs");
         Assert.True(File.Exists(sourcePath));
         Assert.True(File.Exists(deadlinePath));

@@ -21,8 +21,8 @@ public sealed class IntakeAutoFeedJamDerivationService
 
     public IntakeAutoFeedJamDerivationResult Derive(ShiftRuntimeState state, DefaultIntakeAutoRouteBlocked blocked)
     {
-        ArgumentNullException.ThrowIfNull(state);
-        ArgumentNullException.ThrowIfNull(blocked);
+        if (state is null) { throw new ArgumentNullException("state"); }
+        if (blocked is null) { throw new ArgumentNullException("blocked"); }
         if (!ValidBlockedShape(blocked)) return new IntakeAutoFeedJamDefensiveFailure(state, IntakeAutoFeedJamDefensiveFailureReason.InvalidBlockedDescriptor);
         if (state.StateVersion < blocked.State.StateVersion) return new IntakeAutoFeedJamDefensiveFailure(state, IntakeAutoFeedJamDefensiveFailureReason.CurrentStatePrecedesBlocked);
         if (state.StateVersion == blocked.State.StateVersion && !ReferenceEquals(state, blocked.State)) return new IntakeAutoFeedJamDefensiveFailure(state, IntakeAutoFeedJamDefensiveFailureReason.DivergentSameVersion);

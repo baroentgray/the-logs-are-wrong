@@ -13,7 +13,7 @@ public abstract class ConfirmationTestIntentResult
 {
     private protected ConfirmationTestIntentResult(ShiftRuntimeState state)
     {
-        ArgumentNullException.ThrowIfNull(state);
+        if (state is null) { throw new ArgumentNullException("state"); }
         State = state;
     }
 
@@ -89,11 +89,11 @@ public sealed class ConfirmationTestIntentHandler
         LineNoiseRuntimeState lineNoiseRuntime,
         AnomalyCatalog anomalyCatalog)
     {
-        ArgumentNullException.ThrowIfNull(state);
-        ArgumentNullException.ThrowIfNull(intent);
-        ArgumentNullException.ThrowIfNull(activeTools);
-        ArgumentNullException.ThrowIfNull(lineNoiseRuntime);
-        ArgumentNullException.ThrowIfNull(anomalyCatalog);
+        if (state is null) { throw new ArgumentNullException("state"); }
+        if (intent is null) { throw new ArgumentNullException("intent"); }
+        if (activeTools is null) { throw new ArgumentNullException("activeTools"); }
+        if (lineNoiseRuntime is null) { throw new ArgumentNullException("lineNoiseRuntime"); }
+        if (anomalyCatalog is null) { throw new ArgumentNullException("anomalyCatalog"); }
 
         if (intent.ShiftId != state.ShiftId)
         {

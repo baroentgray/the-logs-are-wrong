@@ -7,7 +7,7 @@ public sealed class Tlaw015ArchitectureTests
     public void Feed_gate_jam_derivation_source_is_non_vacuous_cross_platform_and_uses_no_deferred_or_journal_runtime()
     {
         var repositoryRoot = FindRepositoryRoot();
-        var sourcePath = Path.Combine(repositoryRoot, "src", "TheLogsAreWrong.Domain", "Scheduler", "FeedGateJamDerivationContracts.cs");
+        var sourcePath = Path.Combine(repositoryRoot, "src", "TheLogsAreWrong.PortableAuthority", "Scheduler", "FeedGateJamDerivationContracts.cs");
         Assert.True(File.Exists(sourcePath));
 
         var source = File.ReadAllText(sourcePath);
