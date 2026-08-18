@@ -2,7 +2,9 @@
 
 Asset ID: `TLAW_LOG_TEST_01`
 
-Status: **APPROVED_READY_FOR_CLAUDE**
+Package status: **APPROVED_READY**
+
+Asset acceptance: **PROTOTYPE_ACCEPTED**
 
 Revision: `R01`
 
@@ -32,3 +34,5 @@ Notes:
 - Claude must consume the approved sources from this GitHub package rather than reconstructing them from chat history.
 - No extra bark maps, cut-end map, anomaly signs, scars, resin, hollow sections, internal objects, multiple log variants, or Hyper3D model belong to this first experiment.
 - Claude's build remains an experimental prototype asset until owner review; this approval is approval of the visual source package, not of the resulting 3D asset.
+- Package status and asset acceptance are separate axes. `APPROVED_READY` describes this visual source package; `PROTOTYPE_ACCEPTED` records that the owner accepted the resulting 3D asset visually in the prototype on 2026-08-18.
+- `PROTOTYPE_ACCEPTED` implies no promotion and no production integration. The prototype line was deliberately not converted to the card's dimensions.
