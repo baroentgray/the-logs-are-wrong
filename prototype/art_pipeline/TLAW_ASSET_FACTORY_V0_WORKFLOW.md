@@ -1,7 +1,8 @@
 # THE LOGS ARE WRONG — Asset Factory v0 Workflow
 
 Status: **working production workflow**  
-Workflow revision: **v0.1**  
+Workflow revision: **v0.1**
+
 Purpose: experimental 3D asset production and preparation in the parallel prototype before possible promotion into production.
 
 ## 1. Core principle
