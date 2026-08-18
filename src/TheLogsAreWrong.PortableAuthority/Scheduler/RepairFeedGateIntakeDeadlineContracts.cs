@@ -10,9 +10,9 @@ public sealed class RepairFeedGateIntakeDeadlineStartService
         RepairPendingTransitionExecuted repairedAdmission,
         ShiftProfile selectedProfile)
     {
-        ArgumentNullException.ThrowIfNull(state);
-        ArgumentNullException.ThrowIfNull(repairedAdmission);
-        ArgumentNullException.ThrowIfNull(selectedProfile);
+        if (state is null) { throw new ArgumentNullException("state"); }
+        if (repairedAdmission is null) { throw new ArgumentNullException("repairedAdmission"); }
+        if (selectedProfile is null) { throw new ArgumentNullException("selectedProfile"); }
         return IntakeDeadlineStartService.StartFromRepairedAdmission(state, repairedAdmission, selectedProfile);
     }
 }

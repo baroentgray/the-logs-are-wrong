@@ -35,8 +35,8 @@ public sealed class SawQuotaApplicationStageStep
         QuotaRuntimeState beforeQuotaState,
         SawQuotaApplicationResult? result)
     {
-        ArgumentNullException.ThrowIfNull(completionResult);
-        ArgumentNullException.ThrowIfNull(beforeQuotaState);
+        if (completionResult is null) { throw new ArgumentNullException("completionResult"); }
+        if (beforeQuotaState is null) { throw new ArgumentNullException("beforeQuotaState"); }
 
         if (completionResult is SawCycleCompleted completed)
         {
@@ -168,16 +168,16 @@ public sealed class HostStageFourSawExecutor
         SchedulerConfiguration schedulerConfiguration,
         AnomalyCatalog anomalyCatalog)
     {
-        ArgumentNullException.ThrowIfNull(initialShiftState);
-        ArgumentNullException.ThrowIfNull(initialQuotaState);
+        if (initialShiftState is null) { throw new ArgumentNullException("initialShiftState"); }
+        if (initialQuotaState is null) { throw new ArgumentNullException("initialQuotaState"); }
         if (currentTick.IsDefault)
         {
             throw new ArgumentException("Current tick must be initialized.", nameof(currentTick));
         }
 
-        ArgumentNullException.ThrowIfNull(schedulerConfiguration);
-        ArgumentNullException.ThrowIfNull(anomalyCatalog);
-        ArgumentNullException.ThrowIfNull(anomalyCatalog.Definitions);
+        if (schedulerConfiguration is null) { throw new ArgumentNullException("schedulerConfiguration"); }
+        if (anomalyCatalog is null) { throw new ArgumentNullException("anomalyCatalog"); }
+        if (anomalyCatalog.Definitions is null) { throw new ArgumentNullException("anomalyCatalog.Definitions"); }
 
         var completionResult = _sawCycleCompletionService.Complete(initialShiftState, currentTick, anomalyCatalog);
         var completionStep = new SawCycleCompletionStageStep(initialShiftState, completionResult);

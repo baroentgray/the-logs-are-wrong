@@ -14,9 +14,9 @@ public sealed class RepairAutoFeedNormalFeedPlanningService
         RepairPendingTransitionExecuted repairedAutoRoute,
         SchedulerConfiguration configuration)
     {
-        ArgumentNullException.ThrowIfNull(state);
-        ArgumentNullException.ThrowIfNull(repairedAutoRoute);
-        ArgumentNullException.ThrowIfNull(configuration);
+        if (state is null) { throw new ArgumentNullException("state"); }
+        if (repairedAutoRoute is null) { throw new ArgumentNullException("repairedAutoRoute"); }
+        if (configuration is null) { throw new ArgumentNullException("configuration"); }
 
         ValidateRepairedAutoRoute(repairedAutoRoute);
 

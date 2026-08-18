@@ -48,7 +48,7 @@ public sealed class HostTickProgressionEvidence
 
     internal HostTickProgressionEvidence Advance(HostTickCompletionReceipt receipt)
     {
-        ArgumentNullException.ThrowIfNull(receipt);
+        if (receipt is null) { throw new ArgumentNullException("receipt"); }
         Validate();
         receipt.Validate();
         if (receipt.Lifecycle.ShiftId != ShiftId || receipt.ShiftState.ShiftId != ShiftId)
@@ -215,11 +215,11 @@ public sealed class HostTickCompletionCheckpointService
         ServerTick currentTick,
         ShiftConfiguration configuration)
     {
-        ArgumentNullException.ThrowIfNull(progression);
-        ArgumentNullException.ThrowIfNull(lifecycle);
-        ArgumentNullException.ThrowIfNull(postStageShift);
-        ArgumentNullException.ThrowIfNull(postStageQuota);
-        ArgumentNullException.ThrowIfNull(configuration);
+        if (progression is null) { throw new ArgumentNullException("progression"); }
+        if (lifecycle is null) { throw new ArgumentNullException("lifecycle"); }
+        if (postStageShift is null) { throw new ArgumentNullException("postStageShift"); }
+        if (postStageQuota is null) { throw new ArgumentNullException("postStageQuota"); }
+        if (configuration is null) { throw new ArgumentNullException("configuration"); }
         if (currentTick.IsDefault)
         {
             throw new ArgumentOutOfRangeException(nameof(currentTick), "Checkpoint tick must be initialized.");
@@ -320,7 +320,7 @@ public sealed class HostTickCompletionCheckpointService
         QuotaRuntimeState postStageQuota,
         ServerTick currentTick)
     {
-        ArgumentNullException.ThrowIfNull(evaluation);
+        if (evaluation is null) { throw new ArgumentNullException("evaluation"); }
         if (!ReferenceEquals(evaluation.ShiftState, postStageShift) || !ReferenceEquals(evaluation.QuotaState, postStageQuota))
         {
             throw new InvalidOperationException("Checkpoint evaluation must retain the exact supplied post-stage runtime references.");

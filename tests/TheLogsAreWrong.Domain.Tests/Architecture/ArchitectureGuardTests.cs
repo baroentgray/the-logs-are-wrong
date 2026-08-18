@@ -56,7 +56,7 @@ public sealed class ArchitectureGuardTests
     }
 
     [Fact]
-    public void Portable_authority_core_is_the_single_owner_of_the_accepted_26_file_cut()
+    public void Portable_authority_core_is_the_single_owner_of_the_accepted_54_file_cut()
     {
         var root = FindRepositoryRoot();
         var domainRoot = Path.Combine(root, "src", "TheLogsAreWrong.Domain");
@@ -70,12 +70,27 @@ public sealed class ArchitectureGuardTests
             "Runtime/ConfirmationTestLifecycleContracts.cs", "Runtime/LogTransitionServices.cs", "Runtime/ProcedureActionLifecycleContracts.cs",
             "Runtime/ProcedureCompletionContracts.cs", "Runtime/ShiftRuntimeState.cs", "Scheduler/DefaultIntakeAutoRouteContracts.cs",
             "Scheduler/FeedDueResolutionContracts.cs", "Scheduler/FeedPlanningContracts.cs", "Scheduler/IntakeDeadlineContracts.cs",
-            "Scheduler/RepairPendingTransitionExecutionContracts.cs", "Scheduler/SawCycleContracts.cs", "Time/SimulationTime.cs"
+            "Scheduler/RepairPendingTransitionExecutionContracts.cs", "Scheduler/SawCycleContracts.cs", "Time/SimulationTime.cs",
+            // TLAW-064 / D-020 H2: the measured HostTickExecutionService.Execute cut joins the same portable owner.
+            "Intents/AcceptedIntentBatchContracts.cs", "Intents/ConfirmationTestIntentContracts.cs",
+            "Intents/ContainmentRitualIntentContracts.cs", "Intents/LineRepairIntentContracts.cs",
+            "Intents/ProcedureActionIntentContracts.cs", "Journal/EventJournal.cs",
+            "Journal/JournaledMutationCommitContracts.cs", "Journal/ReplayContracts.cs",
+            "Runtime/AcceptedIntentStageExecutionContracts.cs", "Runtime/ConfirmationTestIntentHandler.cs",
+            "Runtime/ContainmentRitualIntentHandler.cs", "Runtime/HostStageFiveFeedExecutionContracts.cs",
+            "Runtime/HostStageFourSawExecutionContracts.cs", "Runtime/HostStageOneCompletionExecutionContracts.cs",
+            "Runtime/HostStageSevenEventExecutionContracts.cs", "Runtime/HostStageSixDerivedExecutionContracts.cs",
+            "Runtime/HostStageThreeDeadlineExecutionContracts.cs", "Runtime/HostTickCompletionCheckpointContracts.cs",
+            "Runtime/HostTickExecutionContracts.cs", "Runtime/LineRepairIntentHandler.cs",
+            "Runtime/ProcedureActionIntentHandler.cs", "Runtime/SawQuotaApplicationContracts.cs",
+            "Runtime/ShiftCompletionContracts.cs", "Scheduler/FeedGateJamDerivationContracts.cs",
+            "Scheduler/IntakeAutoFeedJamDerivationContracts.cs", "Scheduler/RepairAutoFeedNormalFeedPlanningContracts.cs",
+            "Scheduler/RepairFeedGateIntakeDeadlineContracts.cs", "Sequencing/SequencingContracts.cs"
         };
 
         var domainSources = RelativeSources(domainRoot);
         var portableSources = RelativeSources(portableRoot).Where(path => !path.StartsWith("Support/", StringComparison.Ordinal)).ToArray();
-        Assert.Equal(34, domainSources.Length);
+        Assert.Equal(6, domainSources.Length);
         Assert.Equal(moved.OrderBy(path => path, StringComparer.Ordinal), portableSources.OrderBy(path => path, StringComparer.Ordinal));
         Assert.All(moved, path => Assert.False(File.Exists(Path.Combine(domainRoot, path))));
 

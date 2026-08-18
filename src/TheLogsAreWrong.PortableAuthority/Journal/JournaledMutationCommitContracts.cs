@@ -19,7 +19,7 @@ public sealed class DomainEventDraft
             throw new ArgumentException("Event type must be initialized.", nameof(eventType));
         }
 
-        ArgumentNullException.ThrowIfNull(payload);
+        if (payload is null) { throw new ArgumentNullException("payload"); }
         if (causedByIntentId is { } intentId && intentId.IsDefault)
         {
             throw new ArgumentException("Causation intent must be initialized when present.", nameof(causedByIntentId));
@@ -85,10 +85,10 @@ public sealed class JournaledMutationCommitService
         ServerTick currentTick,
         DomainEventDraft draft)
     {
-        ArgumentNullException.ThrowIfNull(journal);
-        ArgumentNullException.ThrowIfNull(before);
-        ArgumentNullException.ThrowIfNull(after);
-        ArgumentNullException.ThrowIfNull(draft);
+        if (journal is null) { throw new ArgumentNullException("journal"); }
+        if (before is null) { throw new ArgumentNullException("before"); }
+        if (after is null) { throw new ArgumentNullException("after"); }
+        if (draft is null) { throw new ArgumentNullException("draft"); }
 
         if (before.ShiftId.IsDefault || after.ShiftId.IsDefault || before.ShiftId != after.ShiftId || before.ShiftSeed != after.ShiftSeed)
         {
@@ -163,8 +163,8 @@ public sealed class RuntimeCheckpointFactory
 {
     public SnapshotBoundary Capture(ShiftRuntimeState runtime, IEventJournal journal, ServerTick currentTick)
     {
-        ArgumentNullException.ThrowIfNull(runtime);
-        ArgumentNullException.ThrowIfNull(journal);
+        if (runtime is null) { throw new ArgumentNullException("runtime"); }
+        if (journal is null) { throw new ArgumentNullException("journal"); }
         if (currentTick.IsDefault)
         {
             throw new ArgumentOutOfRangeException(nameof(currentTick), "Checkpoint tick must be initialized.");

@@ -13,8 +13,8 @@ public sealed class MovementNoiseApplicationStageStep
 {
     internal MovementNoiseApplicationStageStep(MovementNoiseRuntimeState beforeState, MovementNoiseApplicationResult result)
     {
-        ArgumentNullException.ThrowIfNull(beforeState);
-        ArgumentNullException.ThrowIfNull(result);
+        if (beforeState is null) { throw new ArgumentNullException("beforeState"); }
+        if (result is null) { throw new ArgumentNullException("result"); }
         BeforeState = beforeState;
         Result = result;
     }
@@ -40,7 +40,7 @@ public sealed class IntakeAutoFeedJamStageStep
         DefaultIntakeAutoRouteBlocked? source,
         IntakeAutoFeedJamDerivationResult? result)
     {
-        ArgumentNullException.ThrowIfNull(beforeShiftState);
+        if (beforeShiftState is null) { throw new ArgumentNullException("beforeShiftState"); }
         if ((source is null) != (result is null))
         {
             throw new ArgumentException("An intake-auto-feed jam step must retain a result exactly when it retains its triggering source.");
@@ -76,8 +76,8 @@ public sealed class FeedGateJamStageStep
 {
     internal FeedGateJamStageStep(ShiftRuntimeState beforeShiftState, FeedGateJamDerivationResult result)
     {
-        ArgumentNullException.ThrowIfNull(beforeShiftState);
-        ArgumentNullException.ThrowIfNull(result);
+        if (beforeShiftState is null) { throw new ArgumentNullException("beforeShiftState"); }
+        if (result is null) { throw new ArgumentNullException("result"); }
         BeforeShiftState = beforeShiftState;
         Result = result;
     }
@@ -101,10 +101,10 @@ public sealed class LineNoiseDerivationStageStep
         MovementNoiseRuntimeState movementNoiseState,
         LineNoiseEvaluationResult result)
     {
-        ArgumentNullException.ThrowIfNull(beforeState);
-        ArgumentNullException.ThrowIfNull(shiftState);
-        ArgumentNullException.ThrowIfNull(movementNoiseState);
-        ArgumentNullException.ThrowIfNull(result);
+        if (beforeState is null) { throw new ArgumentNullException("beforeState"); }
+        if (shiftState is null) { throw new ArgumentNullException("shiftState"); }
+        if (movementNoiseState is null) { throw new ArgumentNullException("movementNoiseState"); }
+        if (result is null) { throw new ArgumentNullException("result"); }
         BeforeState = beforeState;
         ShiftState = shiftState;
         MovementNoiseState = movementNoiseState;
@@ -135,9 +135,9 @@ public sealed class ConfirmationConditionStageStep
         LineNoiseEvaluationResult consumedLineNoise,
         ConfirmationTestConditionResult result)
     {
-        ArgumentNullException.ThrowIfNull(beforeShiftState);
-        ArgumentNullException.ThrowIfNull(consumedLineNoise);
-        ArgumentNullException.ThrowIfNull(result);
+        if (beforeShiftState is null) { throw new ArgumentNullException("beforeShiftState"); }
+        if (consumedLineNoise is null) { throw new ArgumentNullException("consumedLineNoise"); }
+        if (result is null) { throw new ArgumentNullException("result"); }
         BeforeShiftState = beforeShiftState;
         ConsumedLineNoise = consumedLineNoise;
         Result = result;
@@ -164,9 +164,9 @@ public sealed class HostTickCheckpointStageStep
         QuotaRuntimeState postStageQuota,
         HostTickCheckpointResult result)
     {
-        ArgumentNullException.ThrowIfNull(postStageShift);
-        ArgumentNullException.ThrowIfNull(postStageQuota);
-        ArgumentNullException.ThrowIfNull(result);
+        if (postStageShift is null) { throw new ArgumentNullException("postStageShift"); }
+        if (postStageQuota is null) { throw new ArgumentNullException("postStageQuota"); }
+        if (result is null) { throw new ArgumentNullException("result"); }
         PostStageShift = postStageShift;
         PostStageQuota = postStageQuota;
         Result = result;
@@ -206,18 +206,18 @@ public sealed class HostStageSixDerivedExecution
         ImmutableHashSet<ItemId> activeTools,
         ServerTick currentTick)
     {
-        ArgumentNullException.ThrowIfNull(initialShiftState);
-        ArgumentNullException.ThrowIfNull(initialMovementNoise);
-        ArgumentNullException.ThrowIfNull(initialLineNoise);
-        ArgumentNullException.ThrowIfNull(quotaState);
-        ArgumentNullException.ThrowIfNull(intakeAutoFeedJamStep);
-        ArgumentNullException.ThrowIfNull(feedGateJamStep);
-        ArgumentNullException.ThrowIfNull(lineNoiseStep);
-        ArgumentNullException.ThrowIfNull(confirmationStep);
-        ArgumentNullException.ThrowIfNull(checkpointStep);
-        ArgumentNullException.ThrowIfNull(progression);
-        ArgumentNullException.ThrowIfNull(lifecycle);
-        ArgumentNullException.ThrowIfNull(activeTools);
+        if (initialShiftState is null) { throw new ArgumentNullException("initialShiftState"); }
+        if (initialMovementNoise is null) { throw new ArgumentNullException("initialMovementNoise"); }
+        if (initialLineNoise is null) { throw new ArgumentNullException("initialLineNoise"); }
+        if (quotaState is null) { throw new ArgumentNullException("quotaState"); }
+        if (intakeAutoFeedJamStep is null) { throw new ArgumentNullException("intakeAutoFeedJamStep"); }
+        if (feedGateJamStep is null) { throw new ArgumentNullException("feedGateJamStep"); }
+        if (lineNoiseStep is null) { throw new ArgumentNullException("lineNoiseStep"); }
+        if (confirmationStep is null) { throw new ArgumentNullException("confirmationStep"); }
+        if (checkpointStep is null) { throw new ArgumentNullException("checkpointStep"); }
+        if (progression is null) { throw new ArgumentNullException("progression"); }
+        if (lifecycle is null) { throw new ArgumentNullException("lifecycle"); }
+        if (activeTools is null) { throw new ArgumentNullException("activeTools"); }
         if (movementSteps.IsDefault)
         {
             throw new ArgumentException("Movement steps must be an initialized immutable array.", nameof(movementSteps));
@@ -398,25 +398,25 @@ public sealed class HostStageSixDerivedExecutor
         ShiftConfiguration shiftConfiguration,
         AnomalyCatalog anomalyCatalog)
     {
-        ArgumentNullException.ThrowIfNull(stageOne);
-        ArgumentNullException.ThrowIfNull(stageTwo);
-        ArgumentNullException.ThrowIfNull(stageThree);
-        ArgumentNullException.ThrowIfNull(stageFour);
-        ArgumentNullException.ThrowIfNull(stageFive);
-        ArgumentNullException.ThrowIfNull(initialMovementNoise);
-        ArgumentNullException.ThrowIfNull(initialLineNoise);
-        ArgumentNullException.ThrowIfNull(progression);
-        ArgumentNullException.ThrowIfNull(lifecycle);
-        ArgumentNullException.ThrowIfNull(activeTools);
+        if (stageOne is null) { throw new ArgumentNullException("stageOne"); }
+        if (stageTwo is null) { throw new ArgumentNullException("stageTwo"); }
+        if (stageThree is null) { throw new ArgumentNullException("stageThree"); }
+        if (stageFour is null) { throw new ArgumentNullException("stageFour"); }
+        if (stageFive is null) { throw new ArgumentNullException("stageFive"); }
+        if (initialMovementNoise is null) { throw new ArgumentNullException("initialMovementNoise"); }
+        if (initialLineNoise is null) { throw new ArgumentNullException("initialLineNoise"); }
+        if (progression is null) { throw new ArgumentNullException("progression"); }
+        if (lifecycle is null) { throw new ArgumentNullException("lifecycle"); }
+        if (activeTools is null) { throw new ArgumentNullException("activeTools"); }
         if (currentTick.IsDefault)
         {
             throw new ArgumentException("Current tick must be initialized.", nameof(currentTick));
         }
 
-        ArgumentNullException.ThrowIfNull(schedulerConfiguration);
-        ArgumentNullException.ThrowIfNull(shiftConfiguration);
-        ArgumentNullException.ThrowIfNull(anomalyCatalog);
-        ArgumentNullException.ThrowIfNull(anomalyCatalog.Definitions);
+        if (schedulerConfiguration is null) { throw new ArgumentNullException("schedulerConfiguration"); }
+        if (shiftConfiguration is null) { throw new ArgumentNullException("shiftConfiguration"); }
+        if (anomalyCatalog is null) { throw new ArgumentNullException("anomalyCatalog"); }
+        if (anomalyCatalog.Definitions is null) { throw new ArgumentNullException("anomalyCatalog.Definitions"); }
         if (activeTools.Any(tool => tool.IsDefault))
         {
             throw new ArgumentException("Active-tool evidence cannot contain a default item.", nameof(activeTools));

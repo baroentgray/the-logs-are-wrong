@@ -144,14 +144,14 @@ public sealed class HostStageOneCompletionExecutor
         AnomalyCatalog anomalyCatalog,
         ContainmentConfiguration containmentConfiguration)
     {
-        ArgumentNullException.ThrowIfNull(initialState);
+        if (initialState is null) { throw new ArgumentNullException("initialState"); }
         if (currentTick.IsDefault)
         {
             throw new ArgumentException("Current tick must be initialized.", nameof(currentTick));
         }
 
-        ArgumentNullException.ThrowIfNull(anomalyCatalog);
-        ArgumentNullException.ThrowIfNull(containmentConfiguration);
+        if (anomalyCatalog is null) { throw new ArgumentNullException("anomalyCatalog"); }
+        if (containmentConfiguration is null) { throw new ArgumentNullException("containmentConfiguration"); }
 
         var procedureResult = _procedureService.CompleteDue(initialState, currentTick, anomalyCatalog);
         var procedureStep = new ProcedureDueCompletionStageStep(initialState, procedureResult);

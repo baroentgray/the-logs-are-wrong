@@ -100,19 +100,19 @@ public sealed class HostTickExecutionService
         ContainmentConfiguration containmentConfiguration,
         AnomalyCatalog anomalyCatalog)
     {
-        ArgumentNullException.ThrowIfNull(initialShiftState);
-        ArgumentNullException.ThrowIfNull(initialQuotaState);
-        ArgumentNullException.ThrowIfNull(initialMovementNoise);
-        ArgumentNullException.ThrowIfNull(initialLineNoise);
-        ArgumentNullException.ThrowIfNull(progression);
-        ArgumentNullException.ThrowIfNull(lifecycle);
-        ArgumentNullException.ThrowIfNull(acceptedIntents);
-        ArgumentNullException.ThrowIfNull(activeTools);
-        ArgumentNullException.ThrowIfNull(journal);
-        ArgumentNullException.ThrowIfNull(schedulerConfiguration);
-        ArgumentNullException.ThrowIfNull(shiftConfiguration);
-        ArgumentNullException.ThrowIfNull(containmentConfiguration);
-        ArgumentNullException.ThrowIfNull(anomalyCatalog);
+        if (initialShiftState is null) { throw new ArgumentNullException("initialShiftState"); }
+        if (initialQuotaState is null) { throw new ArgumentNullException("initialQuotaState"); }
+        if (initialMovementNoise is null) { throw new ArgumentNullException("initialMovementNoise"); }
+        if (initialLineNoise is null) { throw new ArgumentNullException("initialLineNoise"); }
+        if (progression is null) { throw new ArgumentNullException("progression"); }
+        if (lifecycle is null) { throw new ArgumentNullException("lifecycle"); }
+        if (acceptedIntents is null) { throw new ArgumentNullException("acceptedIntents"); }
+        if (activeTools is null) { throw new ArgumentNullException("activeTools"); }
+        if (journal is null) { throw new ArgumentNullException("journal"); }
+        if (schedulerConfiguration is null) { throw new ArgumentNullException("schedulerConfiguration"); }
+        if (shiftConfiguration is null) { throw new ArgumentNullException("shiftConfiguration"); }
+        if (containmentConfiguration is null) { throw new ArgumentNullException("containmentConfiguration"); }
+        if (anomalyCatalog is null) { throw new ArgumentNullException("anomalyCatalog"); }
 
         if (currentTick.IsDefault)
         {
@@ -152,7 +152,7 @@ public sealed class HostTickExecutionService
             throw new ArgumentException("The accepted-intent batch tick must equal the current tick.", nameof(currentTick));
         }
 
-        ArgumentNullException.ThrowIfNull(shiftConfiguration.Profiles);
+        if (shiftConfiguration.Profiles is null) { throw new ArgumentNullException("shiftConfiguration.Profiles"); }
         if (!shiftConfiguration.Profiles.TryGetValue(lifecycle.SelectedProfileId, out var selectedProfile) || selectedProfile is null)
         {
             throw new ArgumentException("Lifecycle selected profile must exist in the supplied shift configuration.", nameof(shiftConfiguration));

@@ -35,7 +35,7 @@ public sealed record FeedGateJamDerived : FeedGateJamDerivationResult
         StateVersion currentStateVersion)
         : base(state)
     {
-        ArgumentNullException.ThrowIfNull(state);
+        if (state is null) { throw new ArgumentNullException("state"); }
         if (blockedLogId.IsDefault || enteredAt.IsDefault || priorStateVersion.IsDefault || currentStateVersion.IsDefault ||
             cause != JamCause.FEED_GATE_BLOCKED || currentStateVersion != priorStateVersion.Next() || state.StateVersion != currentStateVersion ||
             state.Line.State != LineState.LINE_JAMMED || state.Line.Cause != cause || state.Line.PendingLogId != blockedLogId ||
@@ -65,7 +65,7 @@ public sealed class FeedGateJamDerivationService
 
     public FeedGateJamDerivationResult Derive(ShiftRuntimeState state, ServerTick currentTick)
     {
-        ArgumentNullException.ThrowIfNull(state);
+        if (state is null) { throw new ArgumentNullException("state"); }
         if (currentTick.IsDefault || currentTick < state.Line.EnteredAt)
         {
             throw new ArgumentOutOfRangeException(nameof(currentTick), "Current tick cannot precede line state entry.");

@@ -30,7 +30,7 @@ public sealed class Tlaw013ArchitectureTests
     {
         var repositoryRoot = FindRepositoryRoot();
         var project = File.ReadAllText(Path.Combine(repositoryRoot, "src", "TheLogsAreWrong.Domain", "TheLogsAreWrong.Domain.csproj"));
-        var runtimeFiles = Directory.EnumerateFiles(Path.Combine(repositoryRoot, "src", "TheLogsAreWrong.Domain", "Runtime"), "*.cs", SearchOption.AllDirectories).ToArray();
+        var runtimeFiles = Directory.EnumerateFiles(Path.Combine(repositoryRoot, "src", "TheLogsAreWrong.PortableAuthority", "Runtime"), "*.cs", SearchOption.AllDirectories).ToArray();
 
         Assert.DoesNotContain("PackageReference", project, StringComparison.Ordinal);
         Assert.NotEmpty(runtimeFiles);

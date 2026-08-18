@@ -12,7 +12,7 @@ public abstract class ProcedureActionIntentResult
 {
     private protected ProcedureActionIntentResult(ShiftRuntimeState state)
     {
-        ArgumentNullException.ThrowIfNull(state);
+        if (state is null) { throw new ArgumentNullException("state"); }
         State = state;
     }
 
@@ -94,9 +94,9 @@ public sealed class ProcedureActionIntentHandler
         ServerTick currentTick,
         AnomalyCatalog anomalyCatalog)
     {
-        ArgumentNullException.ThrowIfNull(state);
-        ArgumentNullException.ThrowIfNull(intent);
-        ArgumentNullException.ThrowIfNull(anomalyCatalog);
+        if (state is null) { throw new ArgumentNullException("state"); }
+        if (intent is null) { throw new ArgumentNullException("intent"); }
+        if (anomalyCatalog is null) { throw new ArgumentNullException("anomalyCatalog"); }
 
         if (intent.ShiftId != state.ShiftId)
         {

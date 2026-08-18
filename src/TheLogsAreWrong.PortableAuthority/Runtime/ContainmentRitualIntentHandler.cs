@@ -12,7 +12,7 @@ public abstract class ContainmentRitualIntentResult
 {
     private protected ContainmentRitualIntentResult(ShiftRuntimeState state)
     {
-        ArgumentNullException.ThrowIfNull(state);
+        if (state is null) { throw new ArgumentNullException("state"); }
         State = state;
     }
 
@@ -95,9 +95,9 @@ public sealed class ContainmentRitualIntentHandler
         ServerTick currentTick,
         ContainmentConfiguration containmentConfiguration)
     {
-        ArgumentNullException.ThrowIfNull(state);
-        ArgumentNullException.ThrowIfNull(intent);
-        ArgumentNullException.ThrowIfNull(containmentConfiguration);
+        if (state is null) { throw new ArgumentNullException("state"); }
+        if (intent is null) { throw new ArgumentNullException("intent"); }
+        if (containmentConfiguration is null) { throw new ArgumentNullException("containmentConfiguration"); }
 
         if (intent.ShiftId != state.ShiftId)
         {

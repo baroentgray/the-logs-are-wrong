@@ -14,7 +14,7 @@ public sealed class AuthoritativeAcceptedIntent
         ServerTick receivedAtTick,
         ServerReceiveSequence receiveSequence)
     {
-        ArgumentNullException.ThrowIfNull(envelope);
+        if (envelope is null) { throw new ArgumentNullException("envelope"); }
         if (authoritativeActor.IsDefault)
         {
             throw new ArgumentException("Authoritative actor must be initialized.", nameof(authoritativeActor));
@@ -78,7 +78,7 @@ public static class AcceptedIntentTickBatchFactory
             throw new ArgumentException("Current tick must be initialized.", nameof(currentTick));
         }
 
-        ArgumentNullException.ThrowIfNull(acceptedIntents);
+        if (acceptedIntents is null) { throw new ArgumentNullException("acceptedIntents"); }
 
         var ordered = acceptedIntents.ToArray();
         var intentIds = new HashSet<IntentId>();

@@ -12,7 +12,7 @@ public abstract class LineRepairIntentResult
 {
     private protected LineRepairIntentResult(ShiftRuntimeState state)
     {
-        ArgumentNullException.ThrowIfNull(state);
+        if (state is null) { throw new ArgumentNullException("state"); }
         State = state;
     }
 
@@ -94,9 +94,9 @@ public sealed class LineRepairIntentHandler
         ServerTick currentTick,
         SchedulerConfiguration schedulerConfiguration)
     {
-        ArgumentNullException.ThrowIfNull(state);
-        ArgumentNullException.ThrowIfNull(intent);
-        ArgumentNullException.ThrowIfNull(schedulerConfiguration);
+        if (state is null) { throw new ArgumentNullException("state"); }
+        if (intent is null) { throw new ArgumentNullException("intent"); }
+        if (schedulerConfiguration is null) { throw new ArgumentNullException("schedulerConfiguration"); }
 
         if (intent.ShiftId != state.ShiftId)
         {

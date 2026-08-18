@@ -71,7 +71,7 @@ public sealed class HostStageSevenLogTransitionPayload : HostStageSevenVersioned
     internal HostStageSevenLogTransitionPayload(LogId logId, LogState fromState, LogState toState, StateVersion prior, StateVersion current)
         : base(prior, current)
     {
-        if (logId.IsDefault || !Enum.IsDefined(fromState) || !Enum.IsDefined(toState)) throw new ArgumentException("Log transition evidence must be initialized.");
+        if (logId.IsDefault || !Enum.IsDefined(typeof(LogState), fromState) || !Enum.IsDefined(typeof(LogState), toState)) throw new ArgumentException("Log transition evidence must be initialized.");
         LogId = logId; FromState = fromState; ToState = toState;
     }
     public LogId LogId { get; }
@@ -84,7 +84,7 @@ public sealed class HostStageSevenFeedSchedulePayload : HostStageSevenVersionedP
     internal HostStageSevenFeedSchedulePayload(PendingFeedSchedule schedule, StateVersion prior, StateVersion current)
         : base(prior, current)
     {
-        ArgumentNullException.ThrowIfNull(schedule);
+        if (schedule is null) { throw new ArgumentNullException("schedule"); }
         LogId = schedule.LogId; Kind = schedule.Kind; ScheduledAt = schedule.ScheduledAt; DueAt = schedule.DueAt; Delay = schedule.Delay; CausedByIntentId = schedule.CausedByIntentId;
     }
     public LogId LogId { get; }
@@ -100,7 +100,7 @@ public sealed class HostStageSevenIntakeDeadlinePayload : HostStageSevenVersione
     internal HostStageSevenIntakeDeadlinePayload(ActiveIntakeDeadline deadline, ServerTick occurredAt, StateVersion prior, StateVersion current)
         : base(prior, current)
     {
-        ArgumentNullException.ThrowIfNull(deadline);
+        if (deadline is null) { throw new ArgumentNullException("deadline"); }
         LogId = deadline.LogId; StartedAt = deadline.StartedAt; DueAt = deadline.DueAt; Duration = deadline.Duration; OccurredAt = occurredAt;
     }
     public LogId LogId { get; }
@@ -117,7 +117,7 @@ public sealed class HostStageSevenAutoRoutePayload : HostStageSevenVersionedPayl
     internal HostStageSevenAutoRoutePayload(DefaultIntakeAutoRouteResult result, ServerTick currentTick, StateVersion prior, StateVersion current)
         : base(prior, current)
     {
-        ArgumentNullException.ThrowIfNull(result);
+        if (result is null) { throw new ArgumentNullException("result"); }
         if (currentTick.IsDefault) throw new ArgumentException("The authoritative stage-seven tick must be initialized.", nameof(currentTick));
         switch (result)
         {
@@ -159,7 +159,7 @@ public sealed class HostStageSevenProcedurePayload : HostStageSevenVersionedPayl
     internal HostStageSevenProcedurePayload(ItemActionCompletionDescriptor descriptor)
         : base(descriptor.PriorStateVersion, descriptor.CurrentStateVersion)
     {
-        ArgumentNullException.ThrowIfNull(descriptor);
+        if (descriptor is null) { throw new ArgumentNullException("descriptor"); }
         Descriptor = descriptor;
     }
     public ItemActionCompletionDescriptor Descriptor { get; }
@@ -171,7 +171,7 @@ public sealed class HostStageSevenProcedureActionStartedPayload : HostStageSeven
     internal HostStageSevenProcedureActionStartedPayload(ActiveProcedureHold hold, StateVersion prior, StateVersion current)
         : base(prior, current)
     {
-        ArgumentNullException.ThrowIfNull(hold);
+        if (hold is null) { throw new ArgumentNullException("hold"); }
         LogId = hold.LogId;
         AnomalyId = hold.AnomalyId;
         AttemptedItem = hold.AttemptedItem;
@@ -193,7 +193,7 @@ public sealed class HostStageSevenProcedureActionStartedPayload : HostStageSeven
 public sealed class HostStageSevenConfirmationPayload : HostStageSevenVersionedPayload
 {
     internal HostStageSevenConfirmationPayload(ConfirmationTestResult result, StateVersion prior, StateVersion current)
-        : base(prior, current) { ArgumentNullException.ThrowIfNull(result); Result = result; }
+        : base(prior, current) { if (result is null) { throw new ArgumentNullException("result"); } Result = result; }
     public ConfirmationTestResult Result { get; }
 }
 
@@ -203,7 +203,7 @@ public sealed class HostStageSevenConfirmationTestStartedPayload : HostStageSeve
     internal HostStageSevenConfirmationTestStartedPayload(ActiveConfirmationTest active, StateVersion prior, StateVersion current)
         : base(prior, current)
     {
-        ArgumentNullException.ThrowIfNull(active);
+        if (active is null) { throw new ArgumentNullException("active"); }
         if (!active.IsRunning || active.SegmentStartedAt is not { } segmentStartedAt || active.DueAt is not { } dueAt)
         {
             throw new ArgumentException("Confirmation start evidence must retain a running active confirmation.", nameof(active));
@@ -238,7 +238,7 @@ public sealed class HostStageSevenContainmentPayload : HostStageSevenVersionedPa
     internal HostStageSevenContainmentPayload(ContainmentRuntimeState priorContainment, ContainmentRuntimeState currentContainment, ActiveContainmentRitual? ritual, ContainmentIncidentDescriptor? incident, StateVersion prior, StateVersion current)
         : base(prior, current)
     {
-        ArgumentNullException.ThrowIfNull(priorContainment); ArgumentNullException.ThrowIfNull(currentContainment);
+        if (priorContainment is null) { throw new ArgumentNullException("priorContainment"); } if (currentContainment is null) { throw new ArgumentNullException("currentContainment"); }
         PriorContainment = priorContainment; CurrentContainment = currentContainment; Ritual = ritual; Incident = incident;
     }
     public ContainmentRuntimeState PriorContainment { get; }
@@ -257,8 +257,8 @@ public sealed class HostStageSevenContainmentRitualStartedPayload : HostStageSev
         StateVersion current)
         : base(prior, current)
     {
-        ArgumentNullException.ThrowIfNull(containment);
-        ArgumentNullException.ThrowIfNull(ritual);
+        if (containment is null) { throw new ArgumentNullException("containment"); }
+        if (ritual is null) { throw new ArgumentNullException("ritual"); }
         if (containment.State == ContainmentState.STABLE ||
             ritual.StartedAt.IsDefault || ritual.DueAt.IsDefault || ritual.Duration.IsDefault ||
             ritual.Duration <= SimulationDuration.Zero || ritual.DueAt != ritual.StartedAt + ritual.Duration)
@@ -287,7 +287,7 @@ public sealed class HostStageSevenRepairPayload : HostStageSevenVersionedPayload
     internal HostStageSevenRepairPayload(LineRuntimeState priorLine, LineRuntimeState currentLine, PendingLineTransitionDescriptor? pendingTransition, StateVersion prior, StateVersion current)
         : base(prior, current)
     {
-        ArgumentNullException.ThrowIfNull(priorLine); ArgumentNullException.ThrowIfNull(currentLine);
+        if (priorLine is null) { throw new ArgumentNullException("priorLine"); } if (currentLine is null) { throw new ArgumentNullException("currentLine"); }
         PriorLine = priorLine; CurrentLine = currentLine; PendingTransition = pendingTransition;
     }
     public LineRuntimeState PriorLine { get; }
@@ -301,7 +301,7 @@ public sealed class HostStageSevenRepairStartedPayload : HostStageSevenVersioned
     internal HostStageSevenRepairStartedPayload(LineRuntimeState repairingLine, StateVersion prior, StateVersion current)
         : base(prior, current)
     {
-        ArgumentNullException.ThrowIfNull(repairingLine);
+        if (repairingLine is null) { throw new ArgumentNullException("repairingLine"); }
         if (repairingLine.State != LineState.REPAIRING ||
             !LineRuntimeState.TryGetActiveCause(repairingLine.Cause, out var cause) ||
             repairingLine.PendingLogId is not { } pendingLogId || pendingLogId.IsDefault ||
@@ -328,7 +328,7 @@ public sealed class HostStageSevenRepairStartedPayload : HostStageSevenVersioned
 public sealed class HostStageSevenSawStartedPayload : HostStageSevenVersionedPayload
 {
     internal HostStageSevenSawStartedPayload(SawCycleStarted started)
-        : base(started.PriorStateVersion, started.CurrentStateVersion) { ArgumentNullException.ThrowIfNull(started); Cycle = started.Cycle; }
+        : base(started.PriorStateVersion, started.CurrentStateVersion) { if (started is null) { throw new ArgumentNullException("started"); } Cycle = started.Cycle; }
     public ActiveSawCycle Cycle { get; }
 }
 
@@ -337,7 +337,7 @@ public sealed class HostStageSevenSawCompletedPayload : HostStageSevenVersionedP
     internal HostStageSevenSawCompletedPayload(SawCycleCompleted completed, SawQuotaApplicationResult quota)
         : base(completed.PriorStateVersion, completed.CurrentStateVersion)
     {
-        ArgumentNullException.ThrowIfNull(completed); ArgumentNullException.ThrowIfNull(quota);
+        if (completed is null) { throw new ArgumentNullException("completed"); } if (quota is null) { throw new ArgumentNullException("quota"); }
         if (quota.CompletedLogId != completed.Cycle.LogId || !ReferenceEquals(quota.Resolution, completed.Resolution))
         {
             throw new InvalidOperationException("Saw quota evidence must retain the exact completed cycle and processing resolution.");
@@ -390,7 +390,7 @@ public sealed class HostStageSevenLineJamPayload : HostStageSevenVersionedPayloa
 public sealed class HostStageSevenLineNoisePayload : HostStageSevenVersionedPayload
 {
     internal HostStageSevenLineNoisePayload(LineNoiseChanged change, StateVersion version)
-        : base(version, version) { ArgumentNullException.ThrowIfNull(change); Change = change; }
+        : base(version, version) { if (change is null) { throw new ArgumentNullException("change"); } Change = change; }
     public LineNoiseChanged Change { get; }
 }
 
@@ -407,7 +407,7 @@ public sealed class HostStageSevenShiftCompletedPayload : HostStageSevenVersione
     internal HostStageSevenShiftCompletedPayload(ShiftCompletionEvidence completion, StateVersion version)
         : base(version, version)
     {
-        ArgumentNullException.ThrowIfNull(completion);
+        if (completion is null) { throw new ArgumentNullException("completion"); }
         CompletedAt = completion.CompletedAt; HardDeadlineAt = completion.HardDeadlineAt; Reason = completion.Reason;
         AllLogsTerminal = completion.AllLogsTerminal; HardDeadlineReached = completion.HardDeadlineReached; ObjectivesSatisfied = completion.ObjectivesSatisfied;
         ProcessedCount = completion.ProcessedCount; WrittenOffCount = completion.WrittenOffCount;
@@ -438,7 +438,7 @@ public sealed class HostStageSevenPublication
 {
     internal HostStageSevenPublication(EventEnvelope envelope, HostStageSevenPublicationKind kind, ShiftRuntimeState beforeState, ShiftRuntimeState currentState)
     {
-        ArgumentNullException.ThrowIfNull(envelope); ArgumentNullException.ThrowIfNull(beforeState); ArgumentNullException.ThrowIfNull(currentState);
+        if (envelope is null) { throw new ArgumentNullException("envelope"); } if (beforeState is null) { throw new ArgumentNullException("beforeState"); } if (currentState is null) { throw new ArgumentNullException("currentState"); }
         Envelope = envelope; Kind = kind; BeforeState = beforeState; CurrentState = currentState;
     }
     public EventEnvelope Envelope { get; }
@@ -451,7 +451,7 @@ public sealed class HostStageSevenJournalCursor
 {
     internal HostStageSevenJournalCursor(IEventJournal journal)
     {
-        ArgumentNullException.ThrowIfNull(journal);
+        if (journal is null) { throw new ArgumentNullException("journal"); }
         ShiftId = journal.Shift; LastSequence = journal.LastSequence; LastTick = journal.LastTick; LastStateVersion = journal.LastStateVersion; Count = journal.Count;
     }
     public ShiftId ShiftId { get; }
@@ -612,7 +612,7 @@ public sealed class HostStageSevenEventExecutor
 
     private static void ValidateInputs(HostStageOneCompletionExecution one, AcceptedIntentStageExecution two, HostStageThreeDeadlineExecution three, HostStageFourSawExecution four, HostStageFiveFeedExecution five, HostStageSixDerivedExecution six, IEventJournal journal, ImmutableArray<EventId> eventIds, ServerTick tick)
     {
-        ArgumentNullException.ThrowIfNull(one); ArgumentNullException.ThrowIfNull(two); ArgumentNullException.ThrowIfNull(three); ArgumentNullException.ThrowIfNull(four); ArgumentNullException.ThrowIfNull(five); ArgumentNullException.ThrowIfNull(six); ArgumentNullException.ThrowIfNull(journal);
+        if (one is null) { throw new ArgumentNullException("one"); } if (two is null) { throw new ArgumentNullException("two"); } if (three is null) { throw new ArgumentNullException("three"); } if (four is null) { throw new ArgumentNullException("four"); } if (five is null) { throw new ArgumentNullException("five"); } if (six is null) { throw new ArgumentNullException("six"); } if (journal is null) { throw new ArgumentNullException("journal"); }
         if (eventIds.IsDefault) throw new ArgumentException("Event identities must be an initialized immutable array.", nameof(eventIds));
         if (eventIds.Any(id => id.IsDefault)) throw new ArgumentException("Every event identity must be initialized.", nameof(eventIds));
         if (tick.IsDefault) throw new ArgumentException("Current tick must be initialized.", nameof(tick));
@@ -650,7 +650,7 @@ public sealed class HostStageSevenEventExecutor
 
     private static void RequireStateIdentity(ShiftRuntimeState state, ShiftId shift, ShiftSeed seed)
     {
-        ArgumentNullException.ThrowIfNull(state);
+        if (state is null) { throw new ArgumentNullException("state"); }
         if (state.ShiftId.IsDefault || state.StateVersion.IsDefault || state.ShiftId != shift || state.ShiftSeed != seed) throw new ArgumentException("Every retained runtime state must share the exact shift identity and seed.");
     }
 

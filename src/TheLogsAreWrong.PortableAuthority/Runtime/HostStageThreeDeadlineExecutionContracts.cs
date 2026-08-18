@@ -94,15 +94,15 @@ public sealed class HostStageThreeDeadlineExecutor
         ContainmentConfiguration containmentConfiguration,
         AnomalyCatalog anomalyCatalog)
     {
-        ArgumentNullException.ThrowIfNull(initialState);
+        if (initialState is null) { throw new ArgumentNullException("initialState"); }
         if (currentTick.IsDefault)
         {
             throw new ArgumentException("Current tick must be initialized.", nameof(currentTick));
         }
 
-        ArgumentNullException.ThrowIfNull(containmentConfiguration);
-        ArgumentNullException.ThrowIfNull(anomalyCatalog);
-        ArgumentNullException.ThrowIfNull(anomalyCatalog.Definitions);
+        if (containmentConfiguration is null) { throw new ArgumentNullException("containmentConfiguration"); }
+        if (anomalyCatalog is null) { throw new ArgumentNullException("anomalyCatalog"); }
+        if (anomalyCatalog.Definitions is null) { throw new ArgumentNullException("anomalyCatalog.Definitions"); }
 
         var intakeResult = _intakeDeadlineExpirationService.Expire(initialState, currentTick);
         var intakeStep = new IntakeDeadlineExpirationStageStep(initialState, intakeResult);

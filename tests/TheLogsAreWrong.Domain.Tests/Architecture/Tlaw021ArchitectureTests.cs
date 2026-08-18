@@ -16,7 +16,7 @@ public sealed class Tlaw021ArchitectureTests
     public void Repaired_auto_feed_normal_planning_source_is_non_vacuous_cross_platform_and_domain_pure()
     {
         var root = FindRoot();
-        var sourcePath = Path.Combine(root, "src", "TheLogsAreWrong.Domain", "Scheduler", "RepairAutoFeedNormalFeedPlanningContracts.cs");
+        var sourcePath = Path.Combine(root, "src", "TheLogsAreWrong.PortableAuthority", "Scheduler", "RepairAutoFeedNormalFeedPlanningContracts.cs");
         Assert.True(File.Exists(sourcePath));
         var source = File.ReadAllText(sourcePath);
 

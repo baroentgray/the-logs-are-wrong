@@ -176,13 +176,13 @@ public sealed class AcceptedIntentStageExecutor
         AnomalyCatalog anomalyCatalog,
         ContainmentConfiguration containmentConfiguration)
     {
-        ArgumentNullException.ThrowIfNull(initialState);
-        ArgumentNullException.ThrowIfNull(batch);
-        ArgumentNullException.ThrowIfNull(schedulerConfiguration);
-        ArgumentNullException.ThrowIfNull(activeTools);
-        ArgumentNullException.ThrowIfNull(initialLineNoise);
-        ArgumentNullException.ThrowIfNull(anomalyCatalog);
-        ArgumentNullException.ThrowIfNull(containmentConfiguration);
+        if (initialState is null) { throw new ArgumentNullException("initialState"); }
+        if (batch is null) { throw new ArgumentNullException("batch"); }
+        if (schedulerConfiguration is null) { throw new ArgumentNullException("schedulerConfiguration"); }
+        if (activeTools is null) { throw new ArgumentNullException("activeTools"); }
+        if (initialLineNoise is null) { throw new ArgumentNullException("initialLineNoise"); }
+        if (anomalyCatalog is null) { throw new ArgumentNullException("anomalyCatalog"); }
+        if (containmentConfiguration is null) { throw new ArgumentNullException("containmentConfiguration"); }
         if (batch.ShiftId != initialState.ShiftId)
         {
             throw new ArgumentException(
