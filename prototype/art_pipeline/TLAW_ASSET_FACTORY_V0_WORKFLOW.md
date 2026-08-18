@@ -1,6 +1,8 @@
 # THE LOGS ARE WRONG — Asset Factory v0 Workflow
 
 Status: **working production workflow**  
+Workflow revision: **v0.1**
+
 Purpose: experimental 3D asset production and preparation in the parallel prototype before possible promotion into production.
 
 ## 1. Core principle
@@ -142,6 +144,12 @@ If a browser gives an image an arbitrary filename, the embedded Asset ID must al
 
 The marker should be small, technical, consistently positioned, outside the useful object/texture area, and clearly readable.
 
+The marker is outside the usable area but **inside the file**. Any consumer that maps a deliverable onto geometry must remove it first:
+
+- the Asset Card states the usable rectangle where it is known;
+- where it is not, the consumer detects the marker band and reports the crop it applied;
+- a map is never used with the marker still on it.
+
 If image generation cannot guarantee exact text, do not invent or alter the Asset ID. Add the marker as a technical overlay after generation.
 
 ## 4. Revisions
@@ -153,6 +161,16 @@ Approved visual deliverables receive a revision:
 A materially changed variant receives a new revision.
 
 Claude should work from a specific approved revision, not from “the latest image in chat.”
+
+Derived maps — normal, roughness, height and similar, produced from an approved source rather than delivered — are **implementation artifacts by default**. They inherit the revision of the source they were derived from, and are named so that this is visible.
+
+A derived map may be promoted to an approved deliverable in its own right, with its own review and revision, when it is worth maintaining independently of its source.
+
+### Data map handling
+
+Data maps carry values rather than colour, and are imported as non-colour/linear.
+
+Compression is **not** forbidden. It is a declared choice, and the declared policy is validated against the uncompressed source for the signal the map actually carries: block compression can quantise a low-amplitude map to nothing while leaving a file that looks correct.
 
 ## 5. GitHub package
 
@@ -179,6 +197,19 @@ notes_for_claude.md
 Do not create a full speculative package “just in case.”
 
 The asset package directory is authoritative only for files that have passed package verification. `_incoming/` is never an authoritative source.
+
+### Asset Card machine-readable dimensions
+
+`asset_card.md` carries the asset's hard numbers in a fenced block as well as in prose, so a built object can be compared with them without anyone reading:
+
+```text
+dimensions:
+  length_m: 2.40
+  diameter_m: 0.38
+  tolerance_m: 0.02
+```
+
+Prose stays authoritative for intent. The block exists so a dimension can be checked rather than remembered.
 
 ## 6. provenance.md
 
@@ -267,7 +298,9 @@ For a new production candidate:
 - origin has an explicit functional purpose;
 - movable-part pivots are placed at the real movement/hinge center;
 - final transforms are normalized where doing so does not break required structure;
-- changing the visual asset must not require changing gameplay logic.
+- changing the visual asset must not require changing gameplay logic;
+- the Asset Card's dimensions govern the asset; an existing prototype scene is **not** rebuilt to match them, and a scene-sized variant is produced through the asset's authoritative modeling/generation route rather than by editing the delivered asset;
+- declared dimensions are verified on the finished object after all surface relief is applied, not on the nominal shape it was grown from.
 
 ## 10. Prototype role
 
@@ -300,6 +333,16 @@ Existing assets may later receive one of these statuses:
 `DISCARD` — experiment no longer useful.
 
 Do not perform a mass classification in advance. Classify when the asset becomes relevant.
+
+### Acceptance is a separate axis
+
+The statuses above classify **promotion readiness**. They do not record whether anyone has accepted the asset. The two axes are independent and are tracked separately.
+
+Acceptance states:
+
+`PROTOTYPE_ACCEPTED` — the owner has accepted the asset visually in the prototype.
+
+Acceptance implies no promotion and no production integration. An accepted asset may still be classified `SALVAGE_VISUAL`; an asset may be promotion-ready and never accepted.
 
 ## 12. Factory automation
 
@@ -335,6 +378,7 @@ Responsible for:
 - maps;
 - visual references/art targets;
 - anomaly-sign readability;
+- source maps, with their usable area stated where known;
 - image prompts;
 - Blender handoff;
 - visual consistency with TLAW;
@@ -348,6 +392,7 @@ Primary Blender production worker for:
 
 - procedural/manual modeling;
 - materials and UV work;
+- derived maps (normal/roughness/height) built from approved sources;
 - hierarchy;
 - pivots and sockets;
 - normalization;
@@ -389,30 +434,62 @@ Claude and Grok should first demonstrate how far they can take the existing char
 
 **Mixamo remains an available fallback**, but is not adopted by default and is not ruled out.
 
-## 15. Current first Factory v0 experiment
+## 15. Completed reference case: TLAW_LOG_TEST_01
 
-Asset:
+The first asset to run the whole Factory v0 loop.
 
-`TLAW_LOG_TEST_01`
+Goal: determine whether Claude could build a convincing parameterized TLAW production log in Blender without Hyper3D.
 
-Goal: determine whether Claude can build a convincing parameterized TLAW production log in Blender without Hyper3D.
+Outcome: yes. The asset was built from the approved `R01` package to the Asset Card's exact dimensions, and the owner accepted it visually in the prototype. Package status `APPROVED_READY`, asset acceptance `PROTOTYPE_ACCEPTED`. It was not promoted and the prototype line was not converted to the card's dimensions.
 
-First visual package:
+The full postmortem — the route as it actually went, the faults that cost the most, the manual steps that repeat, and the changes that produced revision v0.1 of this workflow — is in:
 
-1. one `BARK` map → review;
-2. one normal-log `REFERENCE` → review;
-3. explicit visual approval;
-4. commit/update `asset_card.md` and `provenance.md`;
-5. if direct binary upload is unavailable, owner downloads both approved PNG files and places them in `_incoming/`;
-6. Claude identifies, canonically renames, moves, commits and pushes both PNG files into `prototype/art_pipeline/TLAW_LOG_TEST_01/`;
-7. Claude verifies the package and updates `provenance.md` from `APPROVED_VISUALS_PENDING_BINARY_UPLOAD` to `APPROVED_READY`;
-8. only then does Claude begin building the parameterized log from the approved GitHub package.
+`prototype/art_pipeline/TLAW_LOG_TEST_01/factory_case_report.md`
 
-Expected canonical visual filenames for R01:
+Read it before starting the next asset. Most of the rules added in v0.1 are only intelligible next to the failure that produced them.
 
-```text
-TLAW_LOG_TEST_01_BARK_R01.png
-TLAW_LOG_TEST_01_REFERENCE_R01.png
-```
+## 16. Engine import gate and review parity
 
-Do not expand this first experiment with extra maps, multiple log variants, or anomaly signs until the minimal test is complete.
+An asset is not finished when it exports. Between the DCC and the screen sit an exporter and an importer, and both rewrite data silently.
+
+### Dimension check after import
+
+The deliverable report states the asset's measured size **in the consuming engine**, not only in the DCC. Disagreement with the Asset Card is a defect.
+
+An asset can be correct to three decimals in the DCC and arrive in the engine at one hundredth of its size: the unit conversion is parked on the outermost object, and importers commonly compensate mesh nodes without compensating that parent. No DCC-side measurement catches this.
+
+### Mandatory import sanity gate
+
+The gate is mandatory and deliberately narrow. It holds checks for failure modes already observed in a completed case, and it grows only when a new one is observed.
+
+Before an imported asset is judged, confirm:
+
+- measured size matches the Asset Card within tolerance;
+- every mesh that samples a texture has a UV set;
+- tangents exist wherever a tangent-space map is used;
+- the expected materials landed on the expected parts;
+- data maps are imported as non-colour/linear, and any compression applied to them matches the declared, validated policy;
+- no placeholder is rendering alongside the asset that replaced it.
+
+### Visual replacement is explicit, never by name
+
+When a modelled asset replaces a greybox or placeholder, the placeholder is disabled through an explicit reference — never by matching a fragment of the asset's name.
+
+A name-fragment match silently fails for the first asset whose name lacks the fragment, and it fails by rendering both objects at once. That reads as a material problem rather than a wiring problem, and it can absorb an unlimited number of correct fixes without showing any of them.
+
+### Preview source parity
+
+Preview renders supplied for owner review are made from the same prepared maps the engine consumes, and state that they are.
+
+A review comparison whose two sides differ in more than the thing under test answers nothing.
+
+### Geometry and material: default division
+
+Unless the Asset Card says otherwise:
+
+- geometry carries silhouette and large form;
+- maps carry surface.
+
+Geometry that also draws what the map draws prints a second, contradictory set of the same features.
+
+For **tiling or world-scale materials**, surface detail is specified in metres of the finished asset, so a larger asset receives more detail cells rather than larger ones. This does not apply to uniquely unwrapped or hand-authored maps, where detail follows the layout rather than the world.
