@@ -19,9 +19,9 @@ Production gameplay code, colliders, and interactions must not become dependent 
 
 For a new asset, the workshop proceeds in this order:
 
-**MAP → REVIEW → REFERENCE → REVIEW → APPROVAL → GITHUB → CLAUDE**
+**MAP → REVIEW → REFERENCE → REVIEW → APPROVAL → TEXT COMMIT → BINARY INBOX → CLAUDE SYNC → PACKAGE VERIFY → READY**
 
-Do not automatically skip a review step.
+Do not automatically skip a review or handoff step.
 
 ### MAP
 
@@ -45,9 +45,75 @@ The owner reviews the reference separately.
 
 ### APPROVAL
 
-The package becomes usable by Claude only after explicit owner approval.
+Visuals are approved only after explicit owner approval.
 
-Before that point, generated materials and references are not authoritative production sources.
+Approval of the visuals does **not** mean the GitHub package is complete. If approved binaries are not yet stored in the repository, use the intermediate package status:
+
+`APPROVED_VISUALS_PENDING_BINARY_UPLOAD`
+
+### TEXT COMMIT
+
+The workshop may create or update text package files in GitHub immediately after visual approval, including:
+
+- `asset_card.md`;
+- `provenance.md`;
+- optional handoff/notes files when they are actually needed.
+
+If the approved PNG/GLB/etc. binaries are not yet present in GitHub, `provenance.md` must remain in `APPROVED_VISUALS_PENDING_BINARY_UPLOAD` state. This is a valid intermediate state, not a failed package.
+
+### BINARY INBOX
+
+When the workshop cannot directly store an approved binary in GitHub, the owner performs the minimum manual bridge:
+
+1. download the approved binary from the chat/tool that produced it;
+2. copy it into the local Asset Factory inbox;
+3. do not manually sort or rename it unless convenient.
+
+Recommended local inbox:
+
+```text
+prototype/art_pipeline/_incoming/
+```
+
+`_incoming/` is a temporary local staging area, **not** an authoritative package location. It should be excluded from normal Git commits so arbitrary browser filenames and unverified binaries are not accidentally promoted.
+
+Downloaded filenames are not trusted. The embedded marker `ASSET_ID · TYPE · REVISION` is the preferred machine-readable recovery key.
+
+If a binary is directly available to a GitHub-writing tool as bytes/base64/file input, the inbox step may be skipped, but package verification is still required.
+
+### CLAUDE SYNC
+
+Local Claude is the default binary-ingestion worker when an inbox handoff is required.
+
+Claude should:
+
+1. inspect files in `_incoming/`;
+2. identify approved binaries from their embedded Asset ID / type / revision and the existing `provenance.md`;
+3. refuse to guess if identity is ambiguous;
+4. rename identified files to the canonical package filenames;
+5. move/copy them into the correct `prototype/art_pipeline/<ASSET_ID>/` package;
+6. verify that the expected files are present;
+7. commit and push the classified binaries;
+8. update `provenance.md` only after verification succeeds.
+
+The owner should not have to manually sort browser-generated filenames.
+
+### PACKAGE VERIFY
+
+Before a package becomes usable by Claude for production work, verify at minimum:
+
+- expected binary files physically exist in the asset package;
+- Asset ID matches the package folder and metadata;
+- TYPE matches the declared visual source (`BARK`, `REFERENCE`, etc.);
+- REVISION matches the approved revision;
+- `provenance.md` names the files that actually exist;
+- no ambiguous or unapproved binary was promoted from `_incoming/`.
+
+After successful verification, package status becomes:
+
+`APPROVED_READY`
+
+Only `APPROVED_READY` opens the Claude production gate.
 
 ## 3. Asset ID
 
@@ -112,6 +178,8 @@ notes_for_claude.md
 
 Do not create a full speculative package “just in case.”
 
+The asset package directory is authoritative only for files that have passed package verification. `_incoming/` is never an authoritative source.
+
 ## 6. provenance.md
 
 Minimum contents:
@@ -138,11 +206,20 @@ Notes:
 - ...
 ```
 
+Relevant package statuses:
+
+- `APPROVED_VISUALS_PENDING_BINARY_UPLOAD` — visuals approved, required binaries not yet verified in GitHub;
+- `APPROVED_READY` — text + required binaries are present, verified, and ready for Claude production use.
+
+Do not mark a package `APPROVED_READY` merely because the visuals were approved in chat.
+
 ## 7. Claude gate
 
-Claude begins production work from a visual package only after explicit confirmation that the package is approved and stored.
+Claude begins production work from a visual package only after the package is `APPROVED_READY`.
 
-Claude should consume the approved source from GitHub rather than reconstructing it from chat history.
+Claude should consume the approved source from the verified GitHub package rather than reconstructing it from chat history.
+
+If the package is `APPROVED_VISUALS_PENDING_BINARY_UPLOAD`, Claude may perform the binary-ingestion/sync work described above, but must not start the asset-production task that depends on those visuals until verification completes.
 
 ## 8. Blender / asset structure
 
@@ -234,6 +311,8 @@ First, several different assets should manually pass through:
 
 After repeated operations are observed, Claude may automate them with Blender/Python tooling.
 
+Binary ingestion from `_incoming/` is a legitimate early automation target because it removes manual sorting without changing the artistic or gameplay contract.
+
 Do not pre-emptively add:
 
 - a universal asset queue;
@@ -258,7 +337,10 @@ Responsible for:
 - anomaly-sign readability;
 - image prompts;
 - Blender handoff;
-- visual consistency with TLAW.
+- visual consistency with TLAW;
+- text package creation/update after visual approval where GitHub access permits it.
+
+The workshop does not falsely claim that a binary was stored in GitHub when the image-generation environment did not expose that binary for upload.
 
 ### Claude
 
@@ -270,6 +352,7 @@ Primary Blender production worker for:
 - pivots and sockets;
 - normalization;
 - previews;
+- binary inbox ingestion/sync when required;
 - later Blender-side automation.
 
 ### Hyper3D
@@ -294,6 +377,8 @@ Production software engineering:
 
 Final visual and experiential acceptance.
 
+For binary handoff, the owner's required manual action should be limited to downloading an approved file and placing it into the local inbox when direct binary upload is unavailable.
+
 Automated inspection may validate measurable properties, but it must not claim that an asset looks, reads, or feels correct in the game unless the owner has confirmed it.
 
 ## 14. Character fallback
@@ -316,8 +401,18 @@ First visual package:
 
 1. one `BARK` map → review;
 2. one normal-log `REFERENCE` → review;
-3. explicit approval;
-4. save approved package in GitHub;
-5. owner tells Claude the package is ready for use.
+3. explicit visual approval;
+4. commit/update `asset_card.md` and `provenance.md`;
+5. if direct binary upload is unavailable, owner downloads both approved PNG files and places them in `_incoming/`;
+6. Claude identifies, canonically renames, moves, commits and pushes both PNG files into `prototype/art_pipeline/TLAW_LOG_TEST_01/`;
+7. Claude verifies the package and updates `provenance.md` from `APPROVED_VISUALS_PENDING_BINARY_UPLOAD` to `APPROVED_READY`;
+8. only then does Claude begin building the parameterized log from the approved GitHub package.
+
+Expected canonical visual filenames for R01:
+
+```text
+TLAW_LOG_TEST_01_BARK_R01.png
+TLAW_LOG_TEST_01_REFERENCE_R01.png
+```
 
 Do not expand this first experiment with extra maps, multiple log variants, or anomaly signs until the minimal test is complete.
