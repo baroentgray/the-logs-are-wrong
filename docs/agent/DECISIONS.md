@@ -454,3 +454,107 @@ production H2 migration requires a new, separately scoped owner
 implementation-start authorization after TLAW-063 is accepted.
 
 Sources: [Issue #145](https://github.com/baroentgray/the-logs-are-wrong/issues/145), [owner H2 selection comment 5309295556](https://github.com/baroentgray/the-logs-are-wrong/issues/145#issuecomment-5309295556), [Phase-B implementation-start comment 5309314299](https://github.com/baroentgray/the-logs-are-wrong/issues/145#issuecomment-5309314299), [authoritative handoff comment 5309325502](https://github.com/baroentgray/the-logs-are-wrong/issues/145#issuecomment-5309325502), [control-center Phase-A pre-review PASS](https://github.com/baroentgray/the-logs-are-wrong/pull/146#pullrequestreview-4947116130), [D-011 Phase-A authoritative review PASS](https://github.com/baroentgray/the-logs-are-wrong/pull/146#pullrequestreview-4947130838), [TLAW-063 Phase-A dossier](GATE2_UNITY_HOST_TICK_ARCHITECTURE_PROOF.md), and [D-019](#d-019--owner-selects-extracted-portable-authoritative-core-for-domainunity).
+
+## D-021 — Owner selects the plain-C# host session and low-desync multiplayer boundary
+
+After TLAW-065 proved the Unity host-runtime boundary on exact candidate
+`213c592a5bd454e537b181140253e2e1c6860e92`, D-011 authoritative review
+`4968866370` returned PASS / APPROVE with zero findings, and the owner selected
+the lowest-complexity, lowest-desync production direction for the later host
+runtime and Gate-3 networking boundary.
+
+### Relationship to D-019 and D-020
+
+D-019 and D-020 remain intact and authoritative. This entry does not reverse the
+D-020 H2 selection: the candidate labels refer to different architecture
+questions.
+
+D-020 H2 selected how the one semantic `HostTickExecutionService` composition
+joins `TheLogsAreWrong.PortableAuthority`. TLAW-065 H1 selects the outer runtime
+session boundary that owns carried authoritative state and invokes that already
+shared composer. The existing `HostTickExecutionService` remains the sole
+semantic seven-stage host-tick authority.
+
+### H1 — plain C# authoritative host session
+
+The production direction is one plain C# `HostSession`-shaped boundary owning
+the authoritative runtime-state lifetime. Unity lifecycle objects may hold or
+schedule that session, but `MonoBehaviour`, static state, networking adapters,
+and clients do not become simulation authorities and do not recreate host-stage
+semantics.
+
+A running production host process has exactly one explicit owner of that
+session. Duplicate production host authority fails closed. The authoritative
+session is not a static/global singleton.
+
+### U1 — deterministic host-owned event identity
+
+Authoritative `EventId` values are host-owned and deterministic from
+host-authoritative shift/event sequencing. Unity and clients do not manufacture
+authoritative event identities.
+
+A later implementation must resolve the TLAW-065 event-identity blocker inside
+the authoritative boundary without exposing a Unity-side publication-plan copy
+or requiring an external plan-size query. The exact API and representation are
+left to that separately reviewed implementation, but replay-safe deterministic
+identity from authoritative sequencing is frozen here.
+
+### U2 — exact integer authoritative time
+
+One simulation tick represents one second under the existing integer
+`ServerTick` / `SimulationDuration` contract. Render FPS is not authoritative
+time. Production scheduling must use exact/integer time and must not use a
+float/double simulation accumulator.
+
+Due authoritative ticks must not be silently dropped. This decision deliberately
+does not freeze an arbitrary per-frame catch-up cap; any later performance cap
+or stall policy requires separate measured evidence and must preserve the
+host-authoritative timeline.
+
+### U3 — one explicit production host owner
+
+Exactly one explicit production owner creates, owns, resets, and disposes the
+running `HostSession`. A second production session for the same running host is
+an invariant violation and fails closed. Single ownership is enforced around the
+plain C# session rather than by making authoritative state static/global.
+
+### U4 — validated portable configuration enters Unity
+
+YAML remains outside the accepted three-plugin Unity runtime boundary. Existing
+configuration loading/validation remains outside Unity runtime; Unity consumes
+already validated PortableAuthority-owned configuration data.
+
+This decision does not authorize `TheLogsAreWrong.Config.Yaml`, `YamlDotNet`,
+`TheLogsAreWrong.Domain.dll`, or a fourth plugin inside Gate 2, and it does not
+create a second Unity-specific configuration semantics path.
+
+### Gate-3 desync policy
+
+The later Gate-3 networking implementation keeps one simulation truth on the
+host:
+
+- clients send intents; the host validates and orders them;
+- clients consume authoritative events and snapshots rather than independently
+  advancing logs, scheduler, deadlines, quota, containment, procedures, or saw
+  state;
+- authoritative event/state sequence gaps are resync conditions rather than a
+  reason to continue from divergent client state;
+- gameplay-state client prediction is not required for the initial Gate-3
+  implementation;
+- locally responsive actor movement remains compatible with host validation of
+  interactions.
+
+The goal is deliberately low-complexity and low-desync: deterministic host-owned
+state, ordering, identity, and time, plus recovery through authoritative
+snapshot/event boundaries instead of peer simulation convergence.
+
+### Work not authorized by this decision record
+
+This entry records an already-made owner selection only. It does not authorize
+or implement the production `HostSession`, EventId generation, Unity runtime
+owner, clock/catch-up code, configuration ingestion code, FishNet/
+FishySteamworks/Steamworks integration, prediction/reconciliation, Gate 3,
+gameplay, D-016, Ready, merge, or cleanup. Each production increment remains
+separately owner-gated.
+
+Sources: [Issue #151](https://github.com/baroentgray/the-logs-are-wrong/issues/151), [PR #152](https://github.com/baroentgray/the-logs-are-wrong/pull/152), [D-011 authoritative review 4968866370](https://github.com/baroentgray/the-logs-are-wrong/pull/152#pullrequestreview-4968866370), [Issue #153](https://github.com/baroentgray/the-logs-are-wrong/issues/153), [BAR-109](https://linear.app/baronet/issue/BAR-109/tlaw-066-record-d-021-host-runtime-and-low-desync-multiplayer-boundary), `docs/NETWORK_RULES.md`, and [D-020](#d-020--owner-selects-h2-for-the-unity-host-tick-composition-boundary).
