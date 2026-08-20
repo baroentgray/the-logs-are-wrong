@@ -76,7 +76,6 @@ namespace TheLogsAreWrong.Gate2.Tests
                 AcceptedIntentTickBatchFactory.Create(state.ShiftId, tick, ImmutableArray<AuthoritativeAcceptedIntent>.Empty),
                 ImmutableHashSet<ItemId>.Empty,
                 journal,
-                ImmutableArray.Create(EventId.From("event-1")),
                 tick,
                 shift.Scheduler,
                 shift,
