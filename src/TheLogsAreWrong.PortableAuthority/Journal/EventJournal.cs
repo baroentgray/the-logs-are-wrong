@@ -29,6 +29,15 @@ public interface IEventJournal
     JournalAppendOutcome TryAppend(EventEnvelope envelope);
 }
 
+/// <summary>
+/// Explicit all-or-nothing journal boundary required by authoritative Stage Seven publication.
+/// A non-accepted result or thrown pre-commit validation must leave the exposed cursor and events unchanged.
+/// </summary>
+public interface IAtomicEventJournal : IEventJournal
+{
+    JournalAppendOutcome TryAppendBatch(IReadOnlyList<EventEnvelope> envelopes);
+}
+
 public sealed class JournalInvariantViolationException : InvalidOperationException
 {
     public JournalInvariantViolationException(JournalAppendOutcome outcome)
@@ -40,7 +49,7 @@ public sealed class JournalInvariantViolationException : InvalidOperationExcepti
     public JournalAppendOutcome Outcome { get; }
 }
 
-public sealed class InMemoryEventJournal : IEventJournal
+public sealed class InMemoryEventJournal : IAtomicEventJournal
 {
     private readonly List<EventEnvelope> _events = [];
     private readonly IReadOnlyList<EventEnvelope> _readOnlyEvents;
@@ -77,7 +86,7 @@ public sealed class InMemoryEventJournal : IEventJournal
 
     public JournalAppendOutcome TryAppend(EventEnvelope envelope)
     {
-        var outcome = Validate(envelope);
+        var outcome = Validate(envelope, LastSequence, LastTick, LastStateVersion);
         if (outcome != JournalAppendOutcome.Accepted)
         {
             return outcome;
@@ -90,7 +99,50 @@ public sealed class InMemoryEventJournal : IEventJournal
         return JournalAppendOutcome.Accepted;
     }
 
-    private JournalAppendOutcome Validate(EventEnvelope envelope)
+    /// <summary>
+    /// Validates the complete contiguous append against a staged cursor, then commits all envelopes
+    /// together. A rejected or thrown pre-commit validation leaves the exposed journal unchanged.
+    /// </summary>
+    public JournalAppendOutcome TryAppendBatch(IReadOnlyList<EventEnvelope> envelopes)
+    {
+        if (envelopes is null)
+        {
+            throw new ArgumentNullException(nameof(envelopes));
+        }
+
+        var sequence = LastSequence;
+        var tick = LastTick;
+        var stateVersion = LastStateVersion;
+        foreach (var envelope in envelopes)
+        {
+            var outcome = Validate(envelope, sequence, tick, stateVersion);
+            if (outcome != JournalAppendOutcome.Accepted)
+            {
+                return outcome;
+            }
+
+            sequence = envelope.Sequence;
+            tick = envelope.ServerTick;
+            stateVersion = envelope.StateVersionAfter;
+        }
+
+        if (envelopes.Count == 0)
+        {
+            return JournalAppendOutcome.Accepted;
+        }
+
+        _events.AddRange(envelopes);
+        LastSequence = sequence;
+        LastTick = tick;
+        LastStateVersion = stateVersion;
+        return JournalAppendOutcome.Accepted;
+    }
+
+    private JournalAppendOutcome Validate(
+        EventEnvelope envelope,
+        EventSequence lastSequence,
+        ServerTick lastTick,
+        StateVersion lastStateVersion)
     {
         if (HasDefaultField(envelope))
         {
@@ -102,10 +154,10 @@ public sealed class InMemoryEventJournal : IEventJournal
             return JournalAppendOutcome.ShiftMismatch;
         }
 
-        var expectedSequence = LastSequence.Next();
+        var expectedSequence = lastSequence.Next();
         if (envelope.Sequence < expectedSequence)
         {
-            return envelope.Sequence == LastSequence
+            return envelope.Sequence == lastSequence
                 ? JournalAppendOutcome.Duplicate
                 : JournalAppendOutcome.OutOfOrder;
         }
@@ -115,17 +167,17 @@ public sealed class InMemoryEventJournal : IEventJournal
             return JournalAppendOutcome.SequenceGap;
         }
 
-        if (envelope.ServerTick < LastTick)
+        if (envelope.ServerTick < lastTick)
         {
             return JournalAppendOutcome.TickRegression;
         }
 
-        if (envelope.StateVersionAfter < LastStateVersion)
+        if (envelope.StateVersionAfter < lastStateVersion)
         {
             return JournalAppendOutcome.StateVersionRegression;
         }
 
-        if (envelope.StateVersionAfter > LastStateVersion && (!LastStateVersion.TryNext(out var nextVersion) || envelope.StateVersionAfter != nextVersion))
+        if (envelope.StateVersionAfter > lastStateVersion && (!lastStateVersion.TryNext(out var nextVersion) || envelope.StateVersionAfter != nextVersion))
         {
             return JournalAppendOutcome.StateVersionSkip;
         }

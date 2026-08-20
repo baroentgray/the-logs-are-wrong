@@ -206,7 +206,7 @@ public sealed class Tlaw042ArchitectureTests
         Assert.Equal(typeof(LineNoiseRuntimeState), parameterTypes[3]);
         Assert.Equal(typeof(HostTickProgressionEvidence), parameterTypes[4]);
         Assert.Equal(typeof(ShiftLifecycleRuntimeState), parameterTypes[5]);
-        Assert.Equal(typeof(IEventJournal), parameterTypes[8]);
+        Assert.Equal(typeof(IAtomicEventJournal), parameterTypes[8]);
 
         Assert.DoesNotContain(typeof(ShiftRuntimeState).GetProperties(), property => typeof(QuotaRuntimeState).IsAssignableFrom(property.PropertyType));
         Assert.DoesNotContain(typeof(QuotaRuntimeState).GetProperties(), property => typeof(ShiftRuntimeState).IsAssignableFrom(property.PropertyType));

@@ -1038,7 +1038,7 @@ public sealed class HostStageSevenEventExecutionTests
         return true;
     }
 
-    private static HostStageSevenEventExecution Execute(StageExecution execution, IEventJournal journal, ImmutableArray<EventId> eventIds, ServerTick tick) =>
+    private static HostStageSevenEventExecution Execute(StageExecution execution, IAtomicEventJournal journal, ImmutableArray<EventId> eventIds, ServerTick tick) =>
         new HostStageSevenEventExecutor().Execute(
             execution.StageOne, execution.StageTwo, execution.StageThree, execution.StageFour, execution.StageFive, execution.StageSix,
             journal, tick);
@@ -1168,7 +1168,7 @@ public sealed class HostStageSevenEventExecutionTests
 
     private sealed record JournalSnapshot(int Count, EventSequence LastSequence, ServerTick LastTick, StateVersion LastStateVersion, EventEnvelope[] Events);
 
-    private sealed class CursorJournal : IEventJournal
+    private sealed class CursorJournal : IAtomicEventJournal
     {
         public CursorJournal(ShiftId shift, EventSequence lastSequence, ServerTick lastTick, StateVersion lastStateVersion)
         {
@@ -1193,9 +1193,15 @@ public sealed class HostStageSevenEventExecutionTests
             AppendAttempts++;
             throw new InvalidOperationException("Preflight test journal must not append.");
         }
+
+        public JournalAppendOutcome TryAppendBatch(IReadOnlyList<EventEnvelope> envelopes)
+        {
+            AppendAttempts++;
+            throw new InvalidOperationException("Preflight test journal must not append.");
+        }
     }
 
-    private sealed class ReplayTailJournal : IEventJournal
+    private sealed class ReplayTailJournal : IAtomicEventJournal
     {
         public ReplayTailJournal(ShiftId shift, ImmutableArray<EventEnvelope> events)
         {
@@ -1218,6 +1224,12 @@ public sealed class HostStageSevenEventExecutionTests
         public void Append(EventEnvelope envelope) => throw new InvalidOperationException("An already-published replay must not append.");
 
         public JournalAppendOutcome TryAppend(EventEnvelope envelope)
+        {
+            AppendAttempts++;
+            throw new InvalidOperationException("An already-published replay must not append.");
+        }
+
+        public JournalAppendOutcome TryAppendBatch(IReadOnlyList<EventEnvelope> envelopes)
         {
             AppendAttempts++;
             throw new InvalidOperationException("An already-published replay must not append.");
@@ -1245,7 +1257,7 @@ internal static class HostStageSevenEventExecutionTestAdapter
         HostStageFourSawExecution stageFour,
         HostStageFiveFeedExecution stageFive,
         HostStageSixDerivedExecution stageSix,
-        IEventJournal journal,
+        IAtomicEventJournal journal,
         ImmutableArray<EventId> ignoredLegacyEventIds,
         ServerTick currentTick) =>
         executor.Execute(stageOne, stageTwo, stageThree, stageFour, stageFive, stageSix, journal, currentTick);

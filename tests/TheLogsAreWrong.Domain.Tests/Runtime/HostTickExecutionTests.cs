@@ -35,7 +35,7 @@ public sealed class HostTickExecutionTests
             {
                 typeof(ShiftRuntimeState), typeof(QuotaRuntimeState), typeof(MovementNoiseRuntimeState),
                 typeof(LineNoiseRuntimeState), typeof(HostTickProgressionEvidence), typeof(ShiftLifecycleRuntimeState),
-                typeof(AcceptedIntentTickBatch), typeof(ImmutableHashSet<ItemId>), typeof(IEventJournal),
+                typeof(AcceptedIntentTickBatch), typeof(ImmutableHashSet<ItemId>), typeof(IAtomicEventJournal),
                 typeof(ServerTick), typeof(SchedulerConfiguration),
                 typeof(ShiftConfiguration), typeof(ContainmentConfiguration), typeof(AnomalyCatalog)
             },

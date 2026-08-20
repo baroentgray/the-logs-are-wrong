@@ -526,8 +526,6 @@ public sealed class HostStageSevenNoNewPublication : HostStageSevenEventExecutio
 
 public sealed class HostStageSevenEventExecutor
 {
-    private readonly JournaledMutationCommitService _mutations = new();
-
     public HostStageSevenEventExecution Execute(
         HostStageOneCompletionExecution stageOne,
         AcceptedIntentStageExecution stageTwo,
@@ -535,7 +533,7 @@ public sealed class HostStageSevenEventExecutor
         HostStageFourSawExecution stageFour,
         HostStageFiveFeedExecution stageFive,
         HostStageSixDerivedExecution stageSix,
-        IEventJournal journal,
+        IAtomicEventJournal journal,
         ServerTick currentTick)
     {
         ValidateInputs(stageOne, stageTwo, stageThree, stageFour, stageFive, stageSix, journal, currentTick);
@@ -578,42 +576,59 @@ public sealed class HostStageSevenEventExecutor
         var assignedEventIds = CreateEventIds(stageOne.InitialState.ShiftId, journal.LastSequence, plan.Count);
 
         var publications = ImmutableArray.CreateBuilder<HostStageSevenPublication>(plan.Count);
+        var envelopes = ImmutableArray.CreateBuilder<EventEnvelope>(plan.Count);
+        var sequence = journal.LastSequence;
         for (var index = 0; index < plan.Count; index++)
         {
             var planned = plan[index];
-            var draft = new DomainEventDraft(assignedEventIds[index], planned.EventType, planned.Payload, planned.CausedByIntentId);
-            EventEnvelope envelope;
-            if (planned.Kind == HostStageSevenPublicationKind.StateChanging)
+            if (!sequence.TryNext(out sequence))
             {
-                var result = _mutations.Commit(journal, planned.BeforeState, planned.CurrentState, currentTick, draft);
-                envelope = result is JournaledMutationCommitted committed
-                    ? committed.Envelope
-                    : throw new InvalidOperationException("A fully preflighted stage-seven mutation commit was rejected by the journal boundary.");
-            }
-            else
-            {
-                envelope = CommitObservation(journal, planned.CurrentState, currentTick, draft);
+                throw new OverflowException("The journal sequence cannot advance through the complete publication plan.");
             }
 
+            var envelope = CreatePlannedEnvelope(planned, assignedEventIds[index], sequence, currentTick);
+            envelopes.Add(envelope);
             publications.Add(new HostStageSevenPublication(envelope, planned.Kind, planned.BeforeState, planned.CurrentState));
         }
+
+        var outcome = journal.TryAppendBatch(envelopes.MoveToImmutable());
+        if (outcome != JournalAppendOutcome.Accepted)
+        {
+            throw new JournalInvariantViolationException(outcome);
+        }
+
+        RequirePublishedCursor(journal, stageSix.FinalShiftState, currentTick, "Atomic stage-seven publication");
+        ValidatePublishedPlan(journal, plan, assignedEventIds, currentTick);
 
         return new HostStageSevenPublished(stageOne, stageTwo, stageThree, stageFour, stageFive, stageSix, currentTick, beforeCursor, new HostStageSevenJournalCursor(journal), publications.MoveToImmutable(), rejections, assignedEventIds);
     }
 
-    private static EventEnvelope CommitObservation(IEventJournal journal, ShiftRuntimeState state, ServerTick tick, DomainEventDraft draft)
+    private static EventEnvelope CreatePlannedEnvelope(
+        PlannedPublication planned,
+        EventId eventId,
+        EventSequence sequence,
+        ServerTick tick)
     {
-        if (journal.Shift != state.ShiftId || journal.LastStateVersion != state.StateVersion || tick < journal.LastTick || !journal.LastSequence.TryNext(out var sequence))
+        if (planned is null)
         {
-            throw new InvalidOperationException("Observation commit cursor invariant failed after stage-seven preflight.");
+            throw new ArgumentNullException(nameof(planned));
         }
-        var envelope = new EventEnvelope { ShiftId = state.ShiftId, EventId = draft.EventId, Sequence = sequence, CausedByIntentId = draft.CausedByIntentId, ServerTick = tick, StateVersionAfter = state.StateVersion, EventType = draft.EventType, Payload = draft.Payload };
-        var outcome = journal.TryAppend(envelope);
-        if (outcome != JournalAppendOutcome.Accepted) throw new JournalInvariantViolationException(outcome);
-        return envelope;
+
+        var draft = new DomainEventDraft(eventId, planned.EventType, planned.Payload, planned.CausedByIntentId);
+        return new EventEnvelope
+        {
+            ShiftId = planned.CurrentState.ShiftId,
+            EventId = draft.EventId,
+            Sequence = sequence,
+            CausedByIntentId = draft.CausedByIntentId,
+            ServerTick = tick,
+            StateVersionAfter = planned.CurrentState.StateVersion,
+            EventType = draft.EventType,
+            Payload = draft.Payload
+        };
     }
 
-    private static void ValidateInputs(HostStageOneCompletionExecution one, AcceptedIntentStageExecution two, HostStageThreeDeadlineExecution three, HostStageFourSawExecution four, HostStageFiveFeedExecution five, HostStageSixDerivedExecution six, IEventJournal journal, ServerTick tick)
+    private static void ValidateInputs(HostStageOneCompletionExecution one, AcceptedIntentStageExecution two, HostStageThreeDeadlineExecution three, HostStageFourSawExecution four, HostStageFiveFeedExecution five, HostStageSixDerivedExecution six, IAtomicEventJournal journal, ServerTick tick)
     {
         if (one is null) { throw new ArgumentNullException("one"); } if (two is null) { throw new ArgumentNullException("two"); } if (three is null) { throw new ArgumentNullException("three"); } if (four is null) { throw new ArgumentNullException("four"); } if (five is null) { throw new ArgumentNullException("five"); } if (six is null) { throw new ArgumentNullException("six"); } if (journal is null) { throw new ArgumentNullException("journal"); }
         if (tick.IsDefault) throw new ArgumentException("Current tick must be initialized.", nameof(tick));

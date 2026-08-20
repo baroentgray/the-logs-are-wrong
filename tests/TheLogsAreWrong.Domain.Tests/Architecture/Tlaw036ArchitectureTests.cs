@@ -29,7 +29,7 @@ public sealed class Tlaw036ArchitectureTests
         var parameters = execute.GetParameters();
         Assert.Equal(typeof(HostStageSevenEventExecution), execute.ReturnType);
         Assert.DoesNotContain(parameters, parameter => parameter.ParameterType == typeof(ImmutableArray<EventId>));
-        Assert.Contains(parameters, parameter => parameter.ParameterType == typeof(IEventJournal));
+        Assert.Contains(parameters, parameter => parameter.ParameterType == typeof(IAtomicEventJournal));
         Assert.DoesNotContain(parameters, parameter =>
             parameter.ParameterType == typeof(EventTypeId) ||
             parameter.ParameterType == typeof(IDomainEventPayload) ||
@@ -59,8 +59,9 @@ public sealed class Tlaw036ArchitectureTests
 
         var sourceRoot = Path.Combine(AppContext.BaseDirectory, "DomainSources");
         var source = File.ReadAllText(Directory.GetFiles(sourceRoot, "HostStageSevenEventExecutionContracts.cs", SearchOption.AllDirectories).Single());
-        Assert.Contains("JournaledMutationCommitService", source, StringComparison.Ordinal);
-        Assert.Contains("CommitObservation", source, StringComparison.Ordinal);
+        Assert.Contains("IAtomicEventJournal", source, StringComparison.Ordinal);
+        Assert.Contains("TryAppendBatch", source, StringComparison.Ordinal);
+        Assert.Contains("CreatePlannedEnvelope", source, StringComparison.Ordinal);
         Assert.Contains("RequireNoNewPublicationCursor", source, StringComparison.Ordinal);
         Assert.Contains("HasExactPayloadSemantics", source, StringComparison.Ordinal);
         Assert.Contains("HostStageSevenSawQuotaOutcome", source, StringComparison.Ordinal);

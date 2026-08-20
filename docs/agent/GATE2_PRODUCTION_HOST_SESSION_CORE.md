@@ -51,8 +51,9 @@ Disposed and reentrant invocations fail before a second session carry.
 implementation and is invoked once for each valid HostSession request. The
 session carries a result only when its checkpoint is
 `HostTickCheckpointAdvanced`; a rejection or exception leaves the session's
-carried references and successful cursor unchanged. Existing journal atomicity
-is not widened or replaced.
+carried references and successful cursor unchanged. Its owned journal is an
+`IAtomicEventJournal`, so the Stage-Seven publication boundary is all-or-nothing
+rather than a sequence of independently visible appends.
 
 This is a per-session authority boundary, not a process-wide live-host
 ownership registry, persistence/resume system, scheduler, Unity MonoBehaviour,
@@ -82,6 +83,29 @@ There is no GUID/random ID generator, wall-clock input, static mutable counter,
 or target-specific authority path. The journal still owns the monotonic
 sequence; HostSession owns the carried continuity cursor; Stage Seven owns
 mapping a validated plan to those sequences and identities.
+
+## Control-center correction — publication atomicity
+
+Control-center pre-review of `a998eb0…` found that the former one-envelope-at-a-
+time Stage-Seven loop could let an injected journal accept publication N and
+then reject or throw on N+1. HostSession correctly deferred its own carry, but
+the journal could already be advanced, splitting the owned continuity.
+
+The correction narrows the production host path to `IAtomicEventJournal`.
+`InMemoryEventJournal.TryAppendBatch` validates every proposed envelope against
+local staged sequence/tick/state-version cursors and commits the event list and
+all exposed cursors only after the complete validation succeeds. Stage Seven
+first creates its exact private envelope list, invokes that one batch boundary,
+and then verifies the resulting cursor and exact published envelopes before
+returning an accepted execution.
+
+The deterministic HostSession regression uses an atomic test journal that
+accepts the first envelope in staging and throws before the second of a
+multi-publication plan. It proves that all six carried state references,
+successful-tick count, journal count, event list, sequence, tick, and state-
+version cursor remain unchanged; retrying the same tick then succeeds. A direct
+InMemory journal contract regression likewise proves a later invalid envelope
+rejects the complete batch without committing the earlier valid envelope.
 
 ## Bounded tests and deterministic evidence
 
@@ -123,7 +147,7 @@ dotnet build src/TheLogsAreWrong.PortableAuthority/TheLogsAreWrong.PortableAutho
 ```
 
 That output and the committed plugin are byte-identical at SHA-256
-`90AC8BAE90DCA3B6807BEF6EFCD0BDD608AEFF6EC134FAF485FED79E1B340E7B`;
+`930E858D743C718EE11DF5DF994E548F9444B9A17AB5ED4DB6E0D2702B5F50E0`;
 no PortableAuthority PDB is present. Immutable and Unsafe remain byte-identical
 at `5B1B1C83BA3D135C2FDFE425842FBE9C7432878B7E468623ACB554C69B4C130F`
 and `01748200F2400C742AA689F1F5101BD6298EFDFD92C00C18F4FA473847235BA9`.
@@ -150,11 +174,11 @@ integration is implemented.
 
 Pre-commit local repository regression passed with `git diff --check`; fresh
 restore; standalone PortableAuthority Release build `0 warnings / 0 errors`;
-full Release build `0 warnings / 0 errors`; full tests `1638 passed / 0 failed
+full Release build `0 warnings / 0 errors`; full tests `1640 passed / 0 failed
 / 0 skipped`; D-014 `Scope=TLAW-046` `87 passed / 0 failed / 0 skipped`; and
 the one-test canonical PortableAuthority vector. After the ordinary repository
 build, a clean two-property deployment build again matched the staged plugin
-byte-for-byte at `90AC8B…40E7` with no PDB.
+byte-for-byte at `930E85…F50E0` with no PDB.
 
 Final exact-head repository verification, object reader, full Release build,
 full tests, D-014 slice, architecture/dependency checks, and Repository CI

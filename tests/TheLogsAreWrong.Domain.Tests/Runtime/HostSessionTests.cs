@@ -7,7 +7,9 @@ using TheLogsAreWrong.Domain.Events;
 using TheLogsAreWrong.Domain.Identifiers;
 using TheLogsAreWrong.Domain.Intents;
 using TheLogsAreWrong.Domain.Journal;
+using TheLogsAreWrong.Domain.Line;
 using TheLogsAreWrong.Domain.Primitives;
+using TheLogsAreWrong.Domain.Quota;
 using TheLogsAreWrong.Domain.Runtime;
 
 namespace TheLogsAreWrong.Domain.Tests.Runtime;
@@ -62,6 +64,27 @@ public sealed class HostSessionTests
         Assert.Same(beforeQuota, session.QuotaState);
         Assert.Equal(beforeJournalCount, session.Journal.Count);
         Assert.Equal(0, session.SuccessfulTickCount);
+    }
+
+    [Fact]
+    public void Multi_publication_batch_failure_after_the_first_staged_acceptance_leaves_the_entire_session_continuity_unchanged()
+    {
+        var journal = new ThrowAfterFirstStagedPublicationJournal(Fx.Shift.ShiftId);
+        using var session = new HostSession(Fx.Shift, Fx.Anomalies, LearningId, journal);
+        var batch = EmptyBatch(session.ShiftState.ShiftId, ServerTick.Zero);
+        var before = Snapshot(session);
+
+        Assert.Throws<InvalidOperationException>(() => session.ExecuteTick(ServerTick.Zero, batch, ImmutableHashSet<ItemId>.Empty));
+
+        Assert.Equal(1, journal.StagedAcceptedPublicationCount);
+        Assert.True(journal.ThrewOnLaterPublication);
+        AssertSessionContinuityUnchanged(before, session);
+
+        journal.ThrowOnLaterPublication = false;
+        var retried = Assert.IsType<HostStageSevenPublished>(session.ExecuteTick(ServerTick.Zero, batch, ImmutableHashSet<ItemId>.Empty));
+        Assert.True(retried.Publications.Length > 1);
+        Assert.Equal(1, session.SuccessfulTickCount);
+        Assert.Equal(retried.Publications.Length, session.Journal.Count);
     }
 
     [Fact]
@@ -126,6 +149,36 @@ public sealed class HostSessionTests
 
     private static string Sha256(string value) => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(value)));
 
+    private static SessionSnapshot Snapshot(HostSession session) => new(
+        session.ShiftState,
+        session.QuotaState,
+        session.MovementNoise,
+        session.LineNoise,
+        session.Progression,
+        session.Lifecycle,
+        session.SuccessfulTickCount,
+        session.Journal.Count,
+        session.Journal.LastSequence,
+        session.Journal.LastTick,
+        session.Journal.LastStateVersion,
+        session.Journal.Events.ToImmutableArray());
+
+    private static void AssertSessionContinuityUnchanged(SessionSnapshot before, HostSession session)
+    {
+        Assert.Same(before.ShiftState, session.ShiftState);
+        Assert.Same(before.QuotaState, session.QuotaState);
+        Assert.Same(before.MovementNoise, session.MovementNoise);
+        Assert.Same(before.LineNoise, session.LineNoise);
+        Assert.Same(before.Progression, session.Progression);
+        Assert.Same(before.Lifecycle, session.Lifecycle);
+        Assert.Equal(before.SuccessfulTickCount, session.SuccessfulTickCount);
+        Assert.Equal(before.JournalCount, session.Journal.Count);
+        Assert.Equal(before.LastSequence, session.Journal.LastSequence);
+        Assert.Equal(before.LastTick, session.Journal.LastTick);
+        Assert.Equal(before.LastStateVersion, session.Journal.LastStateVersion);
+        Assert.Equal(before.Events, session.Journal.Events);
+    }
+
     private sealed record SessionRun(
         ImmutableArray<HostStageSevenEventExecution> Executions,
         ImmutableArray<EventEnvelope> Events,
@@ -133,7 +186,63 @@ public sealed class HostSessionTests
         string Projection,
         string Sha256);
 
-    private sealed class ReentrantJournal : IEventJournal
+    private sealed record SessionSnapshot(
+        ShiftRuntimeState ShiftState,
+        QuotaRuntimeState QuotaState,
+        MovementNoiseRuntimeState MovementNoise,
+        LineNoiseRuntimeState LineNoise,
+        HostTickProgressionEvidence Progression,
+        ShiftLifecycleRuntimeState Lifecycle,
+        int SuccessfulTickCount,
+        int JournalCount,
+        EventSequence LastSequence,
+        ServerTick LastTick,
+        StateVersion LastStateVersion,
+        ImmutableArray<EventEnvelope> Events);
+
+    private sealed class ThrowAfterFirstStagedPublicationJournal : IAtomicEventJournal
+    {
+        private readonly InMemoryEventJournal _committed;
+
+        public ThrowAfterFirstStagedPublicationJournal(ShiftId shiftId) => _committed = new InMemoryEventJournal(shiftId);
+
+        public bool ThrowOnLaterPublication { get; set; } = true;
+        public int StagedAcceptedPublicationCount { get; private set; }
+        public bool ThrewOnLaterPublication { get; private set; }
+        public ShiftId Shift => _committed.Shift;
+        public EventSequence LastSequence => _committed.LastSequence;
+        public ServerTick LastTick => _committed.LastTick;
+        public StateVersion LastStateVersion => _committed.LastStateVersion;
+        public int Count => _committed.Count;
+        public IReadOnlyList<EventEnvelope> Events => _committed.Events;
+        public void Append(EventEnvelope envelope) => _committed.Append(envelope);
+        public JournalAppendOutcome TryAppend(EventEnvelope envelope) => _committed.TryAppend(envelope);
+
+        public JournalAppendOutcome TryAppendBatch(IReadOnlyList<EventEnvelope> envelopes)
+        {
+            var staged = new InMemoryEventJournal(Shift);
+            foreach (var envelope in envelopes)
+            {
+                if (ThrowOnLaterPublication && StagedAcceptedPublicationCount == 1)
+                {
+                    ThrewOnLaterPublication = true;
+                    throw new InvalidOperationException("TLAW067_TEST_LATER_PUBLICATION_FAILURE");
+                }
+
+                var outcome = staged.TryAppend(envelope);
+                if (outcome != JournalAppendOutcome.Accepted)
+                {
+                    return outcome;
+                }
+
+                StagedAcceptedPublicationCount++;
+            }
+
+            return _committed.TryAppendBatch(envelopes);
+        }
+    }
+
+    private sealed class ReentrantJournal : IAtomicEventJournal
     {
         private readonly InMemoryEventJournal _inner;
 
@@ -156,6 +265,12 @@ public sealed class HostSessionTests
         {
             BeforeAppend?.Invoke();
             return _inner.TryAppend(envelope);
+        }
+
+        public JournalAppendOutcome TryAppendBatch(IReadOnlyList<EventEnvelope> envelopes)
+        {
+            BeforeAppend?.Invoke();
+            return _inner.TryAppendBatch(envelopes);
         }
     }
 }

@@ -22,7 +22,7 @@ public sealed class HostSession : IDisposable
     private readonly HostTickExecutionService _hostTick = new();
     private readonly ShiftConfiguration _shiftConfiguration;
     private readonly AnomalyCatalog _anomalyCatalog;
-    private readonly IEventJournal _journal;
+    private readonly IAtomicEventJournal _journal;
     private ShiftRuntimeState _shiftState;
     private QuotaRuntimeState _quotaState;
     private MovementNoiseRuntimeState _movementNoise;
@@ -53,7 +53,7 @@ public sealed class HostSession : IDisposable
         ShiftConfiguration shiftConfiguration,
         AnomalyCatalog anomalyCatalog,
         ProfileId selectedProfileId,
-        IEventJournal journal)
+        IAtomicEventJournal journal)
     {
         if (shiftConfiguration is null) { throw new ArgumentNullException(nameof(shiftConfiguration)); }
         if (anomalyCatalog is null) { throw new ArgumentNullException(nameof(anomalyCatalog)); }
@@ -83,7 +83,7 @@ public sealed class HostSession : IDisposable
     public LineNoiseRuntimeState LineNoise => _lineNoise;
     public HostTickProgressionEvidence Progression => _progression;
     public ShiftLifecycleRuntimeState Lifecycle => _lifecycle;
-    public IEventJournal Journal => _journal;
+    public IAtomicEventJournal Journal => _journal;
     public int SuccessfulTickCount { get; private set; }
     public bool IsDisposed => _isDisposed;
 
@@ -141,7 +141,7 @@ public sealed class HostSession : IDisposable
         _isDisposed = true;
     }
 
-    private static IEventJournal CreateJournal(ShiftConfiguration shiftConfiguration)
+    private static IAtomicEventJournal CreateJournal(ShiftConfiguration shiftConfiguration)
     {
         if (shiftConfiguration is null) { throw new ArgumentNullException(nameof(shiftConfiguration)); }
         return new InMemoryEventJournal(shiftConfiguration.ShiftId);
