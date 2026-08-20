@@ -81,6 +81,23 @@ public sealed class JournalContractTests
     }
 
     [Fact]
+    public void Batch_rejection_after_an_earlier_valid_envelope_leaves_the_entire_journal_unchanged()
+    {
+        var journal = new InMemoryEventJournal(EventTestFixture.Shift);
+        var first = EventTestFixture.Event(1, tick: 2, stateVersion: 0);
+        var invalidLater = EventTestFixture.Event(3, tick: 2, stateVersion: 1);
+
+        var outcome = journal.TryAppendBatch([first, invalidLater]);
+
+        Assert.Equal(JournalAppendOutcome.SequenceGap, outcome);
+        Assert.Equal(0, journal.Count);
+        Assert.Empty(journal.Events);
+        Assert.Equal(EventSequence.None, journal.LastSequence);
+        Assert.Equal(ServerTick.Zero, journal.LastTick);
+        Assert.Equal(StateVersion.Zero, journal.LastStateVersion);
+    }
+
+    [Fact]
     public void Mismatched_shift_and_default_fields_are_rejected_without_mutating_the_journal()
     {
         var journal = JournalWithFirstEvent();

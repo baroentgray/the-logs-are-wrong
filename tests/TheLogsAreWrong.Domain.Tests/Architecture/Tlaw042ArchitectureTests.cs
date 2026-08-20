@@ -196,7 +196,7 @@ public sealed class Tlaw042ArchitectureTests
         var execute = Assert.Single(
             typeof(HostTickExecutionService).GetMethods(BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly),
             method => method.Name == "Execute");
-        Assert.Equal(15, execute.GetParameters().Length);
+        Assert.Equal(14, execute.GetParameters().Length);
 
         // D-013: shift and quota runtime remain separate immutable state families passed independently to the host.
         var parameterTypes = execute.GetParameters().Select(parameter => parameter.ParameterType).ToImmutableArray();
@@ -206,7 +206,7 @@ public sealed class Tlaw042ArchitectureTests
         Assert.Equal(typeof(LineNoiseRuntimeState), parameterTypes[3]);
         Assert.Equal(typeof(HostTickProgressionEvidence), parameterTypes[4]);
         Assert.Equal(typeof(ShiftLifecycleRuntimeState), parameterTypes[5]);
-        Assert.Equal(typeof(IEventJournal), parameterTypes[8]);
+        Assert.Equal(typeof(IAtomicEventJournal), parameterTypes[8]);
 
         Assert.DoesNotContain(typeof(ShiftRuntimeState).GetProperties(), property => typeof(QuotaRuntimeState).IsAssignableFrom(property.PropertyType));
         Assert.DoesNotContain(typeof(QuotaRuntimeState).GetProperties(), property => typeof(ShiftRuntimeState).IsAssignableFrom(property.PropertyType));

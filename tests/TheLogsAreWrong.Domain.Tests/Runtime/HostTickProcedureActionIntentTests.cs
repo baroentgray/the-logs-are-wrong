@@ -203,20 +203,20 @@ public sealed class HostTickProcedureActionIntentTests
             state, quota, before.Progression, before.Lifecycle, ServerTick.From(10),
             Batch(state.ShiftId, ServerTick.From(10), intent), JournalAtState(state, ServerTick.From(9)), EventIds("replay", 1));
 
-        _ = Assert.IsType<HostStageSevenPublished>(Execute(inputs));
+        var published = Assert.IsType<HostStageSevenPublished>(Execute(inputs));
         var beforeReplay = inputs.Journal.Events.ToArray();
 
         var replayed = Assert.IsType<HostStageSevenAlreadyPublished>(Execute(inputs));
 
         Assert.Equal(beforeReplay, inputs.Journal.Events);
-        Assert.Equal(EventId.From("replay_0"), Assert.Single(replayed.AssignedEventIds));
+        Assert.Equal(Assert.Single(published.AssignedEventIds), Assert.Single(replayed.AssignedEventIds));
     }
 
     private static HostStageSevenEventExecution Execute(ComposerInputs inputs) =>
         new HostTickExecutionService().Execute(
             inputs.InitialShiftState, inputs.InitialQuotaState, inputs.InitialMovementNoise, inputs.InitialLineNoise,
             inputs.Progression, inputs.Lifecycle, inputs.AcceptedIntents, ImmutableHashSet<ItemId>.Empty, inputs.Journal,
-            inputs.EventIds, inputs.Tick, Fx.Shift.Scheduler, Fx.Shift, Fx.Shift.Containment, Fx.Anomalies);
+            inputs.Tick, Fx.Shift.Scheduler, Fx.Shift, Fx.Shift.Containment, Fx.Anomalies);
 
     private static ComposerInputs CreateInputs(
         ShiftRuntimeState state,

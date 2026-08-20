@@ -507,7 +507,6 @@ public sealed class ShiftSnapshotRestoreCorrelationTests
             AcceptedIntentTickBatchFactory.Create(mid.ShiftId, nextTick, ImmutableArray<AuthoritativeAcceptedIntent>.Empty),
             scripted.ActiveTools,
             journal,
-            expected.Select(envelope => envelope.EventId).ToImmutableArray(),
             nextTick,
             configuration.Shift.Scheduler,
             configuration.Shift,

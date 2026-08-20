@@ -24,9 +24,8 @@ namespace TheLogsAreWrong.Gate2.Tests
     /// TLAW-065 Unity host-runtime boundary architecture proof. Test-only and non-production.
     /// <para>
     /// The probes below own no simulation semantics: every authoritative decision comes from the one
-    /// shared imported <see cref="HostTickExecutionService"/>. The session probe only transports the
-    /// state the service returned, and the scheduler probe only decides when a tick is due. Nothing
-    /// here is a production host loop.
+    /// shared imported <see cref="HostSession"/>. The scheduler probe only decides when a tick is due.
+    /// Nothing here is a production host loop.
     /// </para>
     /// </summary>
     public sealed class HostRuntimeBoundaryProofTests
@@ -36,7 +35,7 @@ namespace TheLogsAreWrong.Gate2.Tests
 
         private static readonly LogId ProbeLogId = LogId.From("probe_log");
         private static readonly ProfileId ProbeProfileId = ProfileId.From("probe");
-        private static readonly int[] PlanSizes = { 1, 3, 1, 0 };
+        private const int SequentialTickCount = 4;
 
         [Test]
         public void Shared_authority_is_the_only_host_tick_implementation_reachable_from_unity()
@@ -53,7 +52,7 @@ namespace TheLogsAreWrong.Gate2.Tests
         public void Canonical_one_tick_parity_is_unchanged_under_the_session_boundary()
         {
             var session = new HostSessionProbe(ProbeConfiguration(1, 1));
-            var result = session.ExecuteTick(ServerTick.Zero, PlanSizes[0]);
+            var result = session.ExecuteTick(ServerTick.Zero);
 
             Assert.AreEqual(CanonicalOneTickSha, Sha256(session.ProjectCanonical(ServerTick.Zero, result)));
             Assert.AreEqual(1, session.Invocations);
@@ -67,7 +66,7 @@ namespace TheLogsAreWrong.Gate2.Tests
 
             Assert.AreEqual(MultiTickSha, Sha256(first.Projection), "Imported multi-tick projection drifted.");
             Assert.AreEqual(first.Projection, second.Projection, "The tick sequence was not repeat-deterministic.");
-            Assert.AreEqual(PlanSizes.Length, first.Invocations, "Exactly one semantic invocation per authoritative tick is required.");
+            Assert.AreEqual(SequentialTickCount, first.Invocations, "Exactly one semantic invocation per authoritative tick is required.");
         }
 
         [Test]
@@ -98,14 +97,11 @@ namespace TheLogsAreWrong.Gate2.Tests
         }
 
         [Test]
-        public void Reentrant_and_disposed_session_ticks_are_rejected()
+        public void Disposed_production_session_ticks_are_rejected()
         {
-            var reentrant = new HostSessionProbe(ProbeConfiguration(30, 600));
-            Assert.Throws<InvalidOperationException>(() => reentrant.ExecuteReentrant());
-
             var disposed = new HostSessionProbe(ProbeConfiguration(30, 600));
             disposed.Dispose();
-            Assert.Throws<ObjectDisposedException>(() => disposed.ExecuteTick(ServerTick.Zero, PlanSizes[0]));
+            Assert.Throws<ObjectDisposedException>(() => disposed.ExecuteTick(ServerTick.Zero));
         }
 
         [Test]
@@ -114,8 +110,8 @@ namespace TheLogsAreWrong.Gate2.Tests
             var left = new HostSessionProbe(ProbeConfiguration(30, 600));
             var right = new HostSessionProbe(ProbeConfiguration(30, 600));
 
-            left.ExecuteTick(ServerTick.Zero, PlanSizes[0]);
-            right.ExecuteTick(ServerTick.Zero, PlanSizes[0]);
+            left.ExecuteTick(ServerTick.Zero);
+            right.ExecuteTick(ServerTick.Zero);
 
             // Both succeed: nothing in the shared authority prevents a duplicate host session.
             // Single-owner enforcement is therefore an unresolved production policy, recorded in the dossier.
@@ -127,10 +123,10 @@ namespace TheLogsAreWrong.Gate2.Tests
         {
             var session = new HostSessionProbe(ProbeConfiguration(30, 600));
             var parts = new List<string>();
-            for (var i = 0; i < PlanSizes.Length; i++)
+            for (var i = 0; i < SequentialTickCount; i++)
             {
                 var tick = ServerTick.From(i);
-                var result = session.ExecuteTick(tick, PlanSizes[i]);
+                var result = session.ExecuteTick(tick);
                 parts.Add("--- tick " + i + " ---\n" + session.Project(tick, result));
             }
 
@@ -191,116 +187,53 @@ namespace TheLogsAreWrong.Gate2.Tests
         }
 
         /// <summary>
-        /// H1-shaped probe: a Unity-independent session object owning carried authoritative state behind
-        /// one explicit tick boundary. It stores only references the shared service returned.
+        /// Test adapter around the imported production <see cref="HostSession"/>. It owns no copied
+        /// state, service, event identity, or tick orchestration.
         /// </summary>
         private sealed class HostSessionProbe
         {
-            private readonly HostTickExecutionService _service = new HostTickExecutionService();
-            private readonly ShiftConfiguration _shift;
             private readonly AnomalyCatalog _anomalies = new AnomalyCatalog(ImmutableDictionary<AnomalyId, AnomalyDefinition>.Empty);
-            private readonly InMemoryEventJournal _journal;
-            private readonly ShiftLifecycleRuntimeState _lifecycle;
-
-            private ShiftRuntimeState _shiftState;
-            private QuotaRuntimeState _quota;
-            private MovementNoiseRuntimeState _movementNoise;
-            private LineNoiseRuntimeState _lineNoise;
-            private HostTickProgressionEvidence _progression;
-            private bool _executing;
+            private readonly HostSession _session;
 
             public int Invocations { get; private set; }
-            public bool Disposed { get; private set; }
+            public bool Disposed => _session.IsDisposed;
 
             public HostSessionProbe(ShiftConfiguration shift)
             {
-                _shift = shift;
-                _shiftState = ShiftRuntimeState.Create(_shift);
-                _quota = QuotaRuntimeState.Create(_shift);
-                _movementNoise = MovementNoiseRuntimeState.Create(_shiftState.ShiftId);
-                _lineNoise = LineNoiseRuntimeState.Create(_shiftState.ShiftId);
-                _progression = HostTickProgressionEvidence.Create(_shiftState.ShiftId);
-                _lifecycle = ShiftLifecycleRuntimeState.Create(_shift, ProbeProfileId);
-                _journal = new InMemoryEventJournal(_shiftState.ShiftId);
+                _session = new HostSession(shift, _anomalies, ProbeProfileId);
             }
 
-            public HostStageSevenEventExecution ExecuteTick(ServerTick tick, int eventIdCount)
+            public HostStageSevenEventExecution ExecuteTick(ServerTick tick)
             {
-                if (Disposed) throw new ObjectDisposedException("HostSessionProbe");
-                if (_executing) throw new InvalidOperationException("TLAW065_REENTRANT_TICK_REJECTED");
-
-                _executing = true;
-                try
-                {
-                    var ids = new List<EventId>();
-                    for (var i = 0; i < eventIdCount; i++) ids.Add(EventId.From("tick" + tick + "-event" + i));
-
-                    var result = _service.Execute(
-                        _shiftState,
-                        _quota,
-                        _movementNoise,
-                        _lineNoise,
-                        _progression,
-                        _lifecycle,
-                        AcceptedIntentTickBatchFactory.Create(_shiftState.ShiftId, tick, ImmutableArray<AuthoritativeAcceptedIntent>.Empty),
-                        ImmutableHashSet<ItemId>.Empty,
-                        _journal,
-                        ImmutableArray.CreateRange(ids),
-                        tick,
-                        _shift.Scheduler,
-                        _shift,
-                        _shift.Containment,
-                        _anomalies);
-
-                    Invocations++;
-                    Carry(result);
-                    return result;
-                }
-                finally
-                {
-                    _executing = false;
-                }
-            }
-
-            public void ExecuteReentrant()
-            {
-                _executing = true;
-                try { ExecuteTick(ServerTick.Zero, 1); }
-                finally { _executing = false; }
+                var result = _session.ExecuteTick(
+                    tick,
+                    AcceptedIntentTickBatchFactory.Create(_session.ShiftState.ShiftId, tick, ImmutableArray<AuthoritativeAcceptedIntent>.Empty),
+                    ImmutableHashSet<ItemId>.Empty);
+                Invocations++;
+                return result;
             }
 
             public void Dispose()
             {
-                Disposed = true;
-            }
-
-            /// <summary>Transport only: each field is a reference the shared service produced.</summary>
-            private void Carry(HostStageSevenEventExecution result)
-            {
-                _shiftState = result.FinalShiftState;
-                _quota = result.FinalQuotaState;
-                _lineNoise = result.FinalLineNoise;
-                _movementNoise = result.StageSix.FinalMovementNoise;
-                var advanced = result.Checkpoint as HostTickCheckpointAdvanced;
-                if (advanced != null) _progression = advanced.Progression;
+                _session.Dispose();
             }
 
             public string Project(ServerTick tick, HostStageSevenEventExecution result)
             {
                 LogRuntimeState log;
-                _shiftState.TryGetLog(ProbeLogId, out log);
-                var events = _journal.Events.ToArray();
+                _session.ShiftState.TryGetLog(ProbeLogId, out log);
+                var events = _session.Journal.Events.ToArray();
                 var lines = new List<string>
                 {
                     "operation=HostTickExecutionService.Execute",
                     "result=" + result.GetType().Name,
                     "tick=" + tick,
-                    "shift_id=" + _shiftState.ShiftId,
-                    "state_version=" + _shiftState.StateVersion,
+                    "shift_id=" + _session.ShiftState.ShiftId,
+                    "state_version=" + _session.ShiftState.StateVersion,
                     "log_state=" + log.State,
-                    "line_state=" + _shiftState.Line.State,
-                    "containment_state=" + _shiftState.Containment.State,
-                    "line_noise=" + _lineNoise.Current,
+                    "line_state=" + _session.ShiftState.Line.State,
+                    "containment_state=" + _session.ShiftState.Containment.State,
+                    "line_noise=" + _session.LineNoise.Current,
                     "checkpoint=" + result.Checkpoint.GetType().Name,
                     "journal_count=" + events.Length
                 };
@@ -311,8 +244,8 @@ namespace TheLogsAreWrong.Gate2.Tests
             public string ProjectCanonical(ServerTick tick, HostStageSevenEventExecution result)
             {
                 LogRuntimeState log;
-                _shiftState.TryGetLog(ProbeLogId, out log);
-                var events = _journal.Events.ToArray();
+                _session.ShiftState.TryGetLog(ProbeLogId, out log);
+                var events = _session.Journal.Events.ToArray();
                 var stageOrder = string.Join(">", new[]
                 {
                     result.StageOne.GetType().Name,
@@ -329,16 +262,16 @@ namespace TheLogsAreWrong.Gate2.Tests
                     "operation=HostTickExecutionService.Execute",
                     "stage_order=" + stageOrder,
                     "tick=" + tick,
-                    "shift_id=" + _shiftState.ShiftId,
-                    "state_version=" + _shiftState.StateVersion,
+                    "shift_id=" + _session.ShiftState.ShiftId,
+                    "state_version=" + _session.ShiftState.StateVersion,
                     "log_id=" + ProbeLogId,
                     "log_state=" + log.State,
-                    "line_state=" + _shiftState.Line.State,
-                    "containment_state=" + _shiftState.Containment.State,
-                    "quota_target_total=" + _quota.TargetTotal,
-                    "quota_credited_total=" + _quota.TotalCreditedUnits,
-                    "quota_correct_anomalies=" + _quota.CorrectlyProcessedAnomalies,
-                    "line_noise=" + _lineNoise.Current,
+                    "line_state=" + _session.ShiftState.Line.State,
+                    "containment_state=" + _session.ShiftState.Containment.State,
+                    "quota_target_total=" + result.FinalQuotaState.TargetTotal,
+                    "quota_credited_total=" + result.FinalQuotaState.TotalCreditedUnits,
+                    "quota_correct_anomalies=" + result.FinalQuotaState.CorrectlyProcessedAnomalies,
+                    "line_noise=" + _session.LineNoise.Current,
                     "journal_count=" + events.Length
                 };
                 AppendJournal(lines, events);

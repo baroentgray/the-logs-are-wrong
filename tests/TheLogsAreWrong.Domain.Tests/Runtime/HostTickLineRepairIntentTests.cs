@@ -58,7 +58,7 @@ public sealed class HostTickLineRepairIntentTests
         Assert.Contains(intent.IntentId, published.FinalShiftState.ProcessedIntentIds);
 
         var replayed = Assert.IsType<HostStageSevenAlreadyPublished>(Execute(inputs));
-        Assert.Equal(new[] { EventId.From("feed_start_0"), EventId.From("feed_start_1") }, replayed.AssignedEventIds);
+        Assert.Equal(published.AssignedEventIds, replayed.AssignedEventIds);
     }
 
     [Fact]
@@ -170,7 +170,7 @@ public sealed class HostTickLineRepairIntentTests
         new HostTickExecutionService().Execute(
             inputs.InitialShiftState, inputs.InitialQuotaState, inputs.InitialMovementNoise, inputs.InitialLineNoise,
             inputs.Progression, inputs.Lifecycle, inputs.AcceptedIntents, ImmutableHashSet<ItemId>.Empty, inputs.Journal,
-            inputs.EventIds, inputs.Tick, Fx.Shift.Scheduler, Fx.Shift, Fx.Shift.Containment, Fx.Anomalies);
+            inputs.Tick, Fx.Shift.Scheduler, Fx.Shift, Fx.Shift.Containment, Fx.Anomalies);
 
     private static ComposerInputs CreateInputs(
         ShiftRuntimeState state,

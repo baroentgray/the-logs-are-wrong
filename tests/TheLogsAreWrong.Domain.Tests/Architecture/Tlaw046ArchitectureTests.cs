@@ -104,7 +104,7 @@ public sealed class Tlaw046ArchitectureTests
         Assert.NotNull(execute);
 
         var parameters = execute!.GetParameters();
-        Assert.Equal(15, parameters.Length);
+        Assert.Equal(14, parameters.Length);
         Assert.Equal(typeof(ShiftRuntimeState), parameters[0].ParameterType);
         Assert.Equal(typeof(QuotaRuntimeState), parameters[1].ParameterType);
 

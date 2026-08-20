@@ -36,7 +36,6 @@ public sealed class HostStageSevenEventExecutionTests
             execution.StageFive,
             execution.StageSix,
             journal,
-            EventIds(4),
             ServerTick.Zero));
 
         Assert.Equal(
@@ -79,7 +78,6 @@ public sealed class HostStageSevenEventExecutionTests
             execution.StageFive,
             execution.StageSix,
             journal,
-            EventIds(2),
             ServerTick.Zero));
 
         Assert.Equal(
@@ -137,12 +135,12 @@ public sealed class HostStageSevenEventExecutionTests
     }
 
     [Fact]
-    public void Planned_id_cardinality_failure_is_pre_append_and_preserves_the_journal()
+    public void Host_owned_identity_cardinality_matches_the_complete_private_publication_plan()
     {
         var execution = BuildExecution(ImmutableArray<AuthoritativeAcceptedIntent>.Empty);
         var journal = new InMemoryEventJournal(execution.StageOne.InitialState.ShiftId);
 
-        Assert.Throws<ArgumentException>(() => new HostStageSevenEventExecutor().Execute(
+        var published = Assert.IsType<HostStageSevenPublished>(new HostStageSevenEventExecutor().Execute(
             execution.StageOne,
             execution.StageTwo,
             execution.StageThree,
@@ -150,24 +148,21 @@ public sealed class HostStageSevenEventExecutionTests
             execution.StageFive,
             execution.StageSix,
             journal,
-            EventIds(3),
             ServerTick.Zero));
 
-        Assert.Equal(0, journal.Count);
-        Assert.Equal(EventSequence.None, journal.LastSequence);
-        Assert.Equal(StateVersion.Zero, journal.LastStateVersion);
+        Assert.Equal(4, published.AssignedEventIds.Length);
+        Assert.Equal(4, journal.Count);
+        Assert.Equal(EventSequence.From(4), journal.LastSequence);
     }
 
     [Fact]
-    public void Too_many_event_ids_are_rejected_before_any_journal_append()
+    public void Historical_test_only_event_id_values_cannot_change_host_owned_publication_identity()
     {
         var execution = BuildExecution(ImmutableArray<AuthoritativeAcceptedIntent>.Empty);
         var journal = new InMemoryEventJournal(execution.StageOne.InitialState.ShiftId);
-        var before = Snapshot(journal);
+        var published = Assert.IsType<HostStageSevenPublished>(Execute(execution, journal, EventIds(5), ServerTick.Zero));
 
-        Assert.Throws<ArgumentException>(() => Execute(execution, journal, EventIds(5), ServerTick.Zero));
-
-        AssertJournalUnchanged(before, journal);
+        Assert.Equal(published.Publications.Select(publication => publication.Envelope.EventId), published.AssignedEventIds);
     }
 
     [Theory]
@@ -192,24 +187,19 @@ public sealed class HostStageSevenEventExecutionTests
             nullInput == 4 ? null! : execution.StageFive,
             nullInput == 5 ? null! : execution.StageSix,
             nullInput == 6 ? null! : journal,
-            EventIds(4),
             ServerTick.Zero));
 
         AssertJournalUnchanged(before, journal);
     }
 
     [Fact]
-    public void Default_tick_default_event_id_and_uninitialized_id_array_are_rejected_without_append()
+    public void Default_tick_is_rejected_without_append_and_host_owned_identity_has_no_input_array()
     {
         var execution = BuildExecution(ImmutableArray<AuthoritativeAcceptedIntent>.Empty);
         var journal = new InMemoryEventJournal(execution.StageOne.InitialState.ShiftId);
         var before = Snapshot(journal);
 
         Assert.Throws<ArgumentException>(() => Execute(execution, journal, EventIds(4), default));
-        AssertJournalUnchanged(before, journal);
-        Assert.Throws<ArgumentException>(() => Execute(execution, journal, default, ServerTick.Zero));
-        AssertJournalUnchanged(before, journal);
-        Assert.Throws<ArgumentException>(() => Execute(execution, journal, ImmutableArray.Create(default(EventId), EventId.From("two"), EventId.From("three"), EventId.From("four")), ServerTick.Zero));
         AssertJournalUnchanged(before, journal);
     }
 
@@ -223,7 +213,7 @@ public sealed class HostStageSevenEventExecutionTests
 
         Assert.Throws<ArgumentException>(() => new HostStageSevenEventExecutor().Execute(
             execution.StageOne, unrelated.StageTwo, execution.StageThree, execution.StageFour, execution.StageFive, execution.StageSix,
-            journal, EventIds(4), ServerTick.Zero));
+            journal, ServerTick.Zero));
         AssertJournalUnchanged(before, journal);
         Assert.Throws<ArgumentException>(() => Execute(execution, journal, EventIds(4), ServerTick.From(1)));
         AssertJournalUnchanged(before, journal);
@@ -770,7 +760,7 @@ public sealed class HostStageSevenEventExecutionTests
 
         var result = Assert.IsType<HostStageSevenNoNewPublication>(executor.Execute(
             zero.StageOne, zero.StageTwo, zero.StageThree, zero.StageFour, zero.StageFive, zero.StageSix,
-            journal, ImmutableArray<EventId>.Empty, ServerTick.From(1)));
+            journal, ServerTick.From(1)));
 
         Assert.Empty(result.AssignedEventIds);
         Assert.DoesNotContain(journal.Events, envelope => envelope.EventType == HostStageSevenEventTypes.LineNoiseChanged && envelope.ServerTick == ServerTick.From(1));
@@ -834,7 +824,11 @@ public sealed class HostStageSevenEventExecutionTests
         var ids = EventIds(4);
         var reference = new InMemoryEventJournal(execution.StageOne.InitialState.ShiftId);
         _ = Assert.IsType<HostStageSevenPublished>(Execute(execution, reference, ids, ServerTick.Zero));
-        var tail = reference.Events.Select((envelope, index) => envelope with { Sequence = EventSequence.From(long.MaxValue - reference.Events.Count + index + 1) }).ToImmutableArray();
+        var tail = reference.Events.Select((envelope, index) =>
+        {
+            var sequence = EventSequence.From(long.MaxValue - reference.Events.Count + index + 1);
+            return envelope with { Sequence = sequence, EventId = EventId.From($"host:{envelope.ShiftId}:{sequence.Value}") };
+        }).ToImmutableArray();
         var exhausted = new ReplayTailJournal(execution.StageOne.InitialState.ShiftId, tail);
 
         var replayed = Assert.IsType<HostStageSevenAlreadyPublished>(Execute(execution, exhausted, ids, ServerTick.Zero));
@@ -846,7 +840,7 @@ public sealed class HostStageSevenEventExecutionTests
     }
 
     [Fact]
-    public void Contradictory_replay_event_identity_fails_closed_without_changing_the_journal()
+    public void Replay_reconstructs_host_owned_event_identity_without_caller_identity_input()
     {
         var execution = BuildExecution(ImmutableArray<AuthoritativeAcceptedIntent>.Empty);
         var journal = new InMemoryEventJournal(execution.StageOne.InitialState.ShiftId);
@@ -861,11 +855,12 @@ public sealed class HostStageSevenEventExecutionTests
             ServerTick.Zero, Fx.Shift.Scheduler, Fx.Shift, Fx.Anomalies);
         var before = Snapshot(journal);
 
-        Assert.Throws<InvalidOperationException>(() => new HostStageSevenEventExecutor().Execute(
+        var replayed = Assert.IsType<HostStageSevenAlreadyPublished>(new HostStageSevenEventExecutor().Execute(
             execution.StageOne, execution.StageTwo, execution.StageThree, execution.StageFour, execution.StageFive, replay,
-            journal, ImmutableArray.Create(EventId.From("wrong_1"), EventId.From("wrong_2"), EventId.From("wrong_3"), EventId.From("wrong_4")), ServerTick.Zero));
+            journal, ServerTick.Zero));
 
         AssertJournalUnchanged(before, journal);
+        Assert.Equal(journal.Events.Select(envelope => envelope.EventId), replayed.AssignedEventIds);
     }
 
     [Fact]
@@ -900,7 +895,7 @@ public sealed class HostStageSevenEventExecutionTests
     }
 
     [Fact]
-    public void Equivalent_traces_have_equal_semantic_projections_and_changing_only_event_ids_changes_only_identity()
+    public void Equivalent_traces_have_equal_semantic_projections_and_host_owned_event_ids()
     {
         var left = BuildExecution(ImmutableArray<AuthoritativeAcceptedIntent>.Empty);
         var right = BuildExecution(ImmutableArray<AuthoritativeAcceptedIntent>.Empty);
@@ -914,7 +909,7 @@ public sealed class HostStageSevenEventExecutionTests
         Assert.Equal(leftPublished.Publications.Length, rightPublished.Publications.Length);
         foreach (var pair in leftPublished.Publications.Zip(rightPublished.Publications))
         {
-            Assert.NotEqual(pair.First.Envelope.EventId, pair.Second.Envelope.EventId);
+            Assert.Equal(pair.First.Envelope.EventId, pair.Second.Envelope.EventId);
             Assert.True(SamePublicationSemantics(pair.First, pair.Second));
         }
 
@@ -1043,10 +1038,10 @@ public sealed class HostStageSevenEventExecutionTests
         return true;
     }
 
-    private static HostStageSevenEventExecution Execute(StageExecution execution, IEventJournal journal, ImmutableArray<EventId> eventIds, ServerTick tick) =>
+    private static HostStageSevenEventExecution Execute(StageExecution execution, IAtomicEventJournal journal, ImmutableArray<EventId> eventIds, ServerTick tick) =>
         new HostStageSevenEventExecutor().Execute(
             execution.StageOne, execution.StageTwo, execution.StageThree, execution.StageFour, execution.StageFive, execution.StageSix,
-            journal, eventIds, tick);
+            journal, tick);
 
     private static InMemoryEventJournal JournalAtState(ShiftRuntimeState state, ServerTick tick)
     {
@@ -1173,7 +1168,7 @@ public sealed class HostStageSevenEventExecutionTests
 
     private sealed record JournalSnapshot(int Count, EventSequence LastSequence, ServerTick LastTick, StateVersion LastStateVersion, EventEnvelope[] Events);
 
-    private sealed class CursorJournal : IEventJournal
+    private sealed class CursorJournal : IAtomicEventJournal
     {
         public CursorJournal(ShiftId shift, EventSequence lastSequence, ServerTick lastTick, StateVersion lastStateVersion)
         {
@@ -1198,9 +1193,15 @@ public sealed class HostStageSevenEventExecutionTests
             AppendAttempts++;
             throw new InvalidOperationException("Preflight test journal must not append.");
         }
+
+        public JournalAppendOutcome TryAppendBatch(IReadOnlyList<EventEnvelope> envelopes)
+        {
+            AppendAttempts++;
+            throw new InvalidOperationException("Preflight test journal must not append.");
+        }
     }
 
-    private sealed class ReplayTailJournal : IEventJournal
+    private sealed class ReplayTailJournal : IAtomicEventJournal
     {
         public ReplayTailJournal(ShiftId shift, ImmutableArray<EventEnvelope> events)
         {
@@ -1227,6 +1228,12 @@ public sealed class HostStageSevenEventExecutionTests
             AppendAttempts++;
             throw new InvalidOperationException("An already-published replay must not append.");
         }
+
+        public JournalAppendOutcome TryAppendBatch(IReadOnlyList<EventEnvelope> envelopes)
+        {
+            AppendAttempts++;
+            throw new InvalidOperationException("An already-published replay must not append.");
+        }
     }
 
     private sealed class TestPayload : IDomainEventPayload
@@ -1234,4 +1241,24 @@ public sealed class HostStageSevenEventExecutionTests
         public static readonly TestPayload Instance = new();
         private TestPayload() { }
     }
+}
+
+/// <summary>
+/// Test-only bridge for historical direct stage-seven fixtures. Production callers use the no-identity
+/// boundary; these values deliberately cannot influence generated event identities or plan cardinality.
+/// </summary>
+internal static class HostStageSevenEventExecutionTestAdapter
+{
+    internal static HostStageSevenEventExecution Execute(
+        this HostStageSevenEventExecutor executor,
+        HostStageOneCompletionExecution stageOne,
+        AcceptedIntentStageExecution stageTwo,
+        HostStageThreeDeadlineExecution stageThree,
+        HostStageFourSawExecution stageFour,
+        HostStageFiveFeedExecution stageFive,
+        HostStageSixDerivedExecution stageSix,
+        IAtomicEventJournal journal,
+        ImmutableArray<EventId> ignoredLegacyEventIds,
+        ServerTick currentTick) =>
+        executor.Execute(stageOne, stageTwo, stageThree, stageFour, stageFive, stageSix, journal, currentTick);
 }

@@ -35,8 +35,8 @@ public sealed class HostTickExecutionTests
             {
                 typeof(ShiftRuntimeState), typeof(QuotaRuntimeState), typeof(MovementNoiseRuntimeState),
                 typeof(LineNoiseRuntimeState), typeof(HostTickProgressionEvidence), typeof(ShiftLifecycleRuntimeState),
-                typeof(AcceptedIntentTickBatch), typeof(ImmutableHashSet<ItemId>), typeof(IEventJournal),
-                typeof(ImmutableArray<EventId>), typeof(ServerTick), typeof(SchedulerConfiguration),
+                typeof(AcceptedIntentTickBatch), typeof(ImmutableHashSet<ItemId>), typeof(IAtomicEventJournal),
+                typeof(ServerTick), typeof(SchedulerConfiguration),
                 typeof(ShiftConfiguration), typeof(ContainmentConfiguration), typeof(AnomalyCatalog)
             },
             execute.GetParameters().Select(parameter => parameter.ParameterType));
@@ -78,8 +78,6 @@ public sealed class HostTickExecutionTests
         AssertPreStageFailure(inputs with { ContainmentConfiguration = null! });
         AssertPreStageFailure(inputs with { AnomalyCatalog = null! });
         AssertPreStageFailure(inputs with { CurrentTick = default });
-        AssertPreStageFailure(inputs with { EventIds = default });
-        AssertPreStageFailure(inputs with { EventIds = ImmutableArray.Create(default(EventId)) });
         AssertPreStageFailure(inputs with { ActiveTools = ImmutableHashSet.Create(default(ItemId)) });
 
         var configurationWithoutSelectedProfile = Fx.Shift with { Profiles = Fx.Shift.Profiles.Remove(LearningId) };
@@ -424,7 +422,7 @@ public sealed class HostTickExecutionTests
     }
 
     [Fact]
-    public void Equivalent_inputs_are_independently_deterministic_and_event_id_changes_affect_only_identity()
+    public void Equivalent_inputs_are_independently_deterministic_with_host_owned_event_identity()
     {
         var first = CreateInputs(ServerTick.Zero, eventIds: EventIds("first", 4));
         var second = CreateInputs(ServerTick.Zero, eventIds: EventIds("first", 4));
@@ -439,7 +437,7 @@ public sealed class HostTickExecutionTests
         AssertEquivalentExecution(firstResult, secondResult);
         AssertJournalSemanticsEqual(first.Journal.Events, second.Journal.Events);
         AssertJournalSemanticsEqual(first.Journal.Events, changedIds.Journal.Events);
-        Assert.All(first.Journal.Events.Zip(changedIds.Journal.Events), pair => Assert.NotEqual(pair.First.EventId, pair.Second.EventId));
+        Assert.All(first.Journal.Events.Zip(changedIds.Journal.Events), pair => Assert.Equal(pair.First.EventId, pair.Second.EventId));
         Assert.True(firstResult.FinalShiftState.ValueEquals(changedResult.FinalShiftState));
         Assert.True(firstResult.FinalQuotaState.ValueEquals(changedResult.FinalQuotaState));
         AssertEquivalentExecution(firstResult, changedResult);
@@ -459,7 +457,6 @@ public sealed class HostTickExecutionTests
             inputs.AcceptedIntents,
             inputs.ActiveTools,
             inputs.Journal,
-            inputs.EventIds,
             inputs.CurrentTick,
             inputs.SchedulerConfiguration,
             inputs.ShiftConfiguration,

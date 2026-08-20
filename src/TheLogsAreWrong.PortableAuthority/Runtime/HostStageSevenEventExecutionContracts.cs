@@ -1,4 +1,5 @@
 using System.Collections.Immutable;
+using System.Globalization;
 using TheLogsAreWrong.Domain.Anomalies;
 using TheLogsAreWrong.Domain.Containment;
 using TheLogsAreWrong.Domain.Enums;
@@ -525,8 +526,6 @@ public sealed class HostStageSevenNoNewPublication : HostStageSevenEventExecutio
 
 public sealed class HostStageSevenEventExecutor
 {
-    private readonly JournaledMutationCommitService _mutations = new();
-
     public HostStageSevenEventExecution Execute(
         HostStageOneCompletionExecution stageOne,
         AcceptedIntentStageExecution stageTwo,
@@ -534,11 +533,10 @@ public sealed class HostStageSevenEventExecutor
         HostStageFourSawExecution stageFour,
         HostStageFiveFeedExecution stageFive,
         HostStageSixDerivedExecution stageSix,
-        IEventJournal journal,
-        ImmutableArray<EventId> eventIds,
+        IAtomicEventJournal journal,
         ServerTick currentTick)
     {
-        ValidateInputs(stageOne, stageTwo, stageThree, stageFour, stageFive, stageSix, journal, eventIds, currentTick);
+        ValidateInputs(stageOne, stageTwo, stageThree, stageFour, stageFive, stageSix, journal, currentTick);
         var beforeCursor = new HostStageSevenJournalCursor(journal);
         if (stageSix.Checkpoint is HostTickCheckpointRejected rejected)
         {
@@ -546,23 +544,25 @@ public sealed class HostStageSevenEventExecutor
         }
 
         var plan = BuildPlan(stageOne, stageTwo, stageThree, stageFour, stageFive, stageSix, currentTick, out var rejections);
-        ValidatePlan(plan, eventIds, stageOne.InitialState, stageSix.FinalShiftState, journal, currentTick);
+        ValidatePlan(plan, stageOne.InitialState, stageSix.FinalShiftState, journal, currentTick);
 
         if (plan.Count == 0)
         {
             RequireNoNewPublicationCursor(journal, stageSix.FinalShiftState, currentTick, "Zero-event publication");
-            return new HostStageSevenNoNewPublication(stageOne, stageTwo, stageThree, stageFour, stageFive, stageSix, currentTick, beforeCursor, rejections, eventIds);
+            return new HostStageSevenNoNewPublication(stageOne, stageTwo, stageThree, stageFour, stageFive, stageSix, currentTick, beforeCursor, rejections, ImmutableArray<EventId>.Empty);
         }
 
         if (stageSix.Checkpoint is HostTickCheckpointReplayed)
         {
             RequirePublishedCursor(journal, stageSix.FinalShiftState, currentTick, "Replayed checkpoint");
+            var eventIds = RecreatePublishedEventIds(stageOne.InitialState.ShiftId, journal.LastSequence, plan.Count);
             ValidatePublishedPlan(journal, plan, eventIds, currentTick);
             return new HostStageSevenAlreadyPublished(stageOne, stageTwo, stageThree, stageFour, stageFive, stageSix, currentTick, beforeCursor, eventIds);
         }
 
         if (journal.LastStateVersion == stageSix.FinalShiftState.StateVersion && journal.LastTick == currentTick)
         {
+            var eventIds = RecreatePublishedEventIds(stageOne.InitialState.ShiftId, journal.LastSequence, plan.Count);
             ValidatePublishedPlan(journal, plan, eventIds, currentTick);
             return new HostStageSevenAlreadyPublished(stageOne, stageTwo, stageThree, stageFour, stageFive, stageSix, currentTick, beforeCursor, eventIds);
         }
@@ -573,48 +573,64 @@ public sealed class HostStageSevenEventExecutor
         }
 
         ValidateSequenceCapacity(journal.LastSequence, plan.Count);
+        var assignedEventIds = CreateEventIds(stageOne.InitialState.ShiftId, journal.LastSequence, plan.Count);
 
         var publications = ImmutableArray.CreateBuilder<HostStageSevenPublication>(plan.Count);
+        var envelopes = ImmutableArray.CreateBuilder<EventEnvelope>(plan.Count);
+        var sequence = journal.LastSequence;
         for (var index = 0; index < plan.Count; index++)
         {
             var planned = plan[index];
-            var draft = new DomainEventDraft(eventIds[index], planned.EventType, planned.Payload, planned.CausedByIntentId);
-            EventEnvelope envelope;
-            if (planned.Kind == HostStageSevenPublicationKind.StateChanging)
+            if (!sequence.TryNext(out sequence))
             {
-                var result = _mutations.Commit(journal, planned.BeforeState, planned.CurrentState, currentTick, draft);
-                envelope = result is JournaledMutationCommitted committed
-                    ? committed.Envelope
-                    : throw new InvalidOperationException("A fully preflighted stage-seven mutation commit was rejected by the journal boundary.");
-            }
-            else
-            {
-                envelope = CommitObservation(journal, planned.CurrentState, currentTick, draft);
+                throw new OverflowException("The journal sequence cannot advance through the complete publication plan.");
             }
 
+            var envelope = CreatePlannedEnvelope(planned, assignedEventIds[index], sequence, currentTick);
+            envelopes.Add(envelope);
             publications.Add(new HostStageSevenPublication(envelope, planned.Kind, planned.BeforeState, planned.CurrentState));
         }
 
-        return new HostStageSevenPublished(stageOne, stageTwo, stageThree, stageFour, stageFive, stageSix, currentTick, beforeCursor, new HostStageSevenJournalCursor(journal), publications.MoveToImmutable(), rejections, eventIds);
-    }
-
-    private static EventEnvelope CommitObservation(IEventJournal journal, ShiftRuntimeState state, ServerTick tick, DomainEventDraft draft)
-    {
-        if (journal.Shift != state.ShiftId || journal.LastStateVersion != state.StateVersion || tick < journal.LastTick || !journal.LastSequence.TryNext(out var sequence))
+        var outcome = journal.TryAppendBatch(envelopes.MoveToImmutable());
+        if (outcome != JournalAppendOutcome.Accepted)
         {
-            throw new InvalidOperationException("Observation commit cursor invariant failed after stage-seven preflight.");
+            throw new JournalInvariantViolationException(outcome);
         }
-        var envelope = new EventEnvelope { ShiftId = state.ShiftId, EventId = draft.EventId, Sequence = sequence, CausedByIntentId = draft.CausedByIntentId, ServerTick = tick, StateVersionAfter = state.StateVersion, EventType = draft.EventType, Payload = draft.Payload };
-        var outcome = journal.TryAppend(envelope);
-        if (outcome != JournalAppendOutcome.Accepted) throw new JournalInvariantViolationException(outcome);
-        return envelope;
+
+        RequirePublishedCursor(journal, stageSix.FinalShiftState, currentTick, "Atomic stage-seven publication");
+        ValidatePublishedPlan(journal, plan, assignedEventIds, currentTick);
+
+        return new HostStageSevenPublished(stageOne, stageTwo, stageThree, stageFour, stageFive, stageSix, currentTick, beforeCursor, new HostStageSevenJournalCursor(journal), publications.MoveToImmutable(), rejections, assignedEventIds);
     }
 
-    private static void ValidateInputs(HostStageOneCompletionExecution one, AcceptedIntentStageExecution two, HostStageThreeDeadlineExecution three, HostStageFourSawExecution four, HostStageFiveFeedExecution five, HostStageSixDerivedExecution six, IEventJournal journal, ImmutableArray<EventId> eventIds, ServerTick tick)
+    private static EventEnvelope CreatePlannedEnvelope(
+        PlannedPublication planned,
+        EventId eventId,
+        EventSequence sequence,
+        ServerTick tick)
+    {
+        if (planned is null)
+        {
+            throw new ArgumentNullException(nameof(planned));
+        }
+
+        var draft = new DomainEventDraft(eventId, planned.EventType, planned.Payload, planned.CausedByIntentId);
+        return new EventEnvelope
+        {
+            ShiftId = planned.CurrentState.ShiftId,
+            EventId = draft.EventId,
+            Sequence = sequence,
+            CausedByIntentId = draft.CausedByIntentId,
+            ServerTick = tick,
+            StateVersionAfter = planned.CurrentState.StateVersion,
+            EventType = draft.EventType,
+            Payload = draft.Payload
+        };
+    }
+
+    private static void ValidateInputs(HostStageOneCompletionExecution one, AcceptedIntentStageExecution two, HostStageThreeDeadlineExecution three, HostStageFourSawExecution four, HostStageFiveFeedExecution five, HostStageSixDerivedExecution six, IAtomicEventJournal journal, ServerTick tick)
     {
         if (one is null) { throw new ArgumentNullException("one"); } if (two is null) { throw new ArgumentNullException("two"); } if (three is null) { throw new ArgumentNullException("three"); } if (four is null) { throw new ArgumentNullException("four"); } if (five is null) { throw new ArgumentNullException("five"); } if (six is null) { throw new ArgumentNullException("six"); } if (journal is null) { throw new ArgumentNullException("journal"); }
-        if (eventIds.IsDefault) throw new ArgumentException("Event identities must be an initialized immutable array.", nameof(eventIds));
-        if (eventIds.Any(id => id.IsDefault)) throw new ArgumentException("Every event identity must be initialized.", nameof(eventIds));
         if (tick.IsDefault) throw new ArgumentException("Current tick must be initialized.", nameof(tick));
         if (!ReferenceEquals(two.InitialState, one.FinalState) || !ReferenceEquals(three.InitialState, two.FinalState) || !ReferenceEquals(four.InitialShiftState, three.FinalState) || !ReferenceEquals(five.InitialState, four.FinalShiftState) || !ReferenceEquals(six.InitialShiftState, five.FinalState))
             throw new ArgumentException("Stages one through six must form the exact host-tick reference chain.");
@@ -862,9 +878,8 @@ public sealed class HostStageSevenEventExecutor
         if (before.StateVersion != after.StateVersion) throw new InvalidOperationException("An unmapped stage result changed state and cannot be published safely.");
     }
 
-    private static void ValidatePlan(List<PlannedPublication> plan, ImmutableArray<EventId> eventIds, ShiftRuntimeState initial, ShiftRuntimeState final, IEventJournal journal, ServerTick tick)
+    private static void ValidatePlan(List<PlannedPublication> plan, ShiftRuntimeState initial, ShiftRuntimeState final, IEventJournal journal, ServerTick tick)
     {
-        if (eventIds.Length != plan.Count) throw new ArgumentException("The supplied event identity count must exactly match the complete publication plan.", nameof(eventIds));
         var reached = initial.StateVersion;
         foreach (var entry in plan)
         {
@@ -887,6 +902,30 @@ public sealed class HostStageSevenEventExecutor
         {
             if (!sequence.TryNext(out sequence)) throw new OverflowException("The journal sequence cannot advance through the complete publication plan.");
         }
+    }
+
+    private static ImmutableArray<EventId> CreateEventIds(ShiftId shiftId, EventSequence priorSequence, int count)
+    {
+        if (shiftId.IsDefault) throw new ArgumentException("Event identities require an initialized shift.", nameof(shiftId));
+        var ids = ImmutableArray.CreateBuilder<EventId>(count);
+        var sequence = priorSequence;
+        for (var index = 0; index < count; index++)
+        {
+            if (!sequence.TryNext(out sequence)) throw new OverflowException("The journal sequence cannot supply an event identity for the complete publication plan.");
+            ids.Add(EventId.From($"host:{shiftId}:{sequence.Value.ToString(CultureInfo.InvariantCulture)}"));
+        }
+
+        return ids.MoveToImmutable();
+    }
+
+    private static ImmutableArray<EventId> RecreatePublishedEventIds(ShiftId shiftId, EventSequence lastSequence, int count)
+    {
+        if (lastSequence.Value < count)
+        {
+            throw new InvalidOperationException("The published journal cursor cannot contain the complete stage-seven plan.");
+        }
+
+        return CreateEventIds(shiftId, EventSequence.From(lastSequence.Value - count), count);
     }
 
     private static void RequirePublishedCursor(IEventJournal journal, ShiftRuntimeState finalState, ServerTick tick, string source)
