@@ -54,7 +54,7 @@ public sealed class Tlaw037ArchitectureTests
         var parameters = execute.GetParameters();
 
         Assert.Equal(typeof(HostStageSevenEventExecution), execute.ReturnType);
-        Assert.Equal(15, parameters.Length);
+        Assert.Equal(14, parameters.Length);
         Assert.DoesNotContain(parameters, parameter =>
             parameter.ParameterType == typeof(ShiftProfile) ||
             parameter.ParameterType == typeof(IntentEnvelope) ||

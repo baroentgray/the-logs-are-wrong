@@ -28,7 +28,7 @@ public sealed class Tlaw036ArchitectureTests
         var execute = Assert.Single(typeof(HostStageSevenEventExecutor).GetMethods(BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly), method => method.Name == "Execute");
         var parameters = execute.GetParameters();
         Assert.Equal(typeof(HostStageSevenEventExecution), execute.ReturnType);
-        Assert.Contains(parameters, parameter => parameter.ParameterType == typeof(ImmutableArray<EventId>));
+        Assert.DoesNotContain(parameters, parameter => parameter.ParameterType == typeof(ImmutableArray<EventId>));
         Assert.Contains(parameters, parameter => parameter.ParameterType == typeof(IEventJournal));
         Assert.DoesNotContain(parameters, parameter =>
             parameter.ParameterType == typeof(EventTypeId) ||
@@ -41,7 +41,7 @@ public sealed class Tlaw036ArchitectureTests
     }
 
     [Fact]
-    public void Payloads_are_closed_immutable_and_stage_seven_is_not_a_dispatcher_or_identity_generator()
+    public void Payloads_are_closed_immutable_and_stage_seven_owns_deterministic_identity_without_becoming_a_dispatcher()
     {
         Assert.Empty(typeof(HostStageSevenEventPayload).GetConstructors(BindingFlags.Public | BindingFlags.Instance));
         Assert.True(typeof(HostStageSevenLogTransitionPayload).IsSealed);
@@ -66,6 +66,8 @@ public sealed class Tlaw036ArchitectureTests
         Assert.Contains("HostStageSevenSawQuotaOutcome", source, StringComparison.Ordinal);
         Assert.Contains("DuplicateQuotaSettlementLogId", source, StringComparison.Ordinal);
         Assert.Contains("ValidateSequenceCapacity", source, StringComparison.Ordinal);
+        Assert.Contains("CreateEventIds", source, StringComparison.Ordinal);
+        Assert.Contains("RecreatePublishedEventIds", source, StringComparison.Ordinal);
         Assert.Contains("left.QuotaApplicationOutcome == right.QuotaApplicationOutcome", source, StringComparison.Ordinal);
         Assert.Contains("left.DuplicateQuotaSettlementLogId == right.DuplicateQuotaSettlementLogId", source, StringComparison.Ordinal);
         Assert.Contains("left.AttemptedAt == right.AttemptedAt", source, StringComparison.Ordinal);

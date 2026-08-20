@@ -139,7 +139,6 @@ public sealed class ShiftReplayReducerTests
             AcceptedIntentTickBatchFactory.Create(started.FinalShiftState.ShiftId, tick, ImmutableArray<AuthoritativeAcceptedIntent>.Empty),
             ImmutableHashSet<ItemId>.Empty,
             journal,
-            ImmutableArray.Create(EventId.From("tlaw046_condition_lost")),
             tick,
             configuration.Shift.Scheduler,
             configuration.Shift,

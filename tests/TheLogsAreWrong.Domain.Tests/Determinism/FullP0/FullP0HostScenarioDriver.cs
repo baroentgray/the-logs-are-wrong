@@ -98,7 +98,7 @@ internal sealed class FullP0HostScenarioRun
 /// The TLAW-042 test-only deterministic full-host scenario driver.
 /// <para>
 /// It owns no gameplay. For every sequential tick it builds the exact accepted-intent batch, the exact active-tool set
-/// and the exact predeclared event identities the frozen script requires, calls the production
+/// and calls the production
 /// <see cref="HostTickExecutionService"/> exactly once, and carries forward only the exact states that host result
 /// returned. It never skips a tick, never synthesises a checkpoint receipt, never mutates production state directly and
 /// never composes stages one through seven itself.
@@ -138,8 +138,6 @@ internal sealed class FullP0HostScenarioDriver
             var tick = ServerTick.From(value);
             var scripted = script.TickAt(tick);
             var batch = BuildBatch(script, shift, tick, scripted);
-            var eventIds = BuildEventIds(script, tick, scripted.ExpectedEvents.Length);
-
             var execution = _host.Execute(
                 shift,
                 quota,
@@ -150,7 +148,6 @@ internal sealed class FullP0HostScenarioDriver
                 batch,
                 scripted.ActiveTools,
                 journal,
-                eventIds,
                 tick,
                 configuration.Shift.Scheduler,
                 configuration.Shift,
@@ -239,17 +236,6 @@ internal sealed class FullP0HostScenarioDriver
         return AcceptedIntentTickBatchFactory.Create(shift.ShiftId, tick, receipts.MoveToImmutable());
     }
 
-    private static ImmutableArray<EventId> BuildEventIds(FullP0HostScenarioScript script, ServerTick tick, int count)
-    {
-        var ids = ImmutableArray.CreateBuilder<EventId>(count);
-        for (var ordinal = 0; ordinal < count; ordinal++)
-        {
-            ids.Add(EventIdFor(script, tick, ordinal));
-        }
-
-        return ids.MoveToImmutable();
-    }
-
     private static ImmutableArray<EventTypeId> RequireExpectedPublication(
         FullP0HostScenarioScript script,
         ServerTick tick,
@@ -278,14 +264,6 @@ internal sealed class FullP0HostScenarioDriver
                 script,
                 tick,
                 $"expected publications [{string.Join(", ", scripted.ExpectedEvents)}] but the host published [{string.Join(", ", actual)}]."));
-        }
-
-        for (var index = 0; index < publishedResult.Publications.Length; index++)
-        {
-            if (publishedResult.Publications[index].Envelope.EventId != EventIdFor(script, tick, index))
-            {
-                throw new InvalidOperationException(Describe(script, tick, "a publication did not receive its exact predeclared deterministic event identity."));
-            }
         }
 
         return actual;
@@ -331,10 +309,6 @@ internal sealed class FullP0HostScenarioDriver
 
     internal static readonly ActorId ActorHint = ActorId.From("tlaw042_actor_hint");
     internal static readonly ActorId BoundActor = ActorId.From("tlaw042_bound_actor");
-
-    /// <summary>Deterministic event identity derived only from the exact scenario, tick and publication ordinal.</summary>
-    internal static EventId EventIdFor(FullP0HostScenarioScript script, ServerTick tick, int ordinal) =>
-        EventId.From($"{script.IdentityNamespace}#t{tick.Value.ToString(CultureInfo.InvariantCulture)}#e{ordinal.ToString(CultureInfo.InvariantCulture)}");
 
     /// <summary>Deterministic intent identity derived only from the exact scenario, tick and receive ordinal.</summary>
     internal static IntentId IntentIdFor(FullP0HostScenarioScript script, ServerTick tick, int ordinal) =>

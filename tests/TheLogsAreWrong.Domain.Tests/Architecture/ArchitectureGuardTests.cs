@@ -35,7 +35,7 @@ public sealed class ArchitectureGuardTests
     {
         var sourceRoot = Path.Combine(AppContext.BaseDirectory, "DomainSources");
         var sourcePaths = Directory.GetFiles(sourceRoot, "*.cs", SearchOption.AllDirectories);
-        Assert.Equal(60, sourcePaths.Length);
+        Assert.Equal(61, sourcePaths.Length);
 
         var source = sourcePaths
             .Select(File.ReadAllText)
@@ -88,10 +88,12 @@ public sealed class ArchitectureGuardTests
             "Scheduler/RepairFeedGateIntakeDeadlineContracts.cs", "Sequencing/SequencingContracts.cs"
         };
 
+        var session = "Runtime/HostSessionContracts.cs";
+
         var domainSources = RelativeSources(domainRoot);
         var portableSources = RelativeSources(portableRoot).Where(path => !path.StartsWith("Support/", StringComparison.Ordinal)).ToArray();
         Assert.Equal(6, domainSources.Length);
-        Assert.Equal(moved.OrderBy(path => path, StringComparer.Ordinal), portableSources.OrderBy(path => path, StringComparer.Ordinal));
+        Assert.Equal(moved.Append(session).OrderBy(path => path, StringComparer.Ordinal), portableSources.OrderBy(path => path, StringComparer.Ordinal));
         Assert.All(moved, path => Assert.False(File.Exists(Path.Combine(domainRoot, path))));
 
         var portableProject = File.ReadAllText(Path.Combine(portableRoot, "TheLogsAreWrong.PortableAuthority.csproj"));

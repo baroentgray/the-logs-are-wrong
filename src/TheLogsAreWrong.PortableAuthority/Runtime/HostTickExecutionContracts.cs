@@ -36,7 +36,6 @@ public sealed class HostTickExecutionService
         AcceptedIntentTickBatch acceptedIntents,
         ImmutableHashSet<ItemId> activeTools,
         IEventJournal journal,
-        ImmutableArray<EventId> eventIds,
         ServerTick currentTick,
         SchedulerConfiguration schedulerConfiguration,
         ShiftConfiguration shiftConfiguration,
@@ -53,7 +52,6 @@ public sealed class HostTickExecutionService
             acceptedIntents,
             activeTools,
             journal,
-            eventIds,
             currentTick,
             schedulerConfiguration,
             shiftConfiguration,
@@ -80,7 +78,7 @@ public sealed class HostTickExecutionService
             schedulerConfiguration,
             shiftConfiguration,
             anomalyCatalog);
-        return _stageSeven.Execute(stageOne, stageTwo, stageThree, stageFour, stageFive, stageSix, journal, eventIds, currentTick);
+        return _stageSeven.Execute(stageOne, stageTwo, stageThree, stageFour, stageFive, stageSix, journal, currentTick);
     }
 
     private static ShiftProfile ValidateInputs(
@@ -93,7 +91,6 @@ public sealed class HostTickExecutionService
         AcceptedIntentTickBatch acceptedIntents,
         ImmutableHashSet<ItemId> activeTools,
         IEventJournal journal,
-        ImmutableArray<EventId> eventIds,
         ServerTick currentTick,
         SchedulerConfiguration schedulerConfiguration,
         ShiftConfiguration shiftConfiguration,
@@ -117,16 +114,6 @@ public sealed class HostTickExecutionService
         if (currentTick.IsDefault)
         {
             throw new ArgumentException("Current tick must be initialized.", nameof(currentTick));
-        }
-
-        if (eventIds.IsDefault)
-        {
-            throw new ArgumentException("Event identities must be an initialized immutable array.", nameof(eventIds));
-        }
-
-        if (eventIds.Any(eventId => eventId.IsDefault))
-        {
-            throw new ArgumentException("Every event identity must be initialized.", nameof(eventIds));
         }
 
         if (activeTools.Any(tool => tool.IsDefault))

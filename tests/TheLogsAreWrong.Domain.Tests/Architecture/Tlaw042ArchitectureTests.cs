@@ -196,7 +196,7 @@ public sealed class Tlaw042ArchitectureTests
         var execute = Assert.Single(
             typeof(HostTickExecutionService).GetMethods(BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly),
             method => method.Name == "Execute");
-        Assert.Equal(15, execute.GetParameters().Length);
+        Assert.Equal(14, execute.GetParameters().Length);
 
         // D-013: shift and quota runtime remain separate immutable state families passed independently to the host.
         var parameterTypes = execute.GetParameters().Select(parameter => parameter.ParameterType).ToImmutableArray();

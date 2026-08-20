@@ -60,7 +60,7 @@ public sealed class HostTickContainmentRitualIntentTests
         Assert.DoesNotContain(published.Publications, item => item.Envelope.EventType == HostStageSevenEventTypes.ContainmentRitualCompleted);
 
         var replayed = Assert.IsType<HostStageSevenAlreadyPublished>(Execute(inputs));
-        Assert.Equal(inputs.EventIds, replayed.AssignedEventIds);
+        Assert.Equal(published.AssignedEventIds, replayed.AssignedEventIds);
     }
 
     [Fact]
@@ -204,7 +204,7 @@ public sealed class HostTickContainmentRitualIntentTests
         new HostTickExecutionService().Execute(
             inputs.InitialShiftState, inputs.InitialQuotaState, inputs.InitialMovementNoise, inputs.InitialLineNoise,
             inputs.Progression, inputs.Lifecycle, inputs.AcceptedIntents, ImmutableHashSet<ItemId>.Empty, inputs.Journal,
-            inputs.EventIds, inputs.Tick, inputs.ShiftConfiguration.Scheduler, inputs.ShiftConfiguration, inputs.ShiftConfiguration.Containment, Fx.Anomalies);
+            inputs.Tick, inputs.ShiftConfiguration.Scheduler, inputs.ShiftConfiguration, inputs.ShiftConfiguration.Containment, Fx.Anomalies);
 
     private static ComposerInputs CreateInputs(
         ShiftRuntimeState state,

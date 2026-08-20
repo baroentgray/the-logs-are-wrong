@@ -67,7 +67,7 @@ public sealed class HostTickConfirmationTestIntentTests
         Assert.DoesNotContain(started.Publications, item => item.Envelope.EventType == HostStageSevenEventTypes.ConfirmationTestCompleted);
 
         var replayed = Assert.IsType<HostStageSevenAlreadyPublished>(Execute(initial));
-        Assert.Equal(EventId.From("start_0"), Assert.Single(replayed.AssignedEventIds));
+        Assert.Equal(Assert.Single(started.AssignedEventIds), Assert.Single(replayed.AssignedEventIds));
 
         var beforeDue = AdvanceBefore(
             started.FinalShiftState,
@@ -173,7 +173,7 @@ public sealed class HostTickConfirmationTestIntentTests
         new HostTickExecutionService().Execute(
             inputs.InitialShiftState, inputs.InitialQuotaState, inputs.InitialMovementNoise, inputs.InitialLineNoise,
             inputs.Progression, inputs.Lifecycle, inputs.AcceptedIntents, inputs.ActiveTools, inputs.Journal,
-            inputs.EventIds, inputs.Tick, Fx.Shift.Scheduler, Fx.Shift, Fx.Shift.Containment, Fx.Anomalies);
+            inputs.Tick, Fx.Shift.Scheduler, Fx.Shift, Fx.Shift.Containment, Fx.Anomalies);
 
     private static ComposerInputs CreateInputs(
         ShiftRuntimeState state,
