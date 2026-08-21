@@ -14,6 +14,8 @@ namespace TheLogsAreWrong.Gate2.EditorTools
     {
         public const string ScenePath = "Assets/Gate2/Bootstrap/Gate2Bootstrap.unity";
         public const string RootName = "Gate2BootstrapRoot";
+        private const string C1ArtifactPath = "Assets/Gate2/Configuration/validated-configuration-c1-v1.base64";
+        private const string C1ManifestPath = "Assets/Gate2/Configuration/validated-configuration-c1-v1.manifest";
 
         public static void CreateBootstrapScene()
         {
@@ -21,8 +23,24 @@ namespace TheLogsAreWrong.Gate2.EditorTools
             {
                 var scene = EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Single);
 
+                AssetDatabase.SetImporterOverride<Gate2DeploymentTextImporter>(C1ManifestPath);
+                AssetDatabase.ImportAsset(C1ManifestPath, ImportAssetOptions.ForceUpdate);
+
                 var root = new GameObject(RootName);
                 root.AddComponent<Gate2BootstrapRoot>();
+                var owner = root.AddComponent<Gate2ProductionHostDriver>();
+                var artifact = AssetDatabase.LoadAssetAtPath<Gate2DeploymentTextAsset>(C1ArtifactPath);
+                var manifest = AssetDatabase.LoadAssetAtPath<Gate2DeploymentTextAsset>(C1ManifestPath);
+                if (artifact == null || manifest == null)
+                {
+                    throw new FileNotFoundException("Tracked Gate-2 C1 deployment TextAssets are required before bootstrap scene authoring.");
+                }
+
+                var ownerSerialized = new SerializedObject(owner);
+                ownerSerialized.FindProperty("_c1ArtifactBase64").objectReferenceValue = artifact;
+                ownerSerialized.FindProperty("_c1Manifest").objectReferenceValue = manifest;
+                ownerSerialized.FindProperty("_selectedProfileId").stringValue = "learning";
+                ownerSerialized.ApplyModifiedPropertiesWithoutUndo();
 
                 var cameraGo = new GameObject("Gate2BootstrapCamera");
                 cameraGo.transform.SetParent(root.transform, false);
