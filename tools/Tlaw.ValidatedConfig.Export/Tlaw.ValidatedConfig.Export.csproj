@@ -1,0 +1,10 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <AssemblyName>Tlaw.ValidatedConfig.Export</AssemblyName>
+    <RootNamespace>Tlaw.ValidatedConfig.Export</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\TheLogsAreWrong.Config.Yaml\TheLogsAreWrong.Config.Yaml.csproj" />
+  </ItemGroup>
+</Project>
