@@ -93,7 +93,16 @@ public sealed class Tlaw070C1ProductionHandoffContractsTests
     public void Export_is_refused_when_the_real_yaml_loader_reports_validation_errors()
     {
         var invalidShift = Fixture.ShiftYaml.Replace("seed: 47001", "seed: forty", StringComparison.Ordinal);
-        Assert.Throws<InvalidDataException>(() => ValidatedConfigurationC1Exporter.Export(invalidShift, Fixture.AnomaliesYaml, Tlaw070TrustedDeployment.Binding));
+        var invalidBinding = Tlaw070TrustedDeployment.Binding with { ShiftYamlSha256 = Sha256(invalidShift) };
+        var load = new YamlConfigurationLoader().Load(invalidShift, Fixture.AnomaliesYaml);
+
+        Assert.Equal(Sha256(invalidShift), invalidBinding.ShiftYamlSha256);
+        Assert.Equal(Tlaw070TrustedDeployment.Binding.AnomaliesYamlSha256, invalidBinding.AnomaliesYamlSha256);
+        Assert.Equal(GitBlob("src/TheLogsAreWrong.Config.Yaml/YamlConfigurationLoader.cs"), invalidBinding.ValidatorSourceBlob);
+        Assert.False(load.IsSuccess, string.Join(Environment.NewLine, load.Diagnostics));
+        Assert.Null(load.Configuration);
+        Assert.Contains(load.Diagnostics, diagnostic => diagnostic.Code == "TLAW-CFG-102");
+        Assert.Throws<InvalidDataException>(() => ValidatedConfigurationC1Exporter.Export(invalidShift, Fixture.AnomaliesYaml, invalidBinding));
     }
 
     private static int PayloadLengthOffset(byte[] artifact)
