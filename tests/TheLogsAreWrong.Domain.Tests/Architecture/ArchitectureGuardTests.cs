@@ -35,7 +35,7 @@ public sealed class ArchitectureGuardTests
     {
         var sourceRoot = Path.Combine(AppContext.BaseDirectory, "DomainSources");
         var sourcePaths = Directory.GetFiles(sourceRoot, "*.cs", SearchOption.AllDirectories);
-        Assert.Equal(61, sourcePaths.Length);
+        Assert.Equal(62, sourcePaths.Length);
 
         var source = sourcePaths
             .Select(File.ReadAllText)
@@ -56,7 +56,7 @@ public sealed class ArchitectureGuardTests
     }
 
     [Fact]
-    public void Portable_authority_core_is_the_single_owner_of_the_accepted_54_file_cut()
+    public void Portable_authority_core_is_the_single_owner_of_the_accepted_host_tick_cut_and_cadence()
     {
         var root = FindRepositoryRoot();
         var domainRoot = Path.Combine(root, "src", "TheLogsAreWrong.Domain");
@@ -89,11 +89,13 @@ public sealed class ArchitectureGuardTests
         };
 
         var session = "Runtime/HostSessionContracts.cs";
+        // TLAW-068 / D-021 U2 adds only a cadence boundary beside the frozen 54-file HostTick cut.
+        var cadence = "Runtime/HostTickCadenceContracts.cs";
 
         var domainSources = RelativeSources(domainRoot);
         var portableSources = RelativeSources(portableRoot).Where(path => !path.StartsWith("Support/", StringComparison.Ordinal)).ToArray();
         Assert.Equal(6, domainSources.Length);
-        Assert.Equal(moved.Append(session).OrderBy(path => path, StringComparer.Ordinal), portableSources.OrderBy(path => path, StringComparer.Ordinal));
+        Assert.Equal(moved.Append(session).Append(cadence).OrderBy(path => path, StringComparer.Ordinal), portableSources.OrderBy(path => path, StringComparer.Ordinal));
         Assert.All(moved, path => Assert.False(File.Exists(Path.Combine(domainRoot, path))));
 
         var portableProject = File.ReadAllText(Path.Combine(portableRoot, "TheLogsAreWrong.PortableAuthority.csproj"));
