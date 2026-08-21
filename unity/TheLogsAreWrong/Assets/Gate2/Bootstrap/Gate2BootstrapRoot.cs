@@ -22,6 +22,12 @@ namespace TheLogsAreWrong.Gate2
         /// <summary>Marker written immediately before a smoke-mode quit.</summary>
         public const string QuitMarker = "TLAW052_BOOTSTRAP_QUIT";
 
+        /// <summary>Marker proving the one production owner reached running startup before bootstrap smoke continues.</summary>
+        public const string OwnerStartupMarker = "TLAW071_BOOTSTRAP_OWNER_RUNNING";
+
+        /// <summary>Marker proving bootstrap refuses to proceed if its required production owner did not start.</summary>
+        public const string OwnerStartupFailureMarker = "TLAW071_BOOTSTRAP_OWNER_NOT_RUNNING";
+
         [Tooltip("Frames to run before quitting when the bootstrap smoke argument is supplied.")]
         [SerializeField]
         private int _smokeFrames = 60;
@@ -33,6 +39,20 @@ namespace TheLogsAreWrong.Gate2
         {
             _smokeMode = HasSmokeArgument();
             Debug.Log($"{StartedMarker} scene={gameObject.scene.name} smokeMode={_smokeMode} unity={Application.unityVersion}");
+
+            var owner = GetComponent<Gate2ProductionHostDriver>();
+            if (owner == null || owner.Lifecycle != ProductionHostOwnerLifecycle.Running)
+            {
+                Debug.LogError(OwnerStartupFailureMarker);
+                if (_smokeMode)
+                {
+                    Application.Quit(2);
+                }
+
+                return;
+            }
+
+            Debug.Log(OwnerStartupMarker + " shift=" + owner.RunningShiftId + " profile=" + owner.SelectedProfileId);
         }
 
         private void Update()
