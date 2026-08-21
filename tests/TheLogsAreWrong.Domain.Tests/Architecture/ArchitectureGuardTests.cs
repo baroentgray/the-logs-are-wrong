@@ -35,7 +35,7 @@ public sealed class ArchitectureGuardTests
     {
         var sourceRoot = Path.Combine(AppContext.BaseDirectory, "DomainSources");
         var sourcePaths = Directory.GetFiles(sourceRoot, "*.cs", SearchOption.AllDirectories);
-        Assert.Equal(62, sourcePaths.Length);
+        Assert.Equal(64, sourcePaths.Length);
 
         var source = sourcePaths
             .Select(File.ReadAllText)
@@ -91,11 +91,13 @@ public sealed class ArchitectureGuardTests
         var session = "Runtime/HostSessionContracts.cs";
         // TLAW-068 / D-021 U2 adds only a cadence boundary beside the frozen 54-file HostTick cut.
         var cadence = "Runtime/HostTickCadenceContracts.cs";
+        // TLAW-070 / D-022 adds one already-validated configuration transport and its deployment identity.
+        var c1Transport = new[] { "Configuration/ValidatedConfigurationC1Codec.cs", "Configuration/ValidatedConfigurationC1DeploymentManifest.cs" };
 
         var domainSources = RelativeSources(domainRoot);
         var portableSources = RelativeSources(portableRoot).Where(path => !path.StartsWith("Support/", StringComparison.Ordinal)).ToArray();
         Assert.Equal(6, domainSources.Length);
-        Assert.Equal(moved.Append(session).Append(cadence).OrderBy(path => path, StringComparer.Ordinal), portableSources.OrderBy(path => path, StringComparer.Ordinal));
+        Assert.Equal(moved.Append(session).Append(cadence).Concat(c1Transport).OrderBy(path => path, StringComparer.Ordinal), portableSources.OrderBy(path => path, StringComparer.Ordinal));
         Assert.All(moved, path => Assert.False(File.Exists(Path.Combine(domainRoot, path))));
 
         var portableProject = File.ReadAllText(Path.Combine(portableRoot, "TheLogsAreWrong.PortableAuthority.csproj"));

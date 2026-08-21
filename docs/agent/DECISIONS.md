@@ -558,3 +558,23 @@ gameplay, D-016, Ready, merge, or cleanup. Each production increment remains
 separately owner-gated.
 
 Sources: [Issue #151](https://github.com/baroentgray/the-logs-are-wrong/issues/151), [PR #152](https://github.com/baroentgray/the-logs-are-wrong/pull/152), [D-011 authoritative review 4968866370](https://github.com/baroentgray/the-logs-are-wrong/pull/152#pullrequestreview-4968866370), [Issue #153](https://github.com/baroentgray/the-logs-are-wrong/issues/153), [BAR-109](https://linear.app/baronet/issue/BAR-109/tlaw-066-record-d-021-host-runtime-and-low-desync-multiplayer-boundary), `docs/NETWORK_RULES.md`, and [D-020](#d-020--owner-selects-h2-for-the-unity-host-tick-composition-boundary).
+
+## D-022 — Owner selects C1 for the validated configuration deployment handoff
+
+The owner selected C1, the versioned deterministic artifact plus
+PortableAuthority materializer, after the TLAW-069 proof established C1 and C2
+as viable alternatives. This records the already-made selection; it does not
+reopen candidate evaluation or alter D-019, D-020, or D-021.
+
+C1 remains one PortableAuthority-owned codec/materializer for already validated
+configuration data. Canonical YAML loading and validation remain outside Unity.
+The deployment boundary carries a deterministic artifact and a trusted binding
+to the canonical shift YAML, anomalies YAML, loader identity, artifact identity,
+and canonical projection identity.
+
+This selection authorizes only the separately gated TLAW-070 C1 production
+handoff. It does not authorize a Unity production owner/driver, U3 ownership
+implementation, YAML or validation semantic changes, a Unity-native schema,
+networking/Gate 3, gameplay, D-016, Ready, merge, or cleanup.
+
+Sources: [TLAW-069 owner C1 selection](https://github.com/baroentgray/the-logs-are-wrong/pull/161#issuecomment-5372446356), [Issue #162](https://github.com/baroentgray/the-logs-are-wrong/issues/162), and [TLAW-070 implementation handoff](https://github.com/baroentgray/the-logs-are-wrong/issues/162#issuecomment-5373173295).

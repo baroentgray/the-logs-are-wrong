@@ -40,12 +40,16 @@ proof; none occurred.
 | Existing Unity configuration path | Gate-2 inventory contained only synthetic test probe configurations; no YAML/Config.Yaml/decoder/generated-real-config/ScriptableObject production path | PASS |
 | Gate-2 networking exclusion | package manifest blob `e94299d0c5615ce98f00b1d2c5f5dc52900fc001` and source inventory contain no FishNet, FishySteamworks, Steamworks, Netcode, Mirror, or Unity Transport dependency | PASS |
 
-The complete validated graph remains the 23 PortableAuthority records in
+The complete validated graph remains the 24 PortableAuthority records in
 `ValidatedConfiguration.cs`: the root, shift/profile/objective/quota/supply/
 manifest/scheduler/noise/resources/containment records and the anomaly/
 confirm/processing/outcome/effect/procedure/wrong-action records. Namespace
 text remains `TheLogsAreWrong.Domain.*` by the accepted extraction strategy;
 the source assembly owns every listed type.
+
+TLAW-069 C1/C2 payloads already carried `ShiftConfiguration.LineNoise`; only
+their named inventory omitted `LineNoiseConfiguration`. TLAW-070 corrects that
+named guard without changing the previously proven payload.
 
 ## Preserved U4 contract and current dependency path
 
