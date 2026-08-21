@@ -12,12 +12,13 @@ cannot name its own commit object ID.
 
 | Field | Evidence |
 | --- | --- |
-| GitHub contract | Issue #160; closed implementation handoff comment `5369075075` |
+| GitHub contract | Issue #160; closed implementation handoff comment `5369075075`; bounded C1 correction authorization in PR #161 comment `5369604609` |
 | Authorized baseline / `origin/main` | `55da4b91572da292f5004e5728284783852282a4` |
 | Branch | `task/TLAW-069-validated-config-unity-handoff-proof` |
 | Worktree | `C:\Projects\TheLogsAreWrong-worktrees\TLAW-069` |
 | Proof-start HEAD / remote task branch | `55da4b91572da292f5004e5728284783852282a4` |
 | Proof-start worktree | clean |
+| C1 correction input head | `94ccb1a0cc039381485c7c45e8bea15fd238f8fd` |
 | Execution profile | `CODEX_STANDARD`, medium reasoning; quota unknown is treated as YELLOW per `docs/MODEL_ROUTING.md` |
 
 Phase 0 was run before any tracked edit. `git fetch origin --prune` completed,
@@ -67,6 +68,37 @@ the exact canonical-loader source blob ID
 `23651feb72bfa432685f8ef1850648d355baed57`. It is a source/result identity,
 not a second schema or validator.
 
+### Corrected C1 same-handoff binding
+
+The immutable test resource
+`unity/TheLogsAreWrong/Assets/Gate2/Tests/Editor/Tlaw069C1Artifact.base64`
+is a canonical Base64 representation of the exact C1 v1 artifact, with no
+configuration values derived from C2. Its decoded boundary bytes are **2,326
+bytes** with SHA-256
+`94FCBE2B0E08662E9E45DDFC4D310A1E3063F6A765FE36B596409021D930B541`;
+the committed Base64 resource text has SHA-256
+`CCBF6F80C7C0C37BE1673DD26241BE5D2B6BDC4EA06C40D39372061D530D727A`.
+Those bytes were generated outside Unity from the canonical YAML pair through
+the real `YamlConfigurationLoader` and bind the two YAML identities plus the
+loader/validator blob in the C1 header.
+
+The .NET C1 contract reruns that real loader, regenerates C1, checks
+byte-for-byte equality to the decoded committed resource, and independently
+checks both the artifact SHA above and the canonical projection SHA below.
+The Unity C1 contract reads those same decoded bytes directly from the resource;
+its C1 path does not call `Tlaw069GeneratedValidatedConfiguration` or any C1
+encoder. It independently checks the trusted artifact SHA and trusted projection
+SHA, decodes/materializes the artifact using the fixed YAML/loader binding, and
+passes the resulting `ShiftConfiguration` plus `AnomalyCatalog` straight to
+`HostSession`.
+
+The correction also proves why the internal payload self-hash is insufficient
+on its own: a test flips the encoded seed and recomputes the internal payload
+self-hash. The C1 decoder accepts that internally consistent altered payload,
+but the independently trusted artifact/source-result identity rejects it before
+acceptance. Corruption, truncation, wrong-version, and stale-binding negative
+cases continue to run against this same boundary resource.
+
 ## Deterministic full-graph projection and proof harness
 
 The proof harness defines an explicitly ordered binary projection of every
@@ -79,7 +111,7 @@ cross-document rules, anomaly rules, or shift validation.
 | Projection / material | SHA-256 | Evidence |
 | --- | --- | --- |
 | Canonical complete configuration projection | `4837EF28FC0480DC133B72A024110E3569E2CB2973E206A4542A7C70949F7AB1` | real `YamlConfigurationLoader` → full graph → projection |
-| C1 deterministic v1 artifact | `94FCBE2B0E08662E9E45DDFC4D310A1E3063F6A765FE36B596409021D930B541` (2,326 bytes) | real YAML/loader input, repeated output equality |
+| C1 deterministic v1 artifact | `94FCBE2B0E08662E9E45DDFC4D310A1E3063F6A765FE36B596409021D930B541` (2,326 bytes) | exact decoded bytes in `Tlaw069C1Artifact.base64`; real loader regeneration is byte-for-byte equal; Base64 resource SHA `CCBF6F80C7C0C37BE1673DD26241BE5D2B6BDC4EA06C40D39372061D530D727A` |
 | C2 deterministic generated source | `07DB882E9AB082D515B5D906E233C604E773CAC540F7DCB0B241A68393AD9A90` | exact source equality to the test-only emitter |
 
 The tracked C1 codec reference implementations live only in the bounded .NET
@@ -94,7 +126,7 @@ against the real loader result; it is not a runtime generator or loader.
 
 | Candidate | Executable proof | U4 / dependency result | Failure behavior | Status |
 | --- | --- | --- | --- | --- |
-| C1 — deterministic versioned data artifact + PortableAuthority materializer | Real YAML is loaded and validated by the existing loader; versioned binary artifact repeatability, full-graph materialization, direct HostSession construction, net10/Unity projection parity, and negative cases are all executed. | The reference uses only PortableAuthority types plus BCL/Immutable. Unity test assembly references no Domain, Config.Yaml, or YamlDotNet; no plugin/project/package change. A later owner-selected implementation can place one equivalent decoder in PortableAuthority without a new package or plugin. | Magic, version, source binding, exact length/trailing-data, payload SHA-256, malformed reader state, and re-projected payload agreement all fail closed. Corrupt, truncated, wrong-version, and stale-binding tests pass. | Viable; owner selection required. |
+| C1 — deterministic versioned data artifact + PortableAuthority materializer | The exact committed 2,326-byte real-loader artifact crosses the Unity boundary. .NET regenerates it from YAML/loader and compares bytes; Unity reads those same bytes, independently checks trusted artifact/projection identities, materializes the full graph, and constructs HostSession directly. | The reference uses only PortableAuthority types plus BCL/Immutable. Unity test assembly references no Domain, Config.Yaml, or YamlDotNet; no plugin/project/package change. A later owner-selected implementation can place one equivalent decoder in PortableAuthority without a new package or plugin. | Magic, version, fixed YAML/loader binding, exact external artifact SHA, fixed canonical projection SHA, length/trailing-data, payload SHA-256, malformed reader state, and re-projected payload agreement fail closed. Corrupt, truncated, wrong-version, stale-binding, and payload-modified-with-recomputed-self-hash tests pass. | Viable; owner selection required. |
 | C2 — deterministic generated C# construction source | Real loader result emits the committed factory exactly; source carries source binding and canonical projection SHA. Pinned Unity compiles it, materializes the full graph, reproduces the same SHA, and directly constructs HostSession. | Pure construction of PortableAuthority records; no YAML API, parser, Domain DLL, fourth plugin, package, scene, prefab, or ProjectSettings change. | Regeneration/staleness is fail-closed because the .NET proof compares the complete generated source byte-for-byte. The generated source carries the input/validator binding and projection SHA. | Viable; owner selection required. |
 | C3 — Unity-native serialized asset / ScriptableObject | Evaluated, not implemented. An opaque byte payload inside an asset is only C1 with an asset container, not a materially distinct C3. A native field-by-field asset requires a second Unity schema and mapping/materialization surface. | A distinct native representation would duplicate the portable configuration shape and requires Unity-specific field mapping/default/defaulting/validation policy, contrary to D-021 U4. | No compliant distinct fail-closed representation exists without reducing to C1. | Rejected: non-compliant if distinct; otherwise not a separate candidate. |
 | C4 — runtime YAML / Config.Yaml / YamlDotNet / Domain import | Rejected without implementation. | Directly violates D-021 U4 and the exact three-plugin inventory; Config.Yaml depends on Domain and YamlDotNet. | N/A: forbidden boundary, not a permitted fallback. | Rejected. |
@@ -110,23 +142,27 @@ production directions. Executor preference cannot select between them.
 | Check | Result |
 | --- | --- |
 | Full solution Release build | PASS — 0 warnings, 0 errors |
-| Full .NET Release suite | PASS — 1654 passed, 0 failed, 0 skipped (TLAW-068 accepted baseline 1650 plus 4 TLAW-069 proof contracts) |
+| PortableAuthority standalone Release deployment build | PASS — 0 warnings, 0 errors; documented non-persisted deployment flags reproduce the committed PortableAuthority plugin SHA `067F7C6B2D499F37828E7AF5AB32F64A3638CC63BD211588D573320AED4BE5DA` |
+| Full .NET Release suite | PASS — 1655 passed, 0 failed, 0 skipped (the bounded C1 correction adds the explicit recomputed-self-hash rejection contract) |
 | D-014 `Scope=TLAW-046` | PASS — 87/87 |
 | TLAW-067 HostSession/EventId slice | PASS — 6/6 |
 | TLAW-068 cadence slice | PASS — 10/10 |
-| TLAW-069 .NET proof contracts | PASS — 4/4 |
-| C1 real YAML source binding/repeatability/full graph/direct HostSession | PASS |
-| C1 corruption/truncation/wrong-version/stale-binding rejection | PASS |
+| TLAW-069 corrected .NET proof contracts | PASS — 5/5 |
+| C1 same-handoff real YAML/loader regeneration, trusted artifact/projection identity, full graph, direct HostSession | PASS |
+| C1 corruption/truncation/wrong-version/stale-binding and recomputed-self-hash rejection | PASS |
 | C2 exact deterministic source emission | PASS |
-| Pinned Unity EditMode | PASS — 25/25, 0 failed, 0 skipped; includes 4 TLAW-069 contracts |
-| Unity test results | `C:\Temp\TLAW-069\evidence\editmode-attempt-3.xml`, SHA-256 `EF9171C2F946CCBD3DCB454C094222E7819B4E48A1D22903CBAC5CBBED093E0B` |
-| Unity batch log | `C:\Temp\TLAW-069\evidence\editmode-attempt-3.log`, SHA-256 `2A779839CE87F17FFA395DD3EAC811A5915ACB4F9D5BEDC37C23807BDDD1B732` |
+| Pinned Unity 6000.3.21f1 EditMode | PASS — 26/26, 0 failed, 0 skipped; includes 5 corrected TLAW-069 contracts |
+| Unity test results | `C:\Temp\TLAW-069\evidence\correction-final-editmode.xml`, SHA-256 `8167A5ED4D25725FBB95E869FB875867CD5EDBA5CEA344A08D8709A63B7BA60A` |
+| Unity batch log | `C:\Temp\TLAW-069\evidence\correction-final-editmode.log`, SHA-256 `221DC313CF4EC0EE53151216986541ECCF2B43AE62049005583BD62F5114D3B8` |
 | Fresh deterministic portable deployment output | PASS — SHA-256 `067F7C6B2D499F37828E7AF5AB32F64A3638CC63BD211588D573320AED4BE5DA` equals committed plugin |
 | Existing canonical host-tick evidence exercised by Unity | one-tick `287BD37030A1F1875B6067D00D0C4EA2B1A3018C8A40490716B4B54987C25949`; four-tick `C7FEC7BD00DE7D5A92DA0A89A09F61D4B7E4DC905A4F7D35687A8E6460029411`; cadence `A3CFED2906266153792A1B9FFFB2CBE6EE48F450342EF933B9DAD515DD0BADA0` — PASS |
+| Windows x64 Development build | PASS — result `Succeeded`, 0 errors, 0 warnings, 146,413,247-byte output; log SHA-256 `D626248CFD5DDD6232B8A399D60CDCA5B86D3DAE6F66378366A2E7DA94EABE6B` |
+| Windows player bootstrap smoke | PASS — exit 0, startup/60-frame clean-exit markers present; log SHA-256 `174CC66F005E7848A936B8073ABFB81A0DC191BDAD7BEC2814E0B051250E0F51` |
 
-The remaining full repository Release build/test, Tlaw.Verify/Gate 0/
-architecture/object-reader checks, and exact-head CI/artifact evidence are
-recorded against the first proof commit and its exact candidate head.
+The full repository build/test, `Tlaw.Verify` / Gate 0 / architecture /
+object-reader checks, and exact-head CI/artifact evidence are bound to the
+correction candidate in the Draft PR and Control Center evidence packet. The
+self-referential dossier intentionally does not name its own final commit SHA.
 
 ## Smallest next ownership boundary and unresolved owner decision
 

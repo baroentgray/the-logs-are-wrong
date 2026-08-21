@@ -38,17 +38,12 @@ namespace TheLogsAreWrong.Gate2.Tests
         }
 
         [Test]
-        public void C1_artifact_materializes_without_yaml_domain_or_fourth_plugin_and_matches_net10_projection()
+        public void C1_exact_real_loader_boundary_artifact_materializes_without_yaml_domain_or_fourth_plugin_and_matches_net10_projection()
         {
-            var source = Tlaw069GeneratedValidatedConfiguration.Create();
-            var binding = Tlaw069UnitySourceBinding.FromGenerated();
-            var first = Tlaw069UnityC1ArtifactCodec.Encode(source, binding);
-            var second = Tlaw069UnityC1ArtifactCodec.Encode(source, binding);
-            var materialized = Tlaw069UnityC1ArtifactCodec.Decode(first, binding);
+            var artifact = Tlaw069UnityC1BoundaryArtifact.ReadExactArtifact();
+            var materialized = Tlaw069UnityC1BoundaryArtifact.MaterializeTrusted(artifact);
 
-            CollectionAssert.AreEqual(first, second);
             Assert.AreEqual(ProjectionSha, Tlaw069UnityConfigurationProjection.Sha256(materialized));
-            CollectionAssert.AreEqual(first, Tlaw069UnityC1ArtifactCodec.Encode(materialized, binding));
 
             using (var session = new HostSession(materialized.Shift, materialized.Anomalies, ProfileId.From("learning")))
             {
@@ -59,8 +54,8 @@ namespace TheLogsAreWrong.Gate2.Tests
         [Test]
         public void C1_corrupt_truncated_wrong_version_and_stale_artifacts_fail_closed()
         {
-            var binding = Tlaw069UnitySourceBinding.FromGenerated();
-            var artifact = Tlaw069UnityC1ArtifactCodec.Encode(Tlaw069GeneratedValidatedConfiguration.Create(), binding);
+            var binding = Tlaw069UnitySourceBinding.FromTrustedC1Artifact();
+            var artifact = Tlaw069UnityC1BoundaryArtifact.ReadExactArtifact();
             var corrupt = (byte[])artifact.Clone();
             corrupt[corrupt.Length - 1] ^= 0x01;
             var truncated = artifact.Take(artifact.Length - 1).ToArray();
@@ -72,6 +67,18 @@ namespace TheLogsAreWrong.Gate2.Tests
             Assert.Throws<InvalidDataException>(() => Tlaw069UnityC1ArtifactCodec.Decode(truncated, binding));
             Assert.Throws<InvalidDataException>(() => Tlaw069UnityC1ArtifactCodec.Decode(wrongVersion, binding));
             Assert.Throws<InvalidDataException>(() => Tlaw069UnityC1ArtifactCodec.Decode(artifact, stale));
+        }
+
+        [Test]
+        public void C1_payload_tampering_with_a_recomputed_internal_hash_still_fails_the_trusted_external_identity()
+        {
+            var tampered = Tlaw069UnityC1BoundaryArtifact.ReadExactArtifact();
+            Tlaw069UnityC1ArtifactCodec.ModifyPayloadSeedAndRecomputeHashForTest(tampered);
+
+            var internallyConsistent = Tlaw069UnityC1ArtifactCodec.Decode(tampered, Tlaw069UnitySourceBinding.FromTrustedC1Artifact());
+
+            Assert.AreNotEqual(ProjectionSha, Tlaw069UnityConfigurationProjection.Sha256(internallyConsistent));
+            Assert.Throws<InvalidDataException>(() => Tlaw069UnityC1BoundaryArtifact.MaterializeTrusted(tampered));
         }
 
         [Test]
@@ -101,12 +108,12 @@ namespace TheLogsAreWrong.Gate2.Tests
         internal string AnomaliesYamlSha256 { get; private set; }
         internal string ValidatorSourceBlob { get; private set; }
 
-        internal static Tlaw069UnitySourceBinding FromGenerated()
+        internal static Tlaw069UnitySourceBinding FromTrustedC1Artifact()
         {
             return new Tlaw069UnitySourceBinding(
-                Tlaw069GeneratedValidatedConfiguration.ShiftYamlSha256,
-                Tlaw069GeneratedValidatedConfiguration.AnomaliesYamlSha256,
-                Tlaw069GeneratedValidatedConfiguration.ValidatorSourceBlob);
+                Tlaw069UnityC1BoundaryArtifact.ShiftYamlSha256,
+                Tlaw069UnityC1BoundaryArtifact.AnomaliesYamlSha256,
+                Tlaw069UnityC1BoundaryArtifact.ValidatorSourceBlob);
         }
 
         public bool Equals(Tlaw069UnitySourceBinding other)
@@ -122,27 +129,6 @@ namespace TheLogsAreWrong.Gate2.Tests
     {
         private const string Magic = "TLAW-CFG-U4-C1";
         private const int Version = 1;
-
-        internal static byte[] Encode(ValidatedConfiguration configuration, Tlaw069UnitySourceBinding binding)
-        {
-            if (configuration == null) throw new ArgumentNullException("configuration");
-            if (binding == null) throw new ArgumentNullException("binding");
-            var payload = Tlaw069UnityConfigurationProjection.Bytes(configuration);
-            using (var stream = new MemoryStream())
-            using (var writer = new BinaryWriter(stream, Encoding.UTF8))
-            {
-                WriteString(writer, Magic);
-                writer.Write(Version);
-                WriteString(writer, binding.ShiftYamlSha256);
-                WriteString(writer, binding.AnomaliesYamlSha256);
-                WriteString(writer, binding.ValidatorSourceBlob);
-                writer.Write(payload.Length);
-                writer.Write(payload);
-                writer.Write(Hash(payload));
-                writer.Flush();
-                return stream.ToArray();
-            }
-        }
 
         internal static ValidatedConfiguration Decode(byte[] artifact, Tlaw069UnitySourceBinding expectedBinding)
         {
@@ -182,6 +168,32 @@ namespace TheLogsAreWrong.Gate2.Tests
             BitConverter.GetBytes(version).CopyTo(artifact, offset);
         }
 
+        internal static void ModifyPayloadSeedAndRecomputeHashForTest(byte[] artifact)
+        {
+            if (artifact == null) throw new ArgumentNullException("artifact");
+            using (var stream = new MemoryStream(artifact, false))
+            using (var reader = new BinaryReader(stream, Encoding.UTF8))
+            {
+                if (ReadString(reader) != Magic || reader.ReadInt32() != Version) throw new ArgumentException("Artifact is not a C1 v1 artifact.", "artifact");
+                ReadString(reader);
+                ReadString(reader);
+                ReadString(reader);
+                var payloadLength = ReadLength(reader, "payload");
+                var payloadOffset = checked((int)stream.Position);
+                var payloadHashOffset = checked(payloadOffset + payloadLength);
+                if (artifact.Length != checked(payloadHashOffset + 32)) throw new ArgumentException("Artifact framing is not complete.", "artifact");
+                if (payloadLength < 4) throw new ArgumentException("Artifact payload is too short.", "artifact");
+                var shiftIdLength = BitConverter.ToInt32(artifact, payloadOffset);
+                var seedOffset = checked(payloadOffset + 4 + shiftIdLength);
+                if (shiftIdLength < 0 || seedOffset > checked(payloadHashOffset - 4)) throw new ArgumentException("Artifact payload does not begin with a complete shift identity and seed.", "artifact");
+                BitConverter.GetBytes(BitConverter.ToInt32(artifact, seedOffset) ^ 0x01).CopyTo(artifact, seedOffset);
+                var payload = new byte[payloadLength];
+                Buffer.BlockCopy(artifact, payloadOffset, payload, 0, payloadLength);
+                var hash = Hash(payload);
+                Buffer.BlockCopy(hash, 0, artifact, payloadHashOffset, hash.Length);
+            }
+        }
+
         internal static void WriteString(BinaryWriter writer, string value)
         {
             var bytes = Encoding.UTF8.GetBytes(value);
@@ -209,6 +221,51 @@ namespace TheLogsAreWrong.Gate2.Tests
             return bytes;
         }
         private static byte[] Hash(byte[] bytes) { using (var algorithm = SHA256.Create()) return algorithm.ComputeHash(bytes); }
+    }
+
+    internal static class Tlaw069UnityC1BoundaryArtifact
+    {
+        internal const string ShiftYamlSha256 = "CD08DDFC6F354A1FDDEC7EE751007C95920CDBD26AFA6350A068C350D88277E7";
+        internal const string AnomaliesYamlSha256 = "6517C145AD41410131FF50BF691FE9C37FB33E1CB8E065E42ADB97364F4785D7";
+        internal const string ValidatorSourceBlob = "23651feb72bfa432685f8ef1850648d355baed57";
+        private const string ArtifactSha256 = "94FCBE2B0E08662E9E45DDFC4D310A1E3063F6A765FE36B596409021D930B541";
+        private const string ProjectionSha256 = "4837EF28FC0480DC133B72A024110E3569E2CB2973E206A4542A7C70949F7AB1";
+        private const int ArtifactByteLength = 2326;
+
+        internal static byte[] ReadExactArtifact()
+        {
+            try
+            {
+                var path = Path.Combine(UnityEngine.Application.dataPath, "Gate2", "Tests", "Editor", "Tlaw069C1Artifact.base64");
+                return Convert.FromBase64String(File.ReadAllText(path).Trim());
+            }
+            catch (Exception exception) when (exception is IOException || exception is UnauthorizedAccessException || exception is FormatException)
+            {
+                throw new InvalidDataException("The immutable TLAW-069 C1 boundary artifact resource cannot be read.", exception);
+            }
+        }
+
+        internal static ValidatedConfiguration MaterializeTrusted(byte[] artifact)
+        {
+            if (artifact == null) throw new ArgumentNullException("artifact");
+            if (artifact.Length != ArtifactByteLength || Sha256(artifact) != ArtifactSha256)
+            {
+                throw new InvalidDataException("C1 artifact differs from the independently trusted real-loader boundary artifact.");
+            }
+
+            var materialized = Tlaw069UnityC1ArtifactCodec.Decode(artifact, Tlaw069UnitySourceBinding.FromTrustedC1Artifact());
+            if (Tlaw069UnityConfigurationProjection.Sha256(materialized) != ProjectionSha256)
+            {
+                throw new InvalidDataException("C1 artifact does not materialize to the independently trusted canonical projection.");
+            }
+
+            return materialized;
+        }
+
+        private static string Sha256(byte[] bytes)
+        {
+            using (var algorithm = SHA256.Create()) return BitConverter.ToString(algorithm.ComputeHash(bytes)).Replace("-", string.Empty);
+        }
     }
 
     internal static class Tlaw069UnityConfigurationProjection

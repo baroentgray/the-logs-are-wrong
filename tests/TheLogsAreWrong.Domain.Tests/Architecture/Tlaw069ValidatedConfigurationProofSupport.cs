@@ -80,6 +80,42 @@ internal static class Tlaw069C1ArtifactCodec
         BitConverter.GetBytes(version).CopyTo(artifact, offset);
     }
 
+    /// <summary>
+    /// Test-only tamper helper: keeps the artifact framing and its internal payload self-hash valid while changing
+    /// the shift seed. The independently trusted boundary artifact identity must still reject it.
+    /// </summary>
+    internal static void ModifyPayloadSeedAndRecomputeHashForTest(byte[] artifact)
+    {
+        ArgumentNullException.ThrowIfNull(artifact);
+        using var stream = new MemoryStream(artifact, writable: false);
+        using var reader = new BinaryReader(stream, Encoding.UTF8, leaveOpen: true);
+        if (!string.Equals(ReadString(reader), Magic, StringComparison.Ordinal) || reader.ReadInt32() != Version)
+        {
+            throw new ArgumentException("Artifact is not a C1 v1 artifact.", nameof(artifact));
+        }
+
+        _ = ReadBinding(reader);
+        var payloadLength = ReadLength(reader, "payload");
+        var payloadOffset = checked((int)stream.Position);
+        var payloadHashOffset = checked(payloadOffset + payloadLength);
+        if (artifact.Length != checked(payloadHashOffset + HashLength))
+        {
+            throw new ArgumentException("Artifact framing is not complete.", nameof(artifact));
+        }
+
+        if (payloadLength < sizeof(int)) throw new ArgumentException("Artifact payload is too short.", nameof(artifact));
+        var shiftIdLength = BitConverter.ToInt32(artifact, payloadOffset);
+        var seedOffset = checked(payloadOffset + sizeof(int) + shiftIdLength);
+        if (shiftIdLength < 0 || seedOffset > checked(payloadHashOffset - sizeof(int)))
+        {
+            throw new ArgumentException("Artifact payload does not begin with a complete shift identity and seed.", nameof(artifact));
+        }
+
+        var originalSeed = BitConverter.ToInt32(artifact, seedOffset);
+        BitConverter.GetBytes(originalSeed ^ 0x01).CopyTo(artifact, seedOffset);
+        SHA256.HashData(artifact.AsSpan(payloadOffset, payloadLength)).CopyTo(artifact.AsSpan(payloadHashOffset, HashLength));
+    }
+
     private static void WriteBinding(BinaryWriter writer, Tlaw069SourceBinding binding)
     {
         WriteString(writer, binding.ShiftYamlSha256);
@@ -122,6 +158,57 @@ internal static class Tlaw069C1ArtifactCodec
         var bytes = reader.ReadBytes(length);
         if (bytes.Length != length) throw new InvalidDataException($"C1 {name} is truncated.");
         return bytes;
+    }
+}
+
+/// <summary>
+/// Immutable C1 proof resource produced outside Unity by the real canonical YAML loader. Its hard-coded source,
+/// artifact, and projection identities are intentionally independent of C2 generated construction source.
+/// </summary>
+internal static class Tlaw069C1BoundaryArtifact
+{
+    internal const string ShiftYamlSha256 = "CD08DDFC6F354A1FDDEC7EE751007C95920CDBD26AFA6350A068C350D88277E7";
+    internal const string AnomaliesYamlSha256 = "6517C145AD41410131FF50BF691FE9C37FB33E1CB8E065E42ADB97364F4785D7";
+    internal const string ValidatorSourceBlob = "23651feb72bfa432685f8ef1850648d355baed57";
+    internal const string ArtifactSha256 = "94FCBE2B0E08662E9E45DDFC4D310A1E3063F6A765FE36B596409021D930B541";
+    internal const string ProjectionSha256 = "4837EF28FC0480DC133B72A024110E3569E2CB2973E206A4542A7C70949F7AB1";
+    internal const int ArtifactByteLength = 2326;
+
+    internal static Tlaw069SourceBinding TrustedSourceBinding { get; } = new(ShiftYamlSha256, AnomaliesYamlSha256, ValidatorSourceBlob);
+
+    internal static byte[] ReadExactArtifact()
+    {
+        try
+        {
+            return Convert.FromBase64String(File.ReadAllText(Tlaw069ProofPaths.C1BoundaryArtifactPath()).Trim());
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or FormatException)
+        {
+            throw new InvalidDataException("The immutable TLAW-069 C1 boundary artifact resource cannot be read.", exception);
+        }
+    }
+
+    internal static string Sha256(byte[] bytes)
+    {
+        ArgumentNullException.ThrowIfNull(bytes);
+        return Convert.ToHexString(SHA256.HashData(bytes));
+    }
+
+    internal static ValidatedConfiguration VerifyTrustedIdentity(byte[] artifact)
+    {
+        ArgumentNullException.ThrowIfNull(artifact);
+        if (artifact.Length != ArtifactByteLength || !string.Equals(Sha256(artifact), ArtifactSha256, StringComparison.Ordinal))
+        {
+            throw new InvalidDataException("C1 artifact differs from the independently trusted real-loader boundary artifact.");
+        }
+
+        var materialized = Tlaw069C1ArtifactCodec.Decode(artifact, TrustedSourceBinding);
+        if (!string.Equals(Tlaw069ConfigurationProjection.Sha256(materialized), ProjectionSha256, StringComparison.Ordinal))
+        {
+            throw new InvalidDataException("C1 artifact does not materialize to the independently trusted canonical projection.");
+        }
+
+        return materialized;
     }
 }
 
@@ -497,6 +584,8 @@ internal static class Tlaw069C2GeneratedSourceEmitter
 internal static class Tlaw069ProofPaths
 {
     internal static string GeneratedUnityFactoryPath() => Path.Combine(RepositoryRoot(), "unity", "TheLogsAreWrong", "Assets", "Gate2", "Tests", "Editor", "Tlaw069GeneratedValidatedConfiguration.cs");
+
+    internal static string C1BoundaryArtifactPath() => Path.Combine(RepositoryRoot(), "unity", "TheLogsAreWrong", "Assets", "Gate2", "Tests", "Editor", "Tlaw069C1Artifact.base64");
 
     private static string RepositoryRoot()
     {
