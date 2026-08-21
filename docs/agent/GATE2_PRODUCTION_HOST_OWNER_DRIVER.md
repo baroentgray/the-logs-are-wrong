@@ -43,6 +43,13 @@ sample integer elapsed
 
 There is no catch-up cap. A long elapsed sample retains then drains the entire range in consecutive order. Input faults or session failures fault the owner; the currently due tick is not retired and the driver does not retry/spin in the frame. Any successful Stage Seven result is accepted without Unity-side stage/result semantics; the existing `HostStageSevenNoNewPublication` HostSession vector remains a successful authoritative result.
 
+### Bounded correction evidence
+
+The production-owner EditMode contracts exercise both required outcomes without introducing a second executor or input-admission path:
+
+- The deterministic empty-input sequence executes tick zero first (`HostStageSevenPublished`) and then executes tick one as the exact `HostStageSevenNoNewPublication` result. The owner stays `Running`; the second successful tick increases the execution count by exactly one; its due cadence entry is retired.
+- The value-only test seam can return an intentionally wrong, otherwise constructed already-admitted tick batch. The driver records the non-null evidence delivery before calling the real `HostSession.ExecuteTick`. `HostSession.ValidateContinuity` then throws `ArgumentException` with parameter `acceptedIntents`; the driver becomes `Faulted`, credits no successful tick, and retains the current due tick. This is distinct from the retained existing input-source-throw contract.
+
 ## Input and C1 startup
 
 `IAlreadyAdmittedHostInputSource` passes only an `AcceptedIntentTickBatch` plus active-tool evidence to `HostSession`. It performs no gameplay admission, actor authority, ordering, controls, or networking. `EmptyAlreadyAdmittedHostInputSource` is the explicit no-input Gate-2 bootstrap provider.
@@ -62,7 +69,7 @@ Only the existing `Assets/Gate2/Bootstrap/Gate2Bootstrap.unity` was wired, throu
 - `Assets/Gate2/Configuration/validated-configuration-c1-v1.base64`;
 - `Assets/Gate2/Configuration/validated-configuration-c1-v1.manifest`.
 
-The Windows x64 Development build logged `BUILD_RESULT=Succeeded`, `BUILD_ERRORS=0 BUILD_WARNINGS=0`, and build size `146464136`. Player smoke exited after the existing 60-frame marker and logged:
+The corrected Windows x64 Development build logged `BUILD_RESULT=Succeeded`, `BUILD_ERRORS=0 BUILD_WARNINGS=0`, and build size `146464833`. Player smoke exited after the existing 60-frame marker and logged:
 
 ```text
 TLAW071_OWNER_ACQUIRED
@@ -89,7 +96,8 @@ The runtime plugin inventory remains exactly three:
 - TLAW-068 cadence slice: `10/10` passed.
 - TLAW-070 C1 slice: `5/5` passed.
 - Repository U3 source/ownership/C1 inventory guard: `2/2` passed.
-- Unity `6000.3.21f1 (c02631ffc030)` EditMode: `39/39` passed.
+- Corrected TLAW-071 production-owner EditMode class: `16/16` passed, including the exact no-publication and HostSession-continuity-rejection vectors.
+- Unity `6000.3.21f1 (c02631ffc030)` full EditMode suite: `40/40` passed.
 - Canonical preserved assertions remain: one tick `287BD37030A1F1875B6067D00D0C4EA2B1A3018C8A40490716B4B54987C25949`; four tick `C7FEC7BD00DE7D5A92DA0A89A09F61D4B7E4DC905A4F7D35687A8E6460029411`; cadence `A3CFED2906266153792A1B9FFFB2CBE6EE48F450342EF933B9DAD515DD0BADA0`.
 
 ## Work deliberately not performed

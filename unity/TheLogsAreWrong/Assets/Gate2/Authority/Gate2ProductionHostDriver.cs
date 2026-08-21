@@ -263,6 +263,12 @@ namespace TheLogsAreWrong.Gate2
 
         public int ExecutedTickCount { get; private set; }
 
+        /// <summary>
+        /// Test-visible observability for already-admitted input delivery. This increments only after the input
+        /// source has returned a non-null evidence object, before the authoritative HostSession validates it.
+        /// </summary>
+        internal int DeliveredAlreadyAdmittedInputCount { get; private set; }
+
         public long PendingDueTickCount => _cadence == null ? 0 : _cadence.DueTickCount;
 
         public string SelectedProfileId => _selectedProfileId;
@@ -316,11 +322,12 @@ namespace TheLogsAreWrong.Gate2
             Gate2DeploymentTextAsset manifest,
             long[] elapsedMilliseconds,
             int failInputOnRequest,
-            string selectedProfileId)
+            string selectedProfileId,
+            int invalidContinuityInputOnRequest)
         {
             ConfigureForTesting(
                 new ScriptedElapsedTimeSource(elapsedMilliseconds),
-                new ScriptedNoInputSource(failInputOnRequest),
+                new ScriptedNoInputSource(failInputOnRequest, invalidContinuityInputOnRequest),
                 new Gate2C1DeploymentStartupSource(artifactBase64, manifest),
                 selectedProfileId);
         }
@@ -428,6 +435,7 @@ namespace TheLogsAreWrong.Gate2
                         throw new InvalidOperationException("Already-admitted input evidence cannot be null.");
                     }
 
+                    DeliveredAlreadyAdmittedInputCount = checked(DeliveredAlreadyAdmittedInputCount + 1);
                     var result = _session.ExecuteTick(tick, input.AcceptedIntents, input.ActiveTools);
                     var retired = _cadence.RetireNextDueTick();
                     if (retired != tick)
@@ -516,22 +524,28 @@ namespace TheLogsAreWrong.Gate2
         private sealed class ScriptedNoInputSource : IAlreadyAdmittedHostInputSource
         {
             private readonly int _failInputOnRequest;
+            private readonly int _invalidContinuityInputOnRequest;
             private int _requests;
 
-            internal ScriptedNoInputSource(int failInputOnRequest)
+            internal ScriptedNoInputSource(int failInputOnRequest, int invalidContinuityInputOnRequest)
             {
                 _failInputOnRequest = failInputOnRequest;
+                _invalidContinuityInputOnRequest = invalidContinuityInputOnRequest;
             }
 
             public AlreadyAdmittedHostTickInput GetInput(ShiftId shiftId, ServerTick tick)
             {
-                if (_failInputOnRequest >= 0 && _requests++ >= _failInputOnRequest)
+                var request = _requests++;
+                if (_failInputOnRequest >= 0 && request >= _failInputOnRequest)
                 {
                     throw new InvalidOperationException("Test input evidence intentionally unavailable.");
                 }
 
+                var batchTick = _invalidContinuityInputOnRequest >= 0 && request >= _invalidContinuityInputOnRequest
+                    ? ServerTick.From(checked(tick.Value + 1))
+                    : tick;
                 return new AlreadyAdmittedHostTickInput(
-                    AcceptedIntentTickBatchFactory.Create(shiftId, tick, ImmutableArray<AuthoritativeAcceptedIntent>.Empty),
+                    AcceptedIntentTickBatchFactory.Create(shiftId, batchTick, ImmutableArray<AuthoritativeAcceptedIntent>.Empty),
                     ImmutableHashSet<ItemId>.Empty);
             }
         }

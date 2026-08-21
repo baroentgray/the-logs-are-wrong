@@ -214,14 +214,39 @@ namespace TheLogsAreWrong.Gate2.Tests
         [Test]
         public void Empty_already_admitted_input_accepts_a_zero_publication_tick_without_a_driver_fault()
         {
-            var driver = CreateDriver(new long[] { 1000 });
+            var driver = CreateDriver(new long[] { 1000, 1000 });
             Start(driver);
             Pump(driver);
 
-            Assert.AreEqual("Running", Lifecycle(driver));
             Assert.AreEqual(1, Property<int>(driver, "ExecutedTickCount"));
+            Assert.AreEqual("HostStageSevenPublished", Property<string>(driver, "LastSuccessfulTickResultType"));
+
+            var successfulTicksBeforeNoPublication = Property<int>(driver, "ExecutedTickCount");
+            Pump(driver);
+
+            Assert.AreEqual("Running", Lifecycle(driver));
+            Assert.AreEqual(successfulTicksBeforeNoPublication + 1, Property<int>(driver, "ExecutedTickCount"));
             Assert.AreEqual(0L, Property<long>(driver, "PendingDueTickCount"));
-            Assert.AreNotEqual(string.Empty, Property<string>(driver, "LastSuccessfulTickResultType"));
+            Assert.AreEqual("HostStageSevenNoNewPublication", Property<string>(driver, "LastSuccessfulTickResultType"));
+        }
+
+        [Test]
+        public void HostSession_rejection_after_delivered_invalid_continuity_evidence_faults_and_retains_the_due_tick()
+        {
+            var driver = CreateDriver(new long[] { 1000 }, invalidContinuityInputOnRequest: 0);
+            Start(driver);
+            ExpectOwnerError("TLAW071_OWNER_FAULT");
+            Pump(driver);
+
+            var fault = (Exception)Property(driver, "Fault");
+            Assert.AreEqual("Faulted", Lifecycle(driver));
+            Assert.AreEqual(1, Property<int>(driver, "SessionCreationCount"));
+            Assert.AreEqual(1, Property<int>(driver, "DeliveredAlreadyAdmittedInputCount"));
+            Assert.AreEqual(0, Property<int>(driver, "ExecutedTickCount"));
+            Assert.AreEqual(1L, Property<long>(driver, "PendingDueTickCount"));
+            Assert.IsInstanceOf<ArgumentException>(fault);
+            Assert.AreEqual("acceptedIntents", ((ArgumentException)fault).ParamName);
+            StringAssert.Contains("Per-tick input must belong to the current session shift and exact requested tick.", fault.Message);
         }
 
         [Test]
@@ -263,13 +288,13 @@ namespace TheLogsAreWrong.Gate2.Tests
             Assert.IsFalse(leaseFields.Any(field => forbidden.Contains(field.FieldType.Name)), "The process lease may retain identity only.");
         }
 
-        private Component CreateDriver(long[] elapsedMilliseconds = null, int failInputOnRequest = -1, string profileId = "learning", UnityEngine.Object artifact = null, UnityEngine.Object manifest = null)
+        private Component CreateDriver(long[] elapsedMilliseconds = null, int failInputOnRequest = -1, string profileId = "learning", UnityEngine.Object artifact = null, UnityEngine.Object manifest = null, int invalidContinuityInputOnRequest = -1)
         {
             var root = new GameObject("TLAW071_TestOwner");
             root.SetActive(false);
             _roots.Add(root);
             var driver = root.AddComponent(DriverType);
-            Invoke(driver, "ConfigureForTesting", artifact ?? Artifact(), manifest ?? Manifest(), elapsedMilliseconds ?? Array.Empty<long>(), failInputOnRequest, profileId);
+            Invoke(driver, "ConfigureForTesting", artifact ?? Artifact(), manifest ?? Manifest(), elapsedMilliseconds ?? Array.Empty<long>(), failInputOnRequest, profileId, invalidContinuityInputOnRequest);
             root.SetActive(true);
             return driver;
         }
@@ -325,7 +350,7 @@ namespace TheLogsAreWrong.Gate2.Tests
 
         private static object Property(Component driver, string name)
         {
-            var property = DriverType.GetProperty(name, BindingFlags.Instance | BindingFlags.Public);
+            var property = DriverType.GetProperty(name, BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
             Assert.IsNotNull(property, "Required production driver property is missing: " + name);
             return property.GetValue(driver, null);
         }
