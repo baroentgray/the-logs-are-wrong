@@ -51,3 +51,44 @@ No C1 artifact, manifest, codec, YAML behavior, or PortableAuthority source chan
 ## Explicit non-goals
 
 No PortableAuthority accepted-batch, HostSession, cadence, HostTickExecutionService, C1/YAML, decision, package/project-setting, prefab, scene, gameplay controls, active-tool mechanics, UI/audio, D-016, network transport/RPC, connection binding, Gate-3 policy, replication, prediction, or second runtime-owner path is added or changed.
+
+## Executable evidence
+
+Phase 0 passed against base `32ac403b395f910691f739fec2e801aa14fd639c`: `origin/main`, the isolated branch and its initial `HEAD` matched exactly; the worktree was clean; prior TLAW-071 merged/closed state and stale-branch absence were confirmed; no TLAW-072 PR existed; decisions D-019 through D-022 and the existing accepted-batch/driver/C1 seams were read before editing.
+
+The focused tests exercise the real adapter and production driver:
+
+- exact reference retention for two envelopes and their parameter objects, independently trusted actors, open tick zero, sequences zero/one, and empty active tools;
+- duplicate, null, wrong-shift, and unbound-actor local rejections without a sequence gap;
+- exact `GetInput` tick enforcement without advancing a rejected materialization;
+- the real `Gate2ProductionHostDriver` path from local admission through `HostSession` to a non-empty Stage Seven publication and a retired due tick;
+- a three-tick backlog: the adapter advances to tick three with sequence zero after draining, proving that its tick-zero input was not cloned into later catch-up ticks;
+- reset creating a new adapter window at tick zero, and disposed-owner ingress returning `OwnerNotRunning`.
+
+The repository source guards also require one plain-C# adapter, one use of `AcceptedIntentTickBatchFactory.Create`, no Unity/gameplay/transport/host-tick implementation in the adapter, and retained production pump ordering.
+
+- PortableAuthority standalone deterministic Release build: 0 warnings, 0 errors; fresh SHA equals the pinned plugin SHA `BD1E5DDA62192587B12737CCE9BBBB272FB75C4B309BA173AF2AA7684E2A7085`.
+- Full solution Release build: 0 warnings, 0 errors.
+- Full .NET suite: `1659/1659` passed.
+- D-014 Scope=TLAW-046: `87/87` passed.
+- TLAW-067 HostSession/EventId slice: `6/6` passed.
+- TLAW-068 cadence slice: `10/10` passed.
+- Existing TLAW-070 C1 architecture slice: `5/5` passed.
+- Existing TLAW-071 owner architecture slice: `2/2` passed.
+- TLAW-072 source architecture slice: `2/2` passed.
+- TLAW-072 real-adapter EditMode class: `6/6` passed.
+- Unity `6000.3.21f1 (c02631ffc030)` full EditMode suite: `46/46` passed.
+- `Tlaw.ValidatedConfig.Export --check`: `VALIDATED_CONFIG_C1_EXPORT_FRESH`.
+- Windows x64 Development player build: `BUILD_RESULT=Succeeded`, `BUILD_ERRORS=0 BUILD_WARNINGS=0`, size `146470037`; bootstrap smoke exited `0` after its 60-frame marker with the required TLAW-071 owner-start and teardown markers.
+
+The canonical regression identities remain unchanged: one tick `287BD37030A1F1875B6067D00D0C4EA2B1A3018C8A40490716B4B54987C25949`; four tick `C7FEC7BD00DE7D5A92DA0A89A09F61D4B7E4DC905A4F7D35687A8E6460029411`; cadence `A3CFED2906266153792A1B9FFFB2CBE6EE48F450342EF933B9DAD515DD0BADA0`.
+
+```text
+LOCAL_HOST_INTENT_ADMISSION_PASS
+LOCAL_INTENT_TICK_AND_SEQUENCE_OWNED_BY_ADAPTER
+ACCEPTED_BATCH_FACTORY_REMAINS_SOLE_BATCH_VALIDATOR
+HOSTSESSION_REMAINS_STAGE_TWO_AND_STAGE_SEVEN_AUTHORITY
+LONG_BACKLOG_DOES_NOT_CLONE_LOCAL_INPUT
+C1_AND_PORTABLE_PLUGIN_IDENTITIES_PRESERVED
+GATE3_NETWORKING_NOT_STARTED
+```
