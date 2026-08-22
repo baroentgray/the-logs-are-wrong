@@ -24,6 +24,34 @@ ordering, immediate request failures, and partial-start rollback all fail
 closed. A rollback retains a tracked phase until the relevant stopped callback
 arrives.
 
+### CC-074-01 accepted-start rollback responsibility
+
+An accepted `StartServer()` or `StartClient()` request creates cleanup
+responsibility even when the latest callback cache still says `Stopped`. The
+controller keeps per-side accepted-start bookkeeping until that side emits an
+actual `Stopped` callback. Thus, a start timeout with no callback explicitly
+requests the corresponding stop and remains in a rollback phase; it never
+declares `Offline` from a pre-start cached `Stopped` value. The callback remains
+the sole proof that a side reached `Started` or completed stopping.
+
+The deterministic controller contracts cover server-start timeout with no
+callback (`start-server`, `stop-server`), client-only timeout with no callback
+(`start-client`, `stop-client`), and a listen-host host-client timeout
+(`start-server`, `start-client`, `stop-client`, then after the actual client
+`Stopped`, `stop-server`). Each keeps the role tracked until the relevant
+actual stopped callback. They also prove rejected stop requests fault closed for
+server cleanup, client-only cleanup, and both client and server legs of
+listen-host partial-start cleanup. Pinned Unity `6000.3.21f1 (c02631ffc030)`
+executed this controller class after the correction: `7/7` passed.
+
+The full pinned EditMode suite then passed `62/62`. The same corrected working
+tree passed the full .NET suite (`1663/1663`), a zero-warning/error Release
+solution build, C1 freshness, a Windows x64 Development build
+(`153589131` bytes; zero errors/warnings), the ordinary inert player smoke,
+and the explicit real-Steam listen-host lifecycle probe. The latter again
+observed server `Started`, host-client `Started`, client `Stopped`, server
+`Stopped`, and `TLAW074_LISTEN_HOST_LIFECYCLE_PASS` with process exit `0`.
+
 ## Preserved D-017 material
 
 | Item | Required identity | Result |
@@ -53,7 +81,8 @@ No file below `Assets/FishNet/Plugins/FishySteamworks` was modified.
 - Pinned Unity EditMode tests prove ordinary scene composition is inert, the
   callback-driven listen-host ordering, client-first stop ordering, duplicate
   and conflicting role rejection, invalid stop ordering, immediate request
-  failure, and timeout rollback.
+  failure, timeout rollback, accepted-start no-callback cleanup, and stop
+  rejection fail-closed behavior.
 - The normal player smoke uses `-tlaw-bootstrap-smoke`; it starts the existing
   production owner and emits `TLAW073_TRANSPORT_INERT` with no TLAW-074
   lifecycle state/request marker.

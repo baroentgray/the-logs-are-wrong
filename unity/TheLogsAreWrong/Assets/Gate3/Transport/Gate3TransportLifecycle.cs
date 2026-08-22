@@ -317,6 +317,11 @@ namespace TheLogsAreWrong.Gate3
         private float _remainingSeconds;
         private LocalConnectionState _observedServerState;
         private LocalConnectionState _observedClientState;
+        // A start request that the transport accepts creates cleanup responsibility even before
+        // Fishy emits its first state callback. These flags are cleared only by an actual Stopped
+        // callback (or when the start request itself is rejected).
+        private bool _serverStartRequested;
+        private bool _clientStartRequested;
 
         public Gate3TransportLifecycleController(IGate3TransportLifecycleTransport transport, float timeoutSeconds)
         {
@@ -345,11 +350,13 @@ namespace TheLogsAreWrong.Gate3
                 return rejection.Value;
             }
 
+            _serverStartRequested = true;
             if (_transport.StartServer())
             {
                 return Gate3TransportLifecycleRequestResult.RequestAccepted;
             }
 
+            _serverStartRequested = false;
             BeginRollback(Gate3TransportLifecycleFailure.ServerStartRequestRejected);
             return Gate3TransportLifecycleRequestResult.StartRequestRejected;
         }
@@ -362,11 +369,13 @@ namespace TheLogsAreWrong.Gate3
                 return rejection.Value;
             }
 
+            _clientStartRequested = true;
             if (_transport.StartClient())
             {
                 return Gate3TransportLifecycleRequestResult.RequestAccepted;
             }
 
+            _clientStartRequested = false;
             BeginRollback(Gate3TransportLifecycleFailure.ClientStartRequestRejected);
             return Gate3TransportLifecycleRequestResult.StartRequestRejected;
         }
@@ -392,14 +401,8 @@ namespace TheLogsAreWrong.Gate3
             }
 
             SetPhase(Gate3TransportLifecyclePhase.StoppingClient);
-            if (_transport.StopClient() || _observedClientState == LocalConnectionState.Stopped)
+            if (_transport.StopClient())
             {
-                if (Phase == Gate3TransportLifecyclePhase.StoppingClient
-                    && _observedClientState == LocalConnectionState.Stopped)
-                {
-                    BeginServerStop();
-                }
-
                 return Gate3TransportLifecycleRequestResult.RequestAccepted;
             }
 
@@ -426,14 +429,8 @@ namespace TheLogsAreWrong.Gate3
             }
 
             SetPhase(Gate3TransportLifecyclePhase.StoppingClient);
-            if (_transport.StopClient() || _observedClientState == LocalConnectionState.Stopped)
+            if (_transport.StopClient())
             {
-                if (Phase == Gate3TransportLifecyclePhase.StoppingClient
-                    && _observedClientState == LocalConnectionState.Stopped)
-                {
-                    SetOffline();
-                }
-
                 return Gate3TransportLifecycleRequestResult.RequestAccepted;
             }
 
@@ -444,6 +441,11 @@ namespace TheLogsAreWrong.Gate3
         public void ObserveServerConnectionState(LocalConnectionState state)
         {
             _observedServerState = state;
+            if (state == LocalConnectionState.Stopped)
+            {
+                _serverStartRequested = false;
+            }
+
             if (Phase == Gate3TransportLifecyclePhase.StartingServer)
             {
                 if (state == LocalConnectionState.Started)
@@ -477,6 +479,11 @@ namespace TheLogsAreWrong.Gate3
         public void ObserveClientConnectionState(LocalConnectionState state)
         {
             _observedClientState = state;
+            if (state == LocalConnectionState.Stopped)
+            {
+                _clientStartRequested = false;
+            }
+
             if (Phase == Gate3TransportLifecyclePhase.StartingHostClient)
             {
                 if (state == LocalConnectionState.Started)
@@ -579,23 +586,25 @@ namespace TheLogsAreWrong.Gate3
         {
             SetPhase(Gate3TransportLifecyclePhase.StartingHostClient);
             _remainingSeconds = _timeoutSeconds;
+            _clientStartRequested = true;
             if (!_transport.StartClient())
             {
+                _clientStartRequested = false;
                 BeginRollback(Gate3TransportLifecycleFailure.ClientStartRequestRejected);
             }
         }
 
         private void BeginServerStop()
         {
-            SetPhase(Gate3TransportLifecyclePhase.StoppingServer);
-            if (_transport.StopServer() || _observedServerState == LocalConnectionState.Stopped)
+            if (!RequiresServerCleanup())
             {
-                if (Phase == Gate3TransportLifecyclePhase.StoppingServer
-                    && _observedServerState == LocalConnectionState.Stopped)
-                {
-                    SetOffline();
-                }
+                SetOffline();
+                return;
+            }
 
+            SetPhase(Gate3TransportLifecyclePhase.StoppingServer);
+            if (_transport.StopServer())
+            {
                 return;
             }
 
@@ -605,17 +614,11 @@ namespace TheLogsAreWrong.Gate3
         private void BeginRollback(Gate3TransportLifecycleFailure failure)
         {
             LastFailure = failure;
-            if (_observedClientState != LocalConnectionState.Stopped)
+            if (RequiresClientCleanup())
             {
                 SetPhase(Gate3TransportLifecyclePhase.RollingBackClient);
-                if (_transport.StopClient() || _observedClientState == LocalConnectionState.Stopped)
+                if (_transport.StopClient())
                 {
-                    if (Phase == Gate3TransportLifecyclePhase.RollingBackClient
-                        && _observedClientState == LocalConnectionState.Stopped)
-                    {
-                        BeginRollbackServer();
-                    }
-
                     return;
                 }
 
@@ -628,21 +631,15 @@ namespace TheLogsAreWrong.Gate3
 
         private void BeginRollbackServer()
         {
-            if (_observedServerState == LocalConnectionState.Stopped)
+            if (!RequiresServerCleanup())
             {
                 SetOffline();
                 return;
             }
 
             SetPhase(Gate3TransportLifecyclePhase.RollingBackServer);
-            if (_transport.StopServer() || _observedServerState == LocalConnectionState.Stopped)
+            if (_transport.StopServer())
             {
-                if (Phase == Gate3TransportLifecyclePhase.RollingBackServer
-                    && _observedServerState == LocalConnectionState.Stopped)
-                {
-                    SetOffline();
-                }
-
                 return;
             }
 
@@ -667,6 +664,16 @@ namespace TheLogsAreWrong.Gate3
         {
             Phase = phase;
             PhaseChanged?.Invoke(phase, LastFailure);
+        }
+
+        private bool RequiresServerCleanup()
+        {
+            return _serverStartRequested || _observedServerState != LocalConnectionState.Stopped;
+        }
+
+        private bool RequiresClientCleanup()
+        {
+            return _clientStartRequested || _observedClientState != LocalConnectionState.Stopped;
         }
 
         private static bool IsStartPhase(Gate3TransportLifecyclePhase phase)

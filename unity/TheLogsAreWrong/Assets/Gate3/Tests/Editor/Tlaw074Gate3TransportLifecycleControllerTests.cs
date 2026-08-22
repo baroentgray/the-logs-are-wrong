@@ -79,15 +79,110 @@ namespace TheLogsAreWrong.Gate3.Tests
             clientController.ObserveServerConnectionState(LocalConnectionState.Stopped);
             Assert.AreEqual(Gate3TransportLifecycleFailure.ClientStartRequestRejected, clientController.LastFailure);
             Assert.AreEqual(Gate3TransportLifecyclePhase.Offline, clientController.Phase);
+        }
 
-            var partial = new TestTransport();
-            var partialController = new Gate3TransportLifecycleController(partial, 1f);
-            Assert.AreEqual(Gate3TransportLifecycleRequestResult.RequestAccepted, partialController.RequestListenHostStart());
-            partialController.AdvanceTime(1f);
-            Assert.AreEqual(Gate3TransportLifecycleFailure.StartTimedOut, partialController.LastFailure);
-            partial.ServerState = LocalConnectionState.Stopped;
-            partialController.ObserveServerConnectionState(LocalConnectionState.Stopped);
-            Assert.AreEqual(Gate3TransportLifecyclePhase.Offline, partialController.Phase);
+        [Test]
+        public void Server_start_timeout_without_a_callback_requests_stop_and_waits_for_the_actual_stopped_callback()
+        {
+            var transport = new TestTransport();
+            var controller = new Gate3TransportLifecycleController(transport, 1f);
+
+            Assert.AreEqual(Gate3TransportLifecycleRequestResult.RequestAccepted, controller.RequestListenHostStart());
+            controller.AdvanceTime(1f);
+
+            CollectionAssert.AreEqual(new[] { "start-server", "stop-server" }, transport.Calls);
+            Assert.AreEqual(Gate3TransportLifecycleFailure.StartTimedOut, controller.LastFailure);
+            Assert.AreEqual(Gate3TransportLifecyclePhase.RollingBackServer, controller.Phase);
+            Assert.AreEqual(Gate3TransportLifecycleRole.ListenHost, controller.Role);
+            Assert.AreEqual(LocalConnectionState.Stopping, transport.ServerState);
+
+            controller.ObserveServerConnectionState(LocalConnectionState.Stopped);
+            Assert.AreEqual(Gate3TransportLifecyclePhase.Offline, controller.Phase);
+            Assert.AreEqual(Gate3TransportLifecycleRole.Offline, controller.Role);
+        }
+
+        [Test]
+        public void Client_only_start_timeout_without_a_callback_requests_stop_and_waits_for_the_actual_stopped_callback()
+        {
+            var transport = new TestTransport();
+            var controller = new Gate3TransportLifecycleController(transport, 1f);
+
+            Assert.AreEqual(Gate3TransportLifecycleRequestResult.RequestAccepted, controller.RequestClientOnlyStart());
+            controller.AdvanceTime(1f);
+
+            CollectionAssert.AreEqual(new[] { "start-client", "stop-client" }, transport.Calls);
+            Assert.AreEqual(Gate3TransportLifecycleFailure.StartTimedOut, controller.LastFailure);
+            Assert.AreEqual(Gate3TransportLifecyclePhase.RollingBackClient, controller.Phase);
+            Assert.AreEqual(Gate3TransportLifecycleRole.ClientOnly, controller.Role);
+            Assert.AreEqual(LocalConnectionState.Stopping, transport.ClientState);
+
+            controller.ObserveClientConnectionState(LocalConnectionState.Stopped);
+            Assert.AreEqual(Gate3TransportLifecyclePhase.Offline, controller.Phase);
+            Assert.AreEqual(Gate3TransportLifecycleRole.Offline, controller.Role);
+        }
+
+        [Test]
+        public void Host_client_start_timeout_stops_client_before_server_and_waits_for_both_stopped_callbacks()
+        {
+            var transport = new TestTransport();
+            var controller = new Gate3TransportLifecycleController(transport, 1f);
+
+            Assert.AreEqual(Gate3TransportLifecycleRequestResult.RequestAccepted, controller.RequestListenHostStart());
+            controller.ObserveServerConnectionState(LocalConnectionState.Started);
+            controller.AdvanceTime(1f);
+
+            CollectionAssert.AreEqual(new[] { "start-server", "start-client", "stop-client" }, transport.Calls);
+            Assert.AreEqual(Gate3TransportLifecyclePhase.RollingBackClient, controller.Phase);
+            Assert.AreEqual(Gate3TransportLifecycleRole.ListenHost, controller.Role);
+
+            controller.ObserveClientConnectionState(LocalConnectionState.Stopped);
+            CollectionAssert.AreEqual(new[] { "start-server", "start-client", "stop-client", "stop-server" }, transport.Calls);
+            Assert.AreEqual(Gate3TransportLifecyclePhase.RollingBackServer, controller.Phase);
+            Assert.AreEqual(Gate3TransportLifecycleRole.ListenHost, controller.Role);
+
+            controller.ObserveServerConnectionState(LocalConnectionState.Stopped);
+            Assert.AreEqual(Gate3TransportLifecyclePhase.Offline, controller.Phase);
+            Assert.AreEqual(Gate3TransportLifecycleRole.Offline, controller.Role);
+        }
+
+        [Test]
+        public void Rollback_stop_rejection_fails_closed_for_server_client_and_host_client_cleanup()
+        {
+            var serverTransport = new TestTransport { StopServerResult = false };
+            var serverController = new Gate3TransportLifecycleController(serverTransport, 1f);
+            Assert.AreEqual(Gate3TransportLifecycleRequestResult.RequestAccepted, serverController.RequestListenHostStart());
+            serverController.AdvanceTime(1f);
+            CollectionAssert.AreEqual(new[] { "start-server", "stop-server" }, serverTransport.Calls);
+            Assert.AreEqual(Gate3TransportLifecyclePhase.Faulted, serverController.Phase);
+            Assert.AreEqual(Gate3TransportLifecycleFailure.StopRequestRejected, serverController.LastFailure);
+
+            var clientTransport = new TestTransport { StopClientResult = false };
+            var clientController = new Gate3TransportLifecycleController(clientTransport, 1f);
+            Assert.AreEqual(Gate3TransportLifecycleRequestResult.RequestAccepted, clientController.RequestClientOnlyStart());
+            clientController.AdvanceTime(1f);
+            CollectionAssert.AreEqual(new[] { "start-client", "stop-client" }, clientTransport.Calls);
+            Assert.AreEqual(Gate3TransportLifecyclePhase.Faulted, clientController.Phase);
+            Assert.AreEqual(Gate3TransportLifecycleFailure.StopRequestRejected, clientController.LastFailure);
+
+            var hostClientTransport = new TestTransport { StopClientResult = false };
+            var hostClientController = new Gate3TransportLifecycleController(hostClientTransport, 1f);
+            Assert.AreEqual(Gate3TransportLifecycleRequestResult.RequestAccepted, hostClientController.RequestListenHostStart());
+            hostClientController.ObserveServerConnectionState(LocalConnectionState.Started);
+            hostClientController.AdvanceTime(1f);
+            CollectionAssert.AreEqual(new[] { "start-server", "start-client", "stop-client" }, hostClientTransport.Calls);
+            Assert.AreEqual(Gate3TransportLifecyclePhase.Faulted, hostClientController.Phase);
+            Assert.AreEqual(Gate3TransportLifecycleFailure.StopRequestRejected, hostClientController.LastFailure);
+
+            var hostTransport = new TestTransport { StopServerResult = false };
+            var hostController = new Gate3TransportLifecycleController(hostTransport, 1f);
+            Assert.AreEqual(Gate3TransportLifecycleRequestResult.RequestAccepted, hostController.RequestListenHostStart());
+            hostController.ObserveServerConnectionState(LocalConnectionState.Started);
+            hostController.AdvanceTime(1f);
+            CollectionAssert.AreEqual(new[] { "start-server", "start-client", "stop-client" }, hostTransport.Calls);
+            hostController.ObserveClientConnectionState(LocalConnectionState.Stopped);
+            CollectionAssert.AreEqual(new[] { "start-server", "start-client", "stop-client", "stop-server" }, hostTransport.Calls);
+            Assert.AreEqual(Gate3TransportLifecyclePhase.Faulted, hostController.Phase);
+            Assert.AreEqual(Gate3TransportLifecycleFailure.StopRequestRejected, hostController.LastFailure);
         }
 
         private sealed class TestTransport : IGate3TransportLifecycleTransport
