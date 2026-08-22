@@ -33,3 +33,6 @@ unity/TheLogsAreWrong/**/*.unity -whitespace
 # release contains CRLF source files and three upstream trailing-whitespace
 # lines; normalizing or trimming them would alter the accepted artifact.
 unity/TheLogsAreWrong/Assets/FishNet/Plugins/FishySteamworks/** -text -eol whitespace=-trailing-space
+
+# Preserve the exact official SteamManager source carried by the accepted Fishy release artifact.
+unity/TheLogsAreWrong/Assets/Scripts/Steamworks.NET/SteamManager.cs -text -eol whitespace=-trailing-space
