@@ -252,10 +252,12 @@ namespace TheLogsAreWrong.Gate2
         private IAuthoritativeElapsedTimeSource _elapsedTimeSource;
         private IAlreadyAdmittedHostInputSource _inputSource;
         private IValidatedConfigurationStartupSource _configurationSource;
+        private Gate2LocalIntentAdmissionAdapter _localIntentAdmission;
         private IDisposable _lease;
         private HostSession _session;
         private HostTickCadence _cadence;
         private bool _testingConfigured;
+        private bool _useProductionLocalAdmission;
 
         public ProductionHostOwnerLifecycle Lifecycle { get; private set; } = ProductionHostOwnerLifecycle.Unstarted;
 
@@ -278,6 +280,28 @@ namespace TheLogsAreWrong.Gate2
         public string LastSuccessfulTickResultType { get; private set; }
 
         public Exception Fault { get; private set; }
+
+#if UNITY_EDITOR
+        /// <summary>
+        /// Editor-only observation of the exact real driver result for executable boundary tests. This is not
+        /// compiled into a player and never participates in owner, session, cadence, or admission semantics.
+        /// </summary>
+        internal HostStageSevenEventExecution LastSuccessfulTickResultForTesting { get; private set; }
+#endif
+
+        /// <summary>
+        /// The one production local gameplay-intent ingress. The caller provides only an exact envelope and its
+        /// separately trusted local actor; the live adapter owns receive tick and receive sequence evidence.
+        /// </summary>
+        public LocalIntentAdmissionResult SubmitLocalIntent(IntentEnvelope envelope, ActorId authoritativeActor)
+        {
+            if (Lifecycle != ProductionHostOwnerLifecycle.Running || _localIntentAdmission == null)
+            {
+                return LocalIntentAdmissionResult.Reject(LocalIntentAdmissionRejection.OwnerNotRunning);
+            }
+
+            return _localIntentAdmission.SubmitLocalIntent(envelope, authoritativeActor);
+        }
 
         private void Start()
         {
@@ -311,6 +335,7 @@ namespace TheLogsAreWrong.Gate2
             _configurationSource = configurationSource ?? throw new ArgumentNullException(nameof(configurationSource));
             _selectedProfileId = selectedProfileId ?? throw new ArgumentNullException(nameof(selectedProfileId));
             _testingConfigured = true;
+            _useProductionLocalAdmission = false;
         }
 
         /// <summary>
@@ -330,6 +355,31 @@ namespace TheLogsAreWrong.Gate2
                 new ScriptedNoInputSource(failInputOnRequest, invalidContinuityInputOnRequest),
                 new Gate2C1DeploymentStartupSource(artifactBase64, manifest),
                 selectedProfileId);
+        }
+
+        /// <summary>
+        /// Value-only seam for exercising the real production local-admission path with deterministic elapsed
+        /// evidence and the committed C1 deployment material. It exposes neither a second host nor a tick executor.
+        /// </summary>
+        public void ConfigureProductionLocalAdmissionForTesting(
+            Gate2DeploymentTextAsset artifactBase64,
+            Gate2DeploymentTextAsset manifest,
+            long[] elapsedMilliseconds,
+            string selectedProfileId)
+        {
+            if (Lifecycle != ProductionHostOwnerLifecycle.Unstarted)
+            {
+                throw new InvalidOperationException("A production owner can be configured only before startup.");
+            }
+
+            _elapsedTimeSource = new ScriptedElapsedTimeSource(elapsedMilliseconds ?? throw new ArgumentNullException(nameof(elapsedMilliseconds)));
+            _inputSource = null;
+            _configurationSource = new Gate2C1DeploymentStartupSource(
+                artifactBase64 ?? throw new ArgumentNullException(nameof(artifactBase64)),
+                manifest ?? throw new ArgumentNullException(nameof(manifest)));
+            _selectedProfileId = selectedProfileId ?? throw new ArgumentNullException(nameof(selectedProfileId));
+            _testingConfigured = true;
+            _useProductionLocalAdmission = true;
         }
 
         /// <summary>Exposes deterministic conversion evidence for the exact production clock bridge only.</summary>
@@ -405,6 +455,17 @@ namespace TheLogsAreWrong.Gate2
 
                 _cadence = new HostTickCadence();
                 _session = new HostSession(configuration.Shift, configuration.Anomalies, profileId);
+                if (_useProductionLocalAdmission)
+                {
+                    _localIntentAdmission = new Gate2LocalIntentAdmissionAdapter(configuration.Shift.ShiftId);
+                    _inputSource = _localIntentAdmission;
+                }
+
+                if (_inputSource == null)
+                {
+                    throw new InvalidOperationException("A production owner requires already-admitted input evidence.");
+                }
+
                 SessionCreationCount = checked(SessionCreationCount + 1);
                 Lifecycle = ProductionHostOwnerLifecycle.Running;
                 Debug.Log(SessionCreatedMarker + " profile=" + profileId);
@@ -445,6 +506,9 @@ namespace TheLogsAreWrong.Gate2
 
                     ExecutedTickCount = checked(ExecutedTickCount + 1);
                     LastSuccessfulTickResultType = result.GetType().Name;
+#if UNITY_EDITOR
+                    LastSuccessfulTickResultForTesting = result;
+#endif
                 }
             }
             catch (Exception exception)
@@ -461,8 +525,9 @@ namespace TheLogsAreWrong.Gate2
             }
 
             _elapsedTimeSource = new StopwatchElapsedTimeSource();
-            _inputSource = new EmptyAlreadyAdmittedHostInputSource();
+            _inputSource = null;
             _configurationSource = new Gate2C1DeploymentStartupSource(_c1ArtifactBase64, _c1Manifest);
+            _useProductionLocalAdmission = true;
         }
 
         private void FaultOwner(Exception exception, string marker)
@@ -491,6 +556,12 @@ namespace TheLogsAreWrong.Gate2
 
         private void DisposeSessionAndReleaseLease()
         {
+            if (_localIntentAdmission != null)
+            {
+                _localIntentAdmission.Dispose();
+                _localIntentAdmission = null;
+            }
+
             if (_session != null)
             {
                 _session.Dispose();
