@@ -140,7 +140,7 @@ namespace TheLogsAreWrong.Gate2.Tests
         }
 
         [Test]
-        public void Checked_tick_and_receive_sequence_exhaustion_fail_closed_without_wrapping_or_duplicate_sequences()
+        public void Checked_tick_exhaustion_fails_closed_without_clearing_or_wrapping_the_open_window()
         {
             var tickExhaustion = CreateAdapter();
             Assert.IsTrue(AdmissionAccepted(Submit(tickExhaustion, Envelope("pending-at-tick-limit", "untrusted"), ActorId.From("trusted"))));
@@ -148,8 +148,13 @@ namespace TheLogsAreWrong.Gate2.Tests
 
             Assert.Throws<OverflowException>(() => GetInput(tickExhaustion, ServerTick.From(long.MaxValue)));
             Assert.AreEqual(long.MaxValue, ((ServerTick)Property(tickExhaustion, "OpenAdmissionTick")).Value);
+            Assert.AreNotEqual(long.MinValue, ((ServerTick)Property(tickExhaustion, "OpenAdmissionTick")).Value);
             Assert.AreEqual(1, ((ICollection)PrivateField(tickExhaustion, "_accepted")).Count);
+        }
 
+        [Test]
+        public void Receive_sequence_exhaustion_assigns_the_terminal_value_once_without_wrapping_or_duplicates()
+        {
             var sequenceExhaustion = CreateAdapter();
             SetPrivateField(sequenceExhaustion, "_nextReceiveSequence", TheLogsAreWrong.Domain.Sequencing.ServerReceiveSequence.From(long.MaxValue));
             var terminal = Submit(sequenceExhaustion, Envelope("terminal-sequence", "untrusted"), ActorId.From("trusted"));

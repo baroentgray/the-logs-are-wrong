@@ -76,8 +76,8 @@ The repository source guards also require one plain-C# adapter, one use of `Acce
 - Existing TLAW-070 C1 architecture slice: `5/5` passed.
 - Existing TLAW-071 owner architecture slice: `2/2` passed.
 - TLAW-072 source architecture slice: `2/2` passed.
-- Corrected TLAW-072 real-adapter EditMode class: `12/12` passed.
-- Corrected Unity `6000.3.21f1 (c02631ffc030)` full EditMode suite: `52/52` passed.
+- Post-D011 corrected TLAW-072 real-adapter EditMode class: `13/13` passed.
+- Post-D011 corrected Unity `6000.3.21f1 (c02631ffc030)` full EditMode suite: `53/53` passed.
 - `Tlaw.ValidatedConfig.Export --check`: `VALIDATED_CONFIG_C1_EXPORT_FRESH`.
 - Windows x64 Development player build: `BUILD_RESULT=Succeeded`, `BUILD_ERRORS=0 BUILD_WARNINGS=0`, size `146470037`; bootstrap smoke exited `0` after its 60-frame marker with the required TLAW-071 owner-start and teardown markers.
 
@@ -97,7 +97,11 @@ GATE3_NETWORKING_NOT_STARTED
 
 The authorized evidence-only correction closes all four Control Center findings without changing admission, host, cadence, C1, or gameplay semantics.
 
-- The adapter contracts now prove wrong-`ShiftId` `GetInput` fails before clearing/advancing the valid window; a materialized tick cannot reopen; skipped/future ticks fail; `ServerTick` checked exhaustion throws without wrapping; and a terminal `ServerReceiveSequence` is retained once, then refuses a successor rather than wrapping or assigning a duplicate.
+- The adapter contracts now prove wrong-`ShiftId` `GetInput` fails before clearing/advancing the valid window; a materialized tick cannot reopen; skipped/future ticks fail; the actual pinned-runner checked `ServerTick` exhaustion is asserted directly as `OverflowException` while preserving the open tick and pending evidence; and an independent terminal `ServerReceiveSequence` test retains its one terminal receipt then refuses a successor rather than wrapping or assigning a duplicate.
 - The real production-local-admission driver now exposes its exact successful stage result only under `UNITY_EDITOR`. This non-semantic, player-excluded observation lets the EditMode contract prove three structurally valid but gameplay-invalid envelopes are admitted unchanged into the real `HostSession`: stale state version and missing target produce the existing Stage-Two rejection outcomes, while an unsupported action produces the existing `UnsupportedIntentStageOutcome`. The Stage-Seven rejection evidence remains owned by PortableAuthority.
 - A running production owner rejects a cross-shift ingress locally, remains running and fault-free, then executes the next empty authoritative tick once and retires it. The observed real Stage-Two batch is empty, so rejected ingress cannot poison the session.
 - A retained live adapter with pending evidence is faulted through its existing `GetInput` exact-tick boundary using test reflection. The real owner becomes `Faulted`, retains the due cadence tick, disposes and clears the old adapter, returns `OwnerNotRunning` for driver ingress, and cannot pump or admit later input. Direct stale-adapter ingress returns `AdapterDisposed`; direct materialization throws `ObjectDisposedException`.
+
+### Post-D011 runner discrepancy and final proof
+
+D-011 predicted that `MethodInfo.Invoke` would wrap checked tick exhaustion in `TargetInvocationException`. The prescribed wrapper probe was executed on pinned Unity `6000.3.21f1` and produced `12/13`: its only failure observed `OverflowException` directly from `Gate2LocalIntentAdmissionAdapter.GetInput`, with no wrapper to inspect. The independent receive-sequence exhaustion test passed. No production change or reflection-helper normalization, wrapping, unwrapping, translation, or fabrication was made. The final overflow proof follows the actual pinned-runner behavior with direct `Assert.Throws<OverflowException>` while retaining the open-tick and pending-evidence assertions; its focused result is `13/13` and the full pinned EditMode result is `53/53`.
