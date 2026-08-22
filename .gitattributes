@@ -28,3 +28,8 @@
 unity/TheLogsAreWrong/**/*.asset -whitespace
 unity/TheLogsAreWrong/**/*.meta -whitespace
 unity/TheLogsAreWrong/**/*.unity -whitespace
+
+# Preserve the accepted official FishySteamworks artifact byte-for-byte. The
+# release contains CRLF source files and three upstream trailing-whitespace
+# lines; normalizing or trimming them would alter the accepted artifact.
+unity/TheLogsAreWrong/Assets/FishNet/Plugins/FishySteamworks/** -text -eol whitespace=-trailing-space

@@ -1,5 +1,8 @@
 using System;
 using System.IO;
+using FishNet.Managing;
+using FishNet.Managing.Transporting;
+using TheLogsAreWrong.Gate3;
 using UnityEditor;
 using UnityEditor.SceneManagement;
 using UnityEngine;
@@ -42,6 +45,38 @@ namespace TheLogsAreWrong.Gate2.EditorTools
                 ownerSerialized.FindProperty("_selectedProfileId").stringValue = "learning";
                 ownerSerialized.ApplyModifiedPropertiesWithoutUndo();
 
+                var networkManager = root.AddComponent<NetworkManager>();
+                var transportManager = root.AddComponent<TransportManager>();
+                var transport = root.AddComponent<FishySteamworks.FishySteamworks>();
+                transportManager.Transport = transport;
+
+                var spawnablePrefabs = AssetDatabase.LoadMainAssetAtPath("Assets/DefaultPrefabObjects.asset");
+                if (spawnablePrefabs == null)
+                {
+                    throw new FileNotFoundException("FishNet must materialize its empty DefaultPrefabObjects asset before transport bootstrap authoring.");
+                }
+
+                var networkManagerSerialized = new SerializedObject(networkManager);
+                networkManagerSerialized.FindProperty("_spawnablePrefabs").objectReferenceValue = spawnablePrefabs;
+                networkManagerSerialized.FindProperty("_dontDestroyOnLoad").boolValue = false;
+                networkManagerSerialized.ApplyModifiedPropertiesWithoutUndo();
+
+                var transportBootstrap = root.AddComponent<Gate3TransportBootstrap>();
+                var transportBootstrapSerialized = new SerializedObject(transportBootstrap);
+                transportBootstrapSerialized.FindProperty("_networkManager").objectReferenceValue = networkManager;
+                transportBootstrapSerialized.FindProperty("_transport").objectReferenceValue = transport;
+                transportBootstrapSerialized.ApplyModifiedPropertiesWithoutUndo();
+
+                var transportSerialized = new SerializedObject(transport);
+                var peerToPeer = transportSerialized.FindProperty(Gate3TransportBootstrap.PeerToPeerSerializedProperty);
+                if (peerToPeer == null)
+                {
+                    throw new InvalidOperationException("FishySteamworks no longer exposes the accepted _peerToPeer serialized field.");
+                }
+
+                peerToPeer.boolValue = true;
+                transportSerialized.ApplyModifiedPropertiesWithoutUndo();
+
                 var cameraGo = new GameObject("Gate2BootstrapCamera");
                 cameraGo.transform.SetParent(root.transform, false);
                 cameraGo.transform.position = new Vector3(0f, 3f, -8f);
@@ -74,6 +109,13 @@ namespace TheLogsAreWrong.Gate2.EditorTools
                 Debug.LogError($"[TLAW052] AUTHORING_EXCEPTION {e.GetType().Name}: {e.Message}\n{e.StackTrace}");
                 EditorApplication.Exit(2);
             }
+        }
+
+        /// <summary>Batch-mode entry point used to regenerate the committed bootstrap scene with the pinned editor.</summary>
+        public static void CreateBootstrapSceneAndExit()
+        {
+            CreateBootstrapScene();
+            EditorApplication.Exit(0);
         }
     }
 }
