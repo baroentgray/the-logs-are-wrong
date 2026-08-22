@@ -33,12 +33,16 @@ namespace TheLogsAreWrong.Gate3
 
         private void Start()
         {
-            if (!_networkManager.IsOffline)
+            var lifecycle = GetComponent<Gate3TransportLifecycle>();
+            if (!_networkManager.IsOffline && (lifecycle == null || !lifecycle.IsLifecycleActive))
             {
-                throw new InvalidOperationException("The Gate-3 transport bootstrap must remain offline until a later authorized increment.");
+                throw new InvalidOperationException("The Gate-3 transport bootstrap must remain offline without an explicit lifecycle request.");
             }
 
-            Debug.Log(InertMarker);
+            if (_networkManager.IsOffline)
+            {
+                Debug.Log(InertMarker);
+            }
         }
     }
 }

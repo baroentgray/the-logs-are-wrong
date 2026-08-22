@@ -32,6 +32,9 @@ namespace TheLogsAreWrong.Gate2.EditorTools
                 var root = new GameObject(RootName);
                 root.AddComponent<Gate2BootstrapRoot>();
                 var owner = root.AddComponent<Gate2ProductionHostDriver>();
+                var steamRuntime = new GameObject("Gate3SteamRuntime");
+                steamRuntime.SetActive(false);
+                steamRuntime.AddComponent<SteamManager>();
                 var artifact = AssetDatabase.LoadAssetAtPath<Gate2DeploymentTextAsset>(C1ArtifactPath);
                 var manifest = AssetDatabase.LoadAssetAtPath<Gate2DeploymentTextAsset>(C1ManifestPath);
                 if (artifact == null || manifest == null)
@@ -66,6 +69,13 @@ namespace TheLogsAreWrong.Gate2.EditorTools
                 transportBootstrapSerialized.FindProperty("_networkManager").objectReferenceValue = networkManager;
                 transportBootstrapSerialized.FindProperty("_transport").objectReferenceValue = transport;
                 transportBootstrapSerialized.ApplyModifiedPropertiesWithoutUndo();
+
+                var lifecycle = root.AddComponent<Gate3TransportLifecycle>();
+                var lifecycleSerialized = new SerializedObject(lifecycle);
+                lifecycleSerialized.FindProperty("_networkManager").objectReferenceValue = networkManager;
+                lifecycleSerialized.FindProperty("_transport").objectReferenceValue = transport;
+                lifecycleSerialized.FindProperty("_steamRuntime").objectReferenceValue = steamRuntime;
+                lifecycleSerialized.ApplyModifiedPropertiesWithoutUndo();
 
                 var transportSerialized = new SerializedObject(transport);
                 var peerToPeer = transportSerialized.FindProperty(Gate3TransportBootstrap.PeerToPeerSerializedProperty);
