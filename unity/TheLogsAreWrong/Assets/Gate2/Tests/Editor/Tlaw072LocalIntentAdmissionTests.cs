@@ -3,13 +3,16 @@ using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
+using System.Text.RegularExpressions;
 using NUnit.Framework;
+using TheLogsAreWrong.Domain.Events;
 using TheLogsAreWrong.Domain.Identifiers;
 using TheLogsAreWrong.Domain.Intents;
 using TheLogsAreWrong.Domain.Primitives;
 using TheLogsAreWrong.Domain.Runtime;
 using UnityEditor;
 using UnityEngine;
+using UnityEngine.TestTools;
 
 namespace TheLogsAreWrong.Gate2.Tests
 {
@@ -102,6 +105,61 @@ namespace TheLogsAreWrong.Gate2.Tests
         }
 
         [Test]
+        public void GetInput_wrong_shift_fails_closed_without_clearing_or_advancing_the_valid_open_window()
+        {
+            var adapter = CreateAdapter();
+            var envelope = Envelope("wrong-shift-input", "untrusted");
+            Assert.IsTrue(AdmissionAccepted(Submit(adapter, envelope, ActorId.From("trusted"))));
+
+            var mismatch = Assert.Throws<TargetInvocationException>(() => GetInput(adapter, ShiftId.From("OTHER_SHIFT"), ServerTick.Zero));
+            Assert.IsInstanceOf<ArgumentException>(mismatch.InnerException);
+            Assert.AreEqual(0L, ((ServerTick)Property(adapter, "OpenAdmissionTick")).Value);
+
+            var valid = GetInput(adapter, ServerTick.Zero);
+            Assert.AreSame(envelope, Batch(valid).Intents.Single().Envelope);
+            Assert.AreEqual(0L, Batch(valid).CurrentTick.Value);
+            Assert.AreEqual(1L, ((ServerTick)Property(adapter, "OpenAdmissionTick")).Value);
+        }
+
+        [Test]
+        public void Materialized_tick_cannot_reopen_and_skipped_or_future_ticks_remain_fail_closed()
+        {
+            var adapter = CreateAdapter();
+            Assert.IsTrue(AdmissionAccepted(Submit(adapter, Envelope("materialized", "untrusted"), ActorId.From("trusted"))));
+            Assert.AreEqual(0L, Batch(GetInput(adapter, ServerTick.Zero)).CurrentTick.Value);
+
+            var reopened = Assert.Throws<TargetInvocationException>(() => GetInput(adapter, ServerTick.Zero));
+            Assert.IsInstanceOf<ArgumentException>(reopened.InnerException);
+            var skipped = Assert.Throws<TargetInvocationException>(() => GetInput(adapter, ServerTick.From(2)));
+            Assert.IsInstanceOf<ArgumentException>(skipped.InnerException);
+            Assert.AreEqual(1L, ((ServerTick)Property(adapter, "OpenAdmissionTick")).Value);
+
+            var tickOne = GetInput(adapter, ServerTick.From(1));
+            Assert.IsEmpty(Batch(tickOne).Intents);
+            Assert.AreEqual(2L, ((ServerTick)Property(adapter, "OpenAdmissionTick")).Value);
+        }
+
+        [Test]
+        public void Checked_tick_and_receive_sequence_exhaustion_fail_closed_without_wrapping_or_duplicate_sequences()
+        {
+            var tickExhaustion = CreateAdapter();
+            Assert.IsTrue(AdmissionAccepted(Submit(tickExhaustion, Envelope("pending-at-tick-limit", "untrusted"), ActorId.From("trusted"))));
+            SetPrivateField(tickExhaustion, "_openAdmissionTick", ServerTick.From(long.MaxValue));
+
+            Assert.Throws<OverflowException>(() => GetInput(tickExhaustion, ServerTick.From(long.MaxValue)));
+            Assert.AreEqual(long.MaxValue, ((ServerTick)Property(tickExhaustion, "OpenAdmissionTick")).Value);
+            Assert.AreEqual(1, ((ICollection)PrivateField(tickExhaustion, "_accepted")).Count);
+
+            var sequenceExhaustion = CreateAdapter();
+            SetPrivateField(sequenceExhaustion, "_nextReceiveSequence", TheLogsAreWrong.Domain.Sequencing.ServerReceiveSequence.From(long.MaxValue));
+            var terminal = Submit(sequenceExhaustion, Envelope("terminal-sequence", "untrusted"), ActorId.From("trusted"));
+            Assert.IsTrue(AdmissionAccepted(terminal));
+            Assert.AreEqual(long.MaxValue, ((AuthoritativeAcceptedIntent)Property(terminal, "AcceptedIntent")).ReceiveSequence.Value);
+            AssertAdmissionRejected(Submit(sequenceExhaustion, Envelope("wrapped-sequence", "untrusted"), ActorId.From("trusted")), "ReceiveSequenceExhausted");
+            Assert.AreEqual(1, ((ICollection)PrivateField(sequenceExhaustion, "_accepted")).Count);
+        }
+
+        [Test]
         public void Real_driver_delivers_local_admission_to_hostsession_stage_two_and_stage_seven_then_retires_the_due_tick()
         {
             var driver = CreateProductionAdmissionDriver(new long[] { 1000 });
@@ -121,6 +179,71 @@ namespace TheLogsAreWrong.Gate2.Tests
             var session = (HostSession)PrivateField(driver, "_session");
             Assert.AreEqual(1, session.SuccessfulTickCount);
             Assert.Greater(session.Journal.Count, 0, "The real Stage Seven must have published the stage output.");
+        }
+
+        [Test]
+        public void Real_driver_admits_gameplay_invalid_envelopes_and_the_real_stage_two_classifies_them()
+        {
+            var driver = CreateProductionAdmissionDriver(new long[] { 1000 });
+            Start(driver);
+            var stale = Envelope("stale-state", "untrusted", expectedStateVersion: StateVersion.From(1));
+            var missingTarget = Envelope("missing-target", "untrusted", targetId: TargetId.From("missing_log"));
+            var unsupported = Envelope("unsupported-action", "untrusted", action: IntentActionId.From("unsupported_action"));
+
+            Assert.IsTrue(AdmissionAccepted(SubmitDriver(driver, stale, ActorId.From("trusted"))));
+            Assert.IsTrue(AdmissionAccepted(SubmitDriver(driver, missingTarget, ActorId.From("trusted"))));
+            Assert.IsTrue(AdmissionAccepted(SubmitDriver(driver, unsupported, ActorId.From("trusted"))));
+            Pump(driver);
+
+            Assert.AreEqual("Running", Property(driver, "Lifecycle").ToString());
+            Assert.AreEqual(1, Property<int>(driver, "DeliveredAlreadyAdmittedInputCount"));
+            Assert.AreEqual(1, Property<int>(driver, "ExecutedTickCount"));
+            Assert.AreEqual(0L, Property<long>(driver, "PendingDueTickCount"));
+
+            var execution = (HostStageSevenEventExecution)Property(driver, "LastSuccessfulTickResultForTesting");
+            Assert.AreEqual(3, execution.StageTwo.Steps.Length);
+            Assert.AreSame(stale, execution.StageTwo.Steps[0].Receipt.Envelope);
+            Assert.AreSame(missingTarget, execution.StageTwo.Steps[1].Receipt.Envelope);
+            Assert.AreSame(unsupported, execution.StageTwo.Steps[2].Receipt.Envelope);
+            Assert.AreSame(execution.StageTwo.InitialState, execution.StageTwo.FinalState);
+
+            Assert.IsInstanceOf<ManualRoutingIntentStageOutcome>(execution.StageTwo.Steps[0].Outcome);
+            var staleOutcome = (ManualRoutingIntentStageOutcome)execution.StageTwo.Steps[0].Outcome;
+            Assert.IsInstanceOf<ManualLogIntentRejected>(staleOutcome.Result);
+            Assert.AreEqual(RejectionReason.STALE_STATE_VERSION, ((ManualLogIntentRejected)staleOutcome.Result).Reason);
+            Assert.IsInstanceOf<ManualRoutingIntentStageOutcome>(execution.StageTwo.Steps[1].Outcome);
+            var missingOutcome = (ManualRoutingIntentStageOutcome)execution.StageTwo.Steps[1].Outcome;
+            Assert.IsInstanceOf<ManualLogIntentRejected>(missingOutcome.Result);
+            Assert.AreEqual(RejectionReason.TARGET_NOT_FOUND, ((ManualLogIntentRejected)missingOutcome.Result).Reason);
+            Assert.IsInstanceOf<UnsupportedIntentStageOutcome>(execution.StageTwo.Steps[2].Outcome);
+            Assert.AreEqual(IntentActionId.From("unsupported_action"), ((UnsupportedIntentStageOutcome)execution.StageTwo.Steps[2].Outcome).Action);
+
+            Assert.IsInstanceOf<HostStageSevenPublished>(execution);
+            var published = (HostStageSevenPublished)execution;
+            CollectionAssert.AreEquivalent(
+                new[] { RejectionReason.STALE_STATE_VERSION, RejectionReason.TARGET_NOT_FOUND },
+                published.Rejections.Select(rejection => rejection.Reason).ToArray());
+        }
+
+        [Test]
+        public void Running_owner_local_rejection_is_isolated_and_the_next_valid_tick_executes_and_retires()
+        {
+            var driver = CreateProductionAdmissionDriver(new long[] { 1000 });
+            Start(driver);
+
+            AssertAdmissionRejected(SubmitDriver(driver, Envelope("wrong-shift-owner", "untrusted", shiftId: "OTHER_SHIFT"), ActorId.From("trusted")), "ShiftMismatch");
+            Assert.AreEqual("Running", Property(driver, "Lifecycle").ToString());
+            Assert.IsNull(Property(driver, "Fault"));
+            Assert.AreEqual(0, Property<int>(driver, "DeliveredAlreadyAdmittedInputCount"));
+
+            Pump(driver);
+
+            Assert.AreEqual("Running", Property(driver, "Lifecycle").ToString());
+            Assert.IsNull(Property(driver, "Fault"));
+            Assert.AreEqual(1, Property<int>(driver, "DeliveredAlreadyAdmittedInputCount"));
+            Assert.AreEqual(1, Property<int>(driver, "ExecutedTickCount"));
+            Assert.AreEqual(0L, Property<long>(driver, "PendingDueTickCount"));
+            Assert.IsEmpty(((HostStageSevenEventExecution)Property(driver, "LastSuccessfulTickResultForTesting")).StageTwo.Batch.Intents);
         }
 
         [Test]
@@ -165,16 +288,46 @@ namespace TheLogsAreWrong.Gate2.Tests
             AssertAdmissionRejected(SubmitDriver(driver, Envelope("after-dispose", "untrusted"), ActorId.From("trusted")), "OwnerNotRunning");
         }
 
+        [Test]
+        public void Faulted_owner_disposes_its_retained_adapter_and_pending_evidence_cannot_escape()
+        {
+            var driver = CreateProductionAdmissionDriver(new long[] { 1000 });
+            Start(driver);
+            var staleAdapter = PrivateField(driver, "_localIntentAdmission");
+            Assert.IsTrue(AdmissionAccepted(SubmitDriver(driver, Envelope("pending-before-fault", "untrusted"), ActorId.From("trusted"))));
+            SetPrivateField(staleAdapter, "_openAdmissionTick", ServerTick.From(1));
+
+            ExpectOwnerError("TLAW071_OWNER_FAULT");
+            Pump(driver);
+
+            Assert.AreEqual("Faulted", Property(driver, "Lifecycle").ToString());
+            Assert.IsNotNull(Property(driver, "Fault"));
+            Assert.AreEqual(0, Property<int>(driver, "ExecutedTickCount"));
+            Assert.AreEqual(1L, Property<long>(driver, "PendingDueTickCount"));
+            AssertAdmissionRejected(SubmitDriver(driver, Envelope("after-fault", "untrusted"), ActorId.From("trusted")), "OwnerNotRunning");
+            AssertAdmissionRejected(Submit(staleAdapter, Envelope("stale-adapter", "untrusted"), ActorId.From("trusted")), "AdapterDisposed");
+            Assert.AreEqual(0, ((ICollection)PrivateField(staleAdapter, "_accepted")).Count);
+
+            var staleRead = Assert.Throws<TargetInvocationException>(() => GetInput(staleAdapter, ServerTick.From(1)));
+            Assert.IsInstanceOf<ObjectDisposedException>(staleRead.InnerException);
+            Pump(driver);
+            Assert.AreEqual(0, Property<int>(driver, "ExecutedTickCount"));
+            AssertAdmissionRejected(SubmitDriver(driver, Envelope("after-fault-pump", "untrusted"), ActorId.From("trusted")), "OwnerNotRunning");
+        }
+
         private static object CreateAdapter()
         {
             return Activator.CreateInstance(AdapterType, ShiftId.From("P0_SHIFT_A"));
         }
 
         private static object GetInput(object adapter, ServerTick tick)
+            => GetInput(adapter, ShiftId.From("P0_SHIFT_A"), tick);
+
+        private static object GetInput(object adapter, ShiftId shiftId, ServerTick tick)
         {
             var method = AdapterType.GetMethod("GetInput", BindingFlags.Instance | BindingFlags.Public);
             Assert.IsNotNull(method);
-            return method.Invoke(adapter, new object[] { ShiftId.From("P0_SHIFT_A"), tick });
+            return method.Invoke(adapter, new object[] { shiftId, tick });
         }
 
         private static AcceptedIntentTickBatch Batch(object input) => (AcceptedIntentTickBatch)Property(input, "AcceptedIntents");
@@ -200,14 +353,20 @@ namespace TheLogsAreWrong.Gate2.Tests
         private static object SubmitDriver(Component driver, IntentEnvelope envelope, ActorId actor) =>
             Invoke(driver, "SubmitLocalIntent", envelope, actor);
 
-        private static IntentEnvelope Envelope(string intentId, string actorHint, string shiftId = "P0_SHIFT_A") =>
+        private static IntentEnvelope Envelope(
+            string intentId,
+            string actorHint,
+            string shiftId = "P0_SHIFT_A",
+            TargetId? targetId = null,
+            IntentActionId? action = null,
+            StateVersion? expectedStateVersion = null) =>
             new IntentEnvelope(
                 ShiftId.From(shiftId),
                 IntentId.From(intentId),
                 ActorId.From(actorHint),
-                TargetId.From("log_01"),
-                LogIntentActions.RouteToProcedure,
-                StateVersion.Zero,
+                targetId ?? TargetId.From("log_01"),
+                action ?? LogIntentActions.RouteToProcedure,
+                expectedStateVersion ?? StateVersion.Zero,
                 ServerTick.Zero,
                 NoIntentParameters.Instance);
 
@@ -259,6 +418,25 @@ namespace TheLogsAreWrong.Gate2.Tests
             var field = DriverType.GetField(name, BindingFlags.Instance | BindingFlags.NonPublic);
             Assert.IsNotNull(field, "Required production driver field is missing: " + name);
             return field.GetValue(driver);
+        }
+
+        private static object PrivateField(object target, string name)
+        {
+            var field = target.GetType().GetField(name, BindingFlags.Instance | BindingFlags.NonPublic);
+            Assert.IsNotNull(field, "Required private field is missing: " + name);
+            return field.GetValue(target);
+        }
+
+        private static void SetPrivateField(object target, string name, object value)
+        {
+            var field = target.GetType().GetField(name, BindingFlags.Instance | BindingFlags.NonPublic);
+            Assert.IsNotNull(field, "Required private field is missing: " + name);
+            field.SetValue(target, value);
+        }
+
+        private static void ExpectOwnerError(string marker)
+        {
+            LogAssert.Expect(LogType.Error, new Regex(marker, RegexOptions.CultureInvariant));
         }
 
         private static void ResetLeaseAfterTeardown()

@@ -45,6 +45,8 @@ public sealed class Tlaw072LocalIntentAdmissionArchitectureTests
         Assert.Contains("_inputSource.GetInput(_session.ShiftState.ShiftId, tick)", source, StringComparison.Ordinal);
         Assert.Contains("_session.ExecuteTick(tick, input.AcceptedIntents, input.ActiveTools)", source, StringComparison.Ordinal);
         Assert.Contains("_cadence.RetireNextDueTick()", source, StringComparison.Ordinal);
+        Assert.Contains("#if UNITY_EDITOR", source, StringComparison.Ordinal);
+        Assert.Contains("LastSuccessfulTickResultForTesting", source, StringComparison.Ordinal);
 
         var getInput = source.IndexOf("_inputSource.GetInput(_session.ShiftState.ShiftId, tick)", StringComparison.Ordinal);
         var execute = source.IndexOf("_session.ExecuteTick(tick, input.AcceptedIntents, input.ActiveTools)", StringComparison.Ordinal);

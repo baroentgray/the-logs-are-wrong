@@ -281,6 +281,14 @@ namespace TheLogsAreWrong.Gate2
 
         public Exception Fault { get; private set; }
 
+#if UNITY_EDITOR
+        /// <summary>
+        /// Editor-only observation of the exact real driver result for executable boundary tests. This is not
+        /// compiled into a player and never participates in owner, session, cadence, or admission semantics.
+        /// </summary>
+        internal HostStageSevenEventExecution LastSuccessfulTickResultForTesting { get; private set; }
+#endif
+
         /// <summary>
         /// The one production local gameplay-intent ingress. The caller provides only an exact envelope and its
         /// separately trusted local actor; the live adapter owns receive tick and receive sequence evidence.
@@ -498,6 +506,9 @@ namespace TheLogsAreWrong.Gate2
 
                     ExecutedTickCount = checked(ExecutedTickCount + 1);
                     LastSuccessfulTickResultType = result.GetType().Name;
+#if UNITY_EDITOR
+                    LastSuccessfulTickResultForTesting = result;
+#endif
                 }
             }
             catch (Exception exception)
