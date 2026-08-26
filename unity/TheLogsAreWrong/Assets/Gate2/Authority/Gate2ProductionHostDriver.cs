@@ -6,6 +6,7 @@ using TheLogsAreWrong.Domain.Identifiers;
 using TheLogsAreWrong.Domain.Intents;
 using TheLogsAreWrong.Domain.Primitives;
 using TheLogsAreWrong.Domain.Runtime;
+using TheLogsAreWrong.Gate3;
 using UnityEngine;
 using Stopwatch = System.Diagnostics.Stopwatch;
 
@@ -24,6 +25,12 @@ namespace TheLogsAreWrong.Gate2
     public interface IAuthoritativeElapsedTimeSource
     {
         AuthoritativeElapsedMilliseconds SampleElapsedMilliseconds();
+
+        /// <summary>Observes total elapsed milliseconds from the current host-session origin without consuming a delta.</summary>
+        AuthoritativeElapsedMilliseconds ObserveElapsedMilliseconds();
+
+        /// <summary>Establishes the next HostSession's fresh elapsed-time origin before cadence starts.</summary>
+        void ResetSessionOrigin();
     }
 
     /// <summary>Minimal monotonic timestamp dependency used only by the exact integer bridge.</summary>
@@ -41,6 +48,7 @@ namespace TheLogsAreWrong.Gate2
     public sealed class StopwatchElapsedTimeSource : IAuthoritativeElapsedTimeSource
     {
         private readonly IMonotonicTimestampSource _timestamps;
+        private long _originTimestamp;
         private long _lastTimestamp;
         private long _millisecondNumeratorRemainder;
 
@@ -57,7 +65,7 @@ namespace TheLogsAreWrong.Gate2
                 throw new ArgumentOutOfRangeException(nameof(timestamps), "Monotonic timestamp frequency must be positive.");
             }
 
-            _lastTimestamp = _timestamps.GetTimestamp();
+            ResetSessionOrigin();
         }
 
         public AuthoritativeElapsedMilliseconds SampleElapsedMilliseconds()
@@ -77,6 +85,30 @@ namespace TheLogsAreWrong.Gate2
             _lastTimestamp = current;
             _millisecondNumeratorRemainder = fractionalMillisecondsNumerator % _timestamps.Frequency;
             return AuthoritativeElapsedMilliseconds.FromMilliseconds(elapsedMilliseconds);
+        }
+
+        public AuthoritativeElapsedMilliseconds ObserveElapsedMilliseconds()
+        {
+            var current = _timestamps.GetTimestamp();
+            if (current < _originTimestamp)
+            {
+                throw new InvalidOperationException("The monotonic timestamp source moved backwards from the current host-session origin.");
+            }
+
+            var elapsedTicks = checked(current - _originTimestamp);
+            var wholeSeconds = elapsedTicks / _timestamps.Frequency;
+            var fractionalTicks = elapsedTicks % _timestamps.Frequency;
+            var elapsedMilliseconds = checked(wholeSeconds * HostTickCadence.MillisecondsPerServerTick
+                + checked(fractionalTicks * HostTickCadence.MillisecondsPerServerTick) / _timestamps.Frequency);
+            return AuthoritativeElapsedMilliseconds.FromMilliseconds(elapsedMilliseconds);
+        }
+
+        public void ResetSessionOrigin()
+        {
+            var origin = _timestamps.GetTimestamp();
+            _originTimestamp = origin;
+            _lastTimestamp = origin;
+            _millisecondNumeratorRemainder = 0;
         }
 
         private sealed class SystemStopwatchTimestampSource : IMonotonicTimestampSource
@@ -253,6 +285,7 @@ namespace TheLogsAreWrong.Gate2
         private IAlreadyAdmittedHostInputSource _inputSource;
         private IValidatedConfigurationStartupSource _configurationSource;
         private Gate2LocalIntentAdmissionAdapter _localIntentAdmission;
+        private Gate3ServerReceiveTickObservationSource _receiveTickObservationSource;
         private IDisposable _lease;
         private HostSession _session;
         private HostTickCadence _cadence;
@@ -301,6 +334,28 @@ namespace TheLogsAreWrong.Gate2
             }
 
             return _localIntentAdmission.SubmitLocalIntent(envelope, authoritativeActor);
+        }
+
+        /// <summary>
+        /// Bounded server-only future Gate-3 ingress dependency. It observes the live host-session time origin and
+        /// does not deserialize, admit, order, or execute any gameplay input.
+        /// </summary>
+        public Gate3ServerReceiveTickObservation ObserveAuthoritativeServerReceiveTick()
+        {
+            if (Lifecycle != ProductionHostOwnerLifecycle.Running || _receiveTickObservationSource == null)
+            {
+                return Gate3ServerReceiveTickObservation.Rejected(Gate3ServerReceiveTickObservationStatus.OwnerNotRunning);
+            }
+
+            try
+            {
+                return Gate3ServerReceiveTickObservation.Observed(_receiveTickObservationSource.ObserveReceiveTick());
+            }
+            catch (Exception exception)
+            {
+                FaultOwner(exception, FaultMarker);
+                return Gate3ServerReceiveTickObservation.Rejected(Gate3ServerReceiveTickObservationStatus.ClockFaulted);
+            }
         }
 
         private void Start()
@@ -382,6 +437,33 @@ namespace TheLogsAreWrong.Gate2
             _useProductionLocalAdmission = true;
         }
 
+#if UNITY_EDITOR
+        /// <summary>Editor-only value seam for deterministic TLAW-076 receive-time contracts over the real owner.</summary>
+        public void ConfigureReceiveTickForTesting(
+            Gate2DeploymentTextAsset artifactBase64,
+            Gate2DeploymentTextAsset manifest,
+            long[] elapsedMilliseconds,
+            long[] observedElapsedMilliseconds,
+            string selectedProfileId)
+        {
+            if (Lifecycle != ProductionHostOwnerLifecycle.Unstarted)
+            {
+                throw new InvalidOperationException("A production owner can be configured only before startup.");
+            }
+
+            _elapsedTimeSource = new ScriptedElapsedTimeSource(
+                elapsedMilliseconds ?? throw new ArgumentNullException(nameof(elapsedMilliseconds)),
+                observedElapsedMilliseconds ?? throw new ArgumentNullException(nameof(observedElapsedMilliseconds)));
+            _inputSource = new EmptyAlreadyAdmittedHostInputSource();
+            _configurationSource = new Gate2C1DeploymentStartupSource(
+                artifactBase64 ?? throw new ArgumentNullException(nameof(artifactBase64)),
+                manifest ?? throw new ArgumentNullException(nameof(manifest)));
+            _selectedProfileId = selectedProfileId ?? throw new ArgumentNullException(nameof(selectedProfileId));
+            _testingConfigured = true;
+            _useProductionLocalAdmission = false;
+        }
+#endif
+
         /// <summary>Exposes deterministic conversion evidence for the exact production clock bridge only.</summary>
         public static long[] ConvertTimestampSamplesForTesting(long frequency, long[] timestamps)
         {
@@ -395,6 +477,34 @@ namespace TheLogsAreWrong.Gate2
 
             return converted;
         }
+
+#if UNITY_EDITOR
+        /// <summary>Editor-only evidence that the real monotonic bridge rejects backward/overflow observations.</summary>
+        public static long[] ObserveTimestampSamplesForTesting(long frequency, long[] timestamps)
+        {
+            var source = new ScriptedTimestampSource(frequency, timestamps);
+            var bridge = new StopwatchElapsedTimeSource(source);
+            var observed = new long[Math.Max(0, timestamps.Length - 1)];
+            for (var index = 0; index < observed.Length; index++)
+            {
+                observed[index] = bridge.ObserveElapsedMilliseconds().Value;
+            }
+
+            return observed;
+        }
+
+        /// <summary>Editor-only proof that observing real total elapsed time does not consume the next cadence delta.</summary>
+        public static long[] ObserveThenSampleTimestampMillisecondsForTesting(long frequency, long[] timestamps)
+        {
+            var source = new ScriptedTimestampSource(frequency, timestamps);
+            var bridge = new StopwatchElapsedTimeSource(source);
+            return new[]
+            {
+                bridge.ObserveElapsedMilliseconds().Value,
+                bridge.SampleElapsedMilliseconds().Value
+            };
+        }
+#endif
 
         /// <summary>Executes the same startup lifecycle used by <see cref="Start"/> without waiting for an Editor frame.</summary>
         public void StartForTesting()
@@ -453,8 +563,10 @@ namespace TheLogsAreWrong.Gate2
                     throw new InvalidDataException("The selected startup profile is not present in the materialized configuration.");
                 }
 
+                _elapsedTimeSource.ResetSessionOrigin();
                 _cadence = new HostTickCadence();
                 _session = new HostSession(configuration.Shift, configuration.Anomalies, profileId);
+                _receiveTickObservationSource = new Gate3ServerReceiveTickObservationSource(_elapsedTimeSource);
                 if (_useProductionLocalAdmission)
                 {
                     _localIntentAdmission = new Gate2LocalIntentAdmissionAdapter(configuration.Shift.ShiftId);
@@ -556,6 +668,8 @@ namespace TheLogsAreWrong.Gate2
 
         private void DisposeSessionAndReleaseLease()
         {
+            _receiveTickObservationSource = null;
+
             if (_localIntentAdmission != null)
             {
                 _localIntentAdmission.Dispose();
@@ -578,17 +692,50 @@ namespace TheLogsAreWrong.Gate2
         private sealed class ScriptedElapsedTimeSource : IAuthoritativeElapsedTimeSource
         {
             private readonly long[] _samples;
-            private int _next;
+            private readonly long[] _observedElapsedMilliseconds;
+            private int _nextSample;
+            private int _nextObservation;
+            private long _lastObservedElapsedMilliseconds;
+            private bool _hasObservedElapsedMilliseconds;
 
             internal ScriptedElapsedTimeSource(long[] samples)
+                : this(samples, new long[] { 0 })
+            {
+            }
+
+            internal ScriptedElapsedTimeSource(long[] samples, long[] observedElapsedMilliseconds)
             {
                 _samples = samples ?? throw new ArgumentNullException(nameof(samples));
+                _observedElapsedMilliseconds = observedElapsedMilliseconds ?? throw new ArgumentNullException(nameof(observedElapsedMilliseconds));
             }
 
             public AuthoritativeElapsedMilliseconds SampleElapsedMilliseconds()
             {
-                var value = _next < _samples.Length ? _samples[_next++] : 0;
+                var value = _nextSample < _samples.Length ? _samples[_nextSample++] : 0;
                 return AuthoritativeElapsedMilliseconds.FromMilliseconds(value);
+            }
+
+            public AuthoritativeElapsedMilliseconds ObserveElapsedMilliseconds()
+            {
+                var value = _nextObservation < _observedElapsedMilliseconds.Length
+                    ? _observedElapsedMilliseconds[_nextObservation++]
+                    : _lastObservedElapsedMilliseconds;
+                if (_hasObservedElapsedMilliseconds && value < _lastObservedElapsedMilliseconds)
+                {
+                    throw new InvalidOperationException("The scripted elapsed-time observation moved backwards.");
+                }
+
+                _lastObservedElapsedMilliseconds = value;
+                _hasObservedElapsedMilliseconds = true;
+                return AuthoritativeElapsedMilliseconds.FromMilliseconds(value);
+            }
+
+            public void ResetSessionOrigin()
+            {
+                _nextSample = 0;
+                _nextObservation = 0;
+                _lastObservedElapsedMilliseconds = 0;
+                _hasObservedElapsedMilliseconds = false;
             }
         }
 
