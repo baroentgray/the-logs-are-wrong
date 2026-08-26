@@ -19,6 +19,7 @@ namespace TheLogsAreWrong.Gate2.EditorTools
         public const string RootName = "Gate2BootstrapRoot";
         private const string C1ArtifactPath = "Assets/Gate2/Configuration/validated-configuration-c1-v1.base64";
         private const string C1ManifestPath = "Assets/Gate2/Configuration/validated-configuration-c1-v1.manifest";
+        private const string ConnectionBindingScriptPath = "Assets/Gate3/Connection/Gate3ServerConnectionActorBindingBridge.cs";
 
         public static void CreateBootstrapScene()
         {
@@ -28,6 +29,11 @@ namespace TheLogsAreWrong.Gate2.EditorTools
 
                 AssetDatabase.SetImporterOverride<Gate2DeploymentTextImporter>(C1ManifestPath);
                 AssetDatabase.ImportAsset(C1ManifestPath, ImportAssetOptions.ForceUpdate);
+                AssetDatabase.ImportAsset(ConnectionBindingScriptPath, ImportAssetOptions.ForceSynchronousImport);
+                if (AssetDatabase.LoadAssetAtPath<MonoScript>(ConnectionBindingScriptPath) == null)
+                {
+                    throw new FileNotFoundException("The TLAW-075 connection binding script must be an imported Unity asset before bootstrap scene authoring.");
+                }
 
                 var root = new GameObject(RootName);
                 root.AddComponent<Gate2BootstrapRoot>();
@@ -76,6 +82,11 @@ namespace TheLogsAreWrong.Gate2.EditorTools
                 lifecycleSerialized.FindProperty("_transport").objectReferenceValue = transport;
                 lifecycleSerialized.FindProperty("_steamRuntime").objectReferenceValue = steamRuntime;
                 lifecycleSerialized.ApplyModifiedPropertiesWithoutUndo();
+
+                var connectionBinding = root.AddComponent<Gate3ServerConnectionActorBindingBridge>();
+                var connectionBindingSerialized = new SerializedObject(connectionBinding);
+                connectionBindingSerialized.FindProperty("_transport").objectReferenceValue = transport;
+                connectionBindingSerialized.ApplyModifiedPropertiesWithoutUndo();
 
                 var transportSerialized = new SerializedObject(transport);
                 var peerToPeer = transportSerialized.FindProperty(Gate3TransportBootstrap.PeerToPeerSerializedProperty);
