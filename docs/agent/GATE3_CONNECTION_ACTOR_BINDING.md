@@ -62,6 +62,10 @@ regression class passed **9/9**, preserving the only transport lifecycle
 start/stop owner. The Release solution build completed with zero warnings and
 zero errors; the full .NET suite passed **1665/1665** and the TLAW-072,
 TLAW-074, and TLAW-075 architecture slices each passed **2/2**.
+The D-014/TLAW-046 slice passed **87/87**; TLAW-067 and TLAW-068 passed
+**6/6** and **10/10** respectively; and the preserved TLAW-073 architecture
+guard passed **2/2**. The C1 export freshness check passed and the exact-head
+local repository verifier passed.
 
 The Windows x64 Development build succeeded. Its ordinary player smoke exited
 zero and emitted `TLAW073_TRANSPORT_INERT` without a TLAW-074 or TLAW-075
