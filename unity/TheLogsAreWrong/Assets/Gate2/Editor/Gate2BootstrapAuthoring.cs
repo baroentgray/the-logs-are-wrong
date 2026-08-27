@@ -20,6 +20,7 @@ namespace TheLogsAreWrong.Gate2.EditorTools
         private const string C1ArtifactPath = "Assets/Gate2/Configuration/validated-configuration-c1-v1.base64";
         private const string C1ManifestPath = "Assets/Gate2/Configuration/validated-configuration-c1-v1.manifest";
         private const string ConnectionBindingScriptPath = "Assets/Gate3/Connection/Gate3ServerConnectionActorBindingBridge.cs";
+        private const string IntentCarrierIngressScriptPath = "Assets/Gate3/IntentCarrier/Gate3IntentCarrierIngress.cs";
 
         public static void CreateBootstrapScene()
         {
@@ -30,9 +31,15 @@ namespace TheLogsAreWrong.Gate2.EditorTools
                 AssetDatabase.SetImporterOverride<Gate2DeploymentTextImporter>(C1ManifestPath);
                 AssetDatabase.ImportAsset(C1ManifestPath, ImportAssetOptions.ForceUpdate);
                 AssetDatabase.ImportAsset(ConnectionBindingScriptPath, ImportAssetOptions.ForceSynchronousImport);
+                AssetDatabase.ImportAsset(IntentCarrierIngressScriptPath, ImportAssetOptions.ForceSynchronousImport);
                 if (AssetDatabase.LoadAssetAtPath<MonoScript>(ConnectionBindingScriptPath) == null)
                 {
                     throw new FileNotFoundException("The TLAW-075 connection binding script must be an imported Unity asset before bootstrap scene authoring.");
+                }
+
+                if (AssetDatabase.LoadAssetAtPath<MonoScript>(IntentCarrierIngressScriptPath) == null)
+                {
+                    throw new FileNotFoundException("The TLAW-079 intent carrier ingress script must be an imported Unity asset before bootstrap scene authoring.");
                 }
 
                 var root = new GameObject(RootName);
@@ -87,6 +94,12 @@ namespace TheLogsAreWrong.Gate2.EditorTools
                 var connectionBindingSerialized = new SerializedObject(connectionBinding);
                 connectionBindingSerialized.FindProperty("_transport").objectReferenceValue = transport;
                 connectionBindingSerialized.ApplyModifiedPropertiesWithoutUndo();
+
+                var intentCarrierIngress = root.AddComponent<Gate3IntentCarrierIngress>();
+                var intentCarrierIngressSerialized = new SerializedObject(intentCarrierIngress);
+                intentCarrierIngressSerialized.FindProperty("_networkManager").objectReferenceValue = networkManager;
+                intentCarrierIngressSerialized.FindProperty("_hostDriver").objectReferenceValue = owner;
+                intentCarrierIngressSerialized.ApplyModifiedPropertiesWithoutUndo();
 
                 var transportSerialized = new SerializedObject(transport);
                 var peerToPeer = transportSerialized.FindProperty(Gate3TransportBootstrap.PeerToPeerSerializedProperty);
