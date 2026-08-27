@@ -93,6 +93,31 @@ namespace TheLogsAreWrong.Gate3.Tests
         }
 
         [Test]
+        public void Leading_utf8_bom_is_rejected_at_every_shared_identifier_encode_decode_boundary()
+        {
+            var leadingBom = "\ufeff";
+            foreach (var envelope in new[]
+            {
+                CreateEnvelope(shift: leadingBom + "shift"),
+                CreateEnvelope(intent: leadingBom + "intent"),
+                CreateEnvelope(actor: leadingBom + "actor_hint"),
+                CreateEnvelope(target: leadingBom + "target"),
+                CreateEnvelope(action: leadingBom + "action"),
+                CreateEnvelope(parameters: new ProcedureActionIntentParameters(ItemId.From(leadingBom + "holy_water")))
+            })
+            {
+                AssertEncodeFailure(envelope, Gate3IntentWireV1Failure.INVALID_UTF8);
+            }
+
+            var outerIdentifier = PrependUtf8BomToLengthPrefixedIdentifier(Encode(CreateEnvelope()), 2);
+            AssertDecodeFailure(outerIdentifier, Gate3IntentWireV1Failure.INVALID_UTF8);
+
+            var procedure = Encode(CreateEnvelope(parameters: new ProcedureActionIntentParameters(ItemId.From("holy_water"))));
+            var attemptedItem = PrependUtf8BomToLengthPrefixedIdentifier(procedure, ParameterKindOffset(procedure) + 1);
+            AssertDecodeFailure(attemptedItem, Gate3IntentWireV1Failure.INVALID_UTF8);
+        }
+
+        [Test]
         public void Unsupported_versions_and_invalid_numeric_fields_fail_closed()
         {
             AssertDecodeFailure(new byte[] { 0, 0 }, Gate3IntentWireV1Failure.UNSUPPORTED_SCHEMA_VERSION);
@@ -216,6 +241,16 @@ namespace TheLogsAreWrong.Gate3.Tests
         }
 
         private static int ParameterKindOffset(byte[] payload) => FixedNumericOffset(payload) + 16;
+
+        private static byte[] PrependUtf8BomToLengthPrefixedIdentifier(byte[] payload, int lengthOffset)
+        {
+            var withBom = new List<byte>(payload);
+            var length = ReadUInt16LittleEndian(payload, lengthOffset);
+            withBom[lengthOffset] = (byte)(length + 3);
+            withBom[lengthOffset + 1] = (byte)((length + 3) >> 8);
+            withBom.InsertRange(lengthOffset + 2, new byte[] { 0xef, 0xbb, 0xbf });
+            return withBom.ToArray();
+        }
 
         private static int ReadUInt16LittleEndian(byte[] payload, int offset) => payload[offset] | (payload[offset + 1] << 8);
 

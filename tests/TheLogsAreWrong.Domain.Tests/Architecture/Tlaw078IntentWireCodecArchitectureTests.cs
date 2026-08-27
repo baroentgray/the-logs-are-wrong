@@ -19,6 +19,10 @@ public sealed class Tlaw078IntentWireCodecArchitectureTests
         Assert.Contains("TryEncode", source, StringComparison.Ordinal);
         Assert.Contains("TryDecode", source, StringComparison.Ordinal);
         Assert.Contains("UTF8Encoding(false, true)", source, StringComparison.Ordinal);
+        Assert.Contains("HasLeadingUtf8Bom", source, StringComparison.Ordinal);
+        Assert.Contains("0xef", source, StringComparison.Ordinal);
+        Assert.Contains("0xbb", source, StringComparison.Ordinal);
+        Assert.Contains("0xbf", source, StringComparison.Ordinal);
         Assert.Contains("WriteUInt16LittleEndian", source, StringComparison.Ordinal);
         Assert.Contains("WriteInt64LittleEndian", source, StringComparison.Ordinal);
 

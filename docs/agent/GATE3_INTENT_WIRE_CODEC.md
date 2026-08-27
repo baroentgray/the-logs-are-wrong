@@ -21,7 +21,8 @@ parameter_payload
 ```
 
 The complete payload is bounded to 2048 bytes.  Every identifier is encoded
-as one to 256 UTF-8 bytes, is decoded with strict UTF-8, and must remain a
+as one to 256 UTF-8 bytes, is decoded with strict UTF-8 and **no leading UTF-8
+BOM**, and must remain a
 valid existing PortableAuthority identifier without normalization, trimming,
 or case folding.  Nonnegative numeric fields materialize to existing
 `StateVersion` and `ServerTick` values.  V1 parameter kind `1` is `NONE` with
@@ -51,22 +52,26 @@ future Stage-Two authority boundary.
 
 Repository TLAW-078 architecture contracts passed **2/2**.  They guard the
 single plain-C# codec/materializer, V1 values, strict UTF-8, explicit
-little-endian helpers, all failure categories, and the absence of FishNet,
+little-endian helpers, and an explicit shared `EF BB BF` leading-BOM guard;
+they also guard all failure categories and the absence of FishNet,
 FishySteamworks, Steamworks, RPC/Broadcast, connection/actor binding,
 receive-tick/sequence, accepted-batch, HostSession, replication, and transport
 start/stop coupling.  They also prove preceding Gate-2 and Gate-3 seams do
 not couple to this codec.
 
 Pinned Unity `6000.3.21f1 (c02631ffc030)` executed
-`Tlaw078IntentWireCodecTests`: **9/9 passed**.  The class proves exact byte
+`Tlaw078IntentWireCodecTests`: **10/10 passed**.  The class proves exact byte
 order and little-endian values, both parameter shapes, deterministic encoding,
 identifier 1/256-byte and multibyte UTF-8 boundaries, malformed UTF-8,
 oversized frames, versions, numeric fields, reserved/unknown discriminator,
 parameter-shape mismatch, trailing data, truncation, no decoded envelope on
 failure, and preservation of unknown action/gameplay compatibility for the
-later authority.
+later authority.  Its CC-078-01 contract explicitly rejects leading `EF BB BF`
+on decode with no `IntentEnvelope`, and leading U+FEFF on encode with no
+payload, through each outer identifier and `attempted_item`; each uses the
+frozen `INVALID_UTF8` outcome.
 
-The full pinned Unity EditMode suite passed **84/84**.  The solution Release
+The full pinned Unity EditMode suite passed **85/85**.  The solution Release
 build completed with zero warnings and zero errors; the full .NET suite passed
 **1669/1669**.  Preserved repository slices passed: D-014/TLAW-046 **87/87**;
 TLAW-067 **6/6**; TLAW-068 **10/10**; TLAW-070 **5/5**; TLAW-071 **2/2**;

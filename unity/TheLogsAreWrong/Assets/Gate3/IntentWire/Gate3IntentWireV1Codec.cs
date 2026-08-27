@@ -231,6 +231,12 @@ namespace TheLogsAreWrong.Gate3
                 return false;
             }
 
+            if (HasLeadingUtf8Bom(utf8))
+            {
+                failure = Gate3IntentWireV1Failure.INVALID_UTF8;
+                return false;
+            }
+
             if (utf8.Length < 1 || utf8.Length > MaxIdentifierUtf8Bytes)
             {
                 failure = Gate3IntentWireV1Failure.INVALID_IDENTIFIER;
@@ -274,6 +280,13 @@ namespace TheLogsAreWrong.Gate3
                 return false;
             }
 
+            if (HasLeadingUtf8Bom(utf8))
+            {
+                value = null;
+                failure = Gate3IntentWireV1Failure.INVALID_UTF8;
+                return false;
+            }
+
             if (!domainValid(value))
             {
                 value = null;
@@ -283,6 +296,13 @@ namespace TheLogsAreWrong.Gate3
 
             return true;
         }
+
+        private static bool HasLeadingUtf8Bom(byte[] utf8) =>
+            utf8 != null
+            && utf8.Length >= 3
+            && utf8[0] == 0xef
+            && utf8[1] == 0xbb
+            && utf8[2] == 0xbf;
 
         private static void WriteUInt16LittleEndian(List<byte> output, ushort value)
         {
