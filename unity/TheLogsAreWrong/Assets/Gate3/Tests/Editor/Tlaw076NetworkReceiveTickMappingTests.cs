@@ -115,9 +115,14 @@ namespace TheLogsAreWrong.Gate3.Tests
         [Test]
         public void Backward_and_overflow_monotonic_evidence_fail_closed_without_a_wrapped_receive_tick()
         {
-            var backwards = Assert.Throws<TargetInvocationException>(() =>
+            var belowOrigin = Assert.Throws<TargetInvocationException>(() =>
                 InvokeStatic("ObserveTimestampSamplesForTesting", 1000L, new long[] { 100, 99 }));
-            Assert.IsInstanceOf<InvalidOperationException>(backwards.InnerException);
+            Assert.IsInstanceOf<InvalidOperationException>(belowOrigin.InnerException);
+
+            var backwardsAfterObservation = Assert.Throws<TargetInvocationException>(() =>
+                InvokeStatic("ObserveTimestampSamplesForTesting", 1000L, new long[] { 100, 200, 150 }));
+            Assert.IsInstanceOf<InvalidOperationException>(backwardsAfterObservation.InnerException,
+                "A timestamp below a prior observation must fail even when it remains above the session origin.");
 
             var overflow = Assert.Throws<OverflowException>(() =>
                 InvokeStatic("ObserveTimestampSamplesForTesting", 1L, new long[] { long.MinValue, long.MaxValue }));
@@ -129,6 +134,19 @@ namespace TheLogsAreWrong.Gate3.Tests
             AssertRejected(Observe(driver), "ClockFaulted");
             Assert.AreEqual("Faulted", Property(driver, "Lifecycle").ToString());
             Assert.AreNotEqual("Observed", Property(Observe(driver), "Status").ToString());
+        }
+
+        [Test]
+        public void Observation_then_cadence_sample_rejects_a_later_backward_timestamp_without_consuming_the_delta_cursor()
+        {
+            var backwardsAfterObservation = Assert.Throws<TargetInvocationException>(() =>
+                InvokeStatic("ObserveThenSampleTimestampMillisecondsForTesting", 1000L, new long[] { 0, 500, 400 }));
+            Assert.IsInstanceOf<InvalidOperationException>(backwardsAfterObservation.InnerException,
+                "The next cadence sample must reject a timestamp lower than an earlier non-consuming observation.");
+
+            var preservedNonConsumingEvidence = (long[])InvokeStatic(
+                "ObserveThenSampleTimestampMillisecondsForTesting", 1000L, new long[] { 0, 500, 1000 });
+            CollectionAssert.AreEqual(new long[] { 500, 1000 }, preservedNonConsumingEvidence);
         }
 
         private static void AssertTick(long elapsedMilliseconds, long expectedTick)

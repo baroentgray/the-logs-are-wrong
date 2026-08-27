@@ -50,6 +50,7 @@ namespace TheLogsAreWrong.Gate2
         private readonly IMonotonicTimestampSource _timestamps;
         private long _originTimestamp;
         private long _lastTimestamp;
+        private long _latestReadTimestamp;
         private long _millisecondNumeratorRemainder;
 
         public StopwatchElapsedTimeSource()
@@ -71,7 +72,7 @@ namespace TheLogsAreWrong.Gate2
         public AuthoritativeElapsedMilliseconds SampleElapsedMilliseconds()
         {
             var current = _timestamps.GetTimestamp();
-            if (current < _lastTimestamp)
+            if (current < _latestReadTimestamp)
             {
                 throw new InvalidOperationException("The monotonic timestamp source moved backwards.");
             }
@@ -83,6 +84,7 @@ namespace TheLogsAreWrong.Gate2
             var elapsedMilliseconds = checked(wholeSeconds * HostTickCadence.MillisecondsPerServerTick + fractionalMillisecondsNumerator / _timestamps.Frequency);
 
             _lastTimestamp = current;
+            _latestReadTimestamp = current;
             _millisecondNumeratorRemainder = fractionalMillisecondsNumerator % _timestamps.Frequency;
             return AuthoritativeElapsedMilliseconds.FromMilliseconds(elapsedMilliseconds);
         }
@@ -90,9 +92,9 @@ namespace TheLogsAreWrong.Gate2
         public AuthoritativeElapsedMilliseconds ObserveElapsedMilliseconds()
         {
             var current = _timestamps.GetTimestamp();
-            if (current < _originTimestamp)
+            if (current < _latestReadTimestamp)
             {
-                throw new InvalidOperationException("The monotonic timestamp source moved backwards from the current host-session origin.");
+                throw new InvalidOperationException("The monotonic timestamp source moved backwards from a prior host-session read.");
             }
 
             var elapsedTicks = checked(current - _originTimestamp);
@@ -100,6 +102,7 @@ namespace TheLogsAreWrong.Gate2
             var fractionalTicks = elapsedTicks % _timestamps.Frequency;
             var elapsedMilliseconds = checked(wholeSeconds * HostTickCadence.MillisecondsPerServerTick
                 + checked(fractionalTicks * HostTickCadence.MillisecondsPerServerTick) / _timestamps.Frequency);
+            _latestReadTimestamp = current;
             return AuthoritativeElapsedMilliseconds.FromMilliseconds(elapsedMilliseconds);
         }
 
@@ -108,6 +111,7 @@ namespace TheLogsAreWrong.Gate2
             var origin = _timestamps.GetTimestamp();
             _originTimestamp = origin;
             _lastTimestamp = origin;
+            _latestReadTimestamp = origin;
             _millisecondNumeratorRemainder = 0;
         }
 

@@ -28,6 +28,21 @@ The observer fails closed on a non-running owner, a monotonic regression, or
 checked arithmetic overflow. Session replacement resets the origin, so its
 first observation again maps to tick `0`.
 
+### CC-076-01 monotonic-read correction
+
+The timestamp bridge retains a read guard separate from the cadence delta
+cursor. Every successful timestamp read advances that guard; both an
+observation and the next cadence sample reject a timestamp lower than that
+latest read. Observation still does not alter the cadence `_lastTimestamp` or
+its retained sub-millisecond numerator remainder. Reset establishes a new
+origin and resets the guard with it.
+
+This closes the prior gap where `100 -> 200 -> 150` could remain above the
+origin while moving backward relative to an earlier observation. Pinned Unity
+now proves both that observe-to-observe sequence and an observe-to-sample
+`0 -> 500 -> 400` regression fail closed, while the preserved
+`0 -> 500 -> 1000` probe still yields observe `500` and cadence delta `1000`.
+
 ## Executable proof
 
 The repository TLAW-076 architecture contracts passed **2/2**. They enforce
@@ -38,12 +53,13 @@ coupling; that the production owner creates and clears the bounded observer;
 and that TLAW-074 remains the sole TLAW-owned transport start/stop owner.
 
 Pinned Unity `6000.3.21f1 (c02631ffc030)` ran
-`Tlaw076NetworkReceiveTickMappingTests`: **5/5 passed**. The tests cover every
+`Tlaw076NetworkReceiveTickMappingTests`: **6/6 passed**. The tests cover every
 frozen boundary, deterministic repetition, a five-tick unretired backlog and
 retirement invariance, non-consuming observation followed by the real cadence
 sample, fresh reset origin, non-running owner rejection, monotonic regression,
-and overflow fail-closed behavior. The full pinned Unity EditMode suite passed
-**74/74**. Preserved focused regressions passed TLAW-072 **13/13**, TLAW-074
+including prior-observation and observe-to-sample regressions, and overflow
+fail-closed behavior. The full pinned Unity EditMode suite passed **75/75**.
+Preserved focused regressions passed TLAW-072 **13/13**, TLAW-074
 **9/9**, and TLAW-075 **7/7**.
 
 The Release solution build completed with zero warnings and zero errors; the
