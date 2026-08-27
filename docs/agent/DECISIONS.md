@@ -578,3 +578,93 @@ implementation, YAML or validation semantic changes, a Unity-native schema,
 networking/Gate 3, gameplay, D-016, Ready, merge, or cleanup.
 
 Sources: [TLAW-069 owner C1 selection](https://github.com/baroentgray/the-logs-are-wrong/pull/161#issuecomment-5372446356), [Issue #162](https://github.com/baroentgray/the-logs-are-wrong/issues/162), and [TLAW-070 implementation handoff](https://github.com/baroentgray/the-logs-are-wrong/issues/162#issuecomment-5373173295).
+
+## D-023 — Gate-3 intent wire contract is versioned, tagged, and fail-closed
+
+For TLAW-077 the owner selected Candidate A and froze one explicit Gate3-owned
+wire contract for client gameplay intents. The codec/materializer is plain C#
+and independent of FishNet runtime types. PortableAuthority continues to own
+`IntentEnvelope` and gameplay semantics; FishNet is only a later carrier around
+the frozen bytes.
+
+V1 is one deterministic binary payload with a maximum size of **2048 bytes**,
+excluding outer FishNet framing. All fixed-width integers are little-endian. The
+exact logical field order is:
+
+~~~text
+schema_version          u16
+shift_id                string
+intent_id               string
+actor_id_hint           string
+target_id               string
+action                  string
+expected_state_version  i64
+client_observed_tick    i64
+parameter_kind          u8
+parameter_payload       kind-dependent
+~~~
+
+`schema_version=0` is reserved/invalid and V1 is exactly `1`; a V1 decoder
+accepts no other version. Every identifier string is encoded as `u16 byte_length`
+followed by strict UTF-8, with no BOM, normalization, trimming, or case folding.
+Each identifier is bounded to **1..256 UTF-8 bytes** at the network boundary and
+must still satisfy the existing PortableAuthority identifier validity rules.
+`expected_state_version` and `client_observed_tick` are non-negative signed i64
+values and materialize exactly to `StateVersion` and `ServerTick`; neither is
+host-authoritative merely because the client transmitted it.
+
+The permanent V1 parameter discriminator is:
+
+~~~text
+0 = RESERVED_INVALID
+1 = NONE
+2 = PROCEDURE_ACTION
+~~~
+
+`NONE` has zero parameter-payload bytes and materializes to
+`NoIntentParameters.Instance`. `PROCEDURE_ACTION` carries exactly one
+`attempted_item` identifier under the same strict UTF-8 / 1..256-byte rules and
+materializes to `ProcedureActionIntentParameters(ItemId)`.
+
+A structurally valid but unknown `IntentActionId` is not a wire error. The wire
+materializer also does not validate action-to-parameter gameplay compatibility;
+those remain Stage-2 responsibilities. Successful decode therefore produces
+only decoded client evidence, not admission or authority.
+
+Decode/materialization fails closed and returns no `IntentEnvelope` for malformed
+or abusive input. The frozen local Gate-3 failure taxonomy is:
+
+~~~text
+MESSAGE_TOO_LARGE
+TRUNCATED_OR_MALFORMED_FRAME
+INVALID_UTF8
+UNSUPPORTED_SCHEMA_VERSION
+INVALID_IDENTIFIER
+INVALID_NUMERIC_FIELD
+UNSUPPORTED_PARAMETER_KIND
+PARAMETER_PAYLOAD_MISMATCH
+TRAILING_DATA
+~~~
+
+These codes are local codec/materialization outcomes only; D-023 does not define
+a client-visible rejection protocol or stable on-wire numeric representation for
+them. Failure manufactures no Domain event.
+
+V1's payload schema and parameter-kind set are closed. Assigned discriminator
+values never change meaning or get reused. A new parameter shape, changed field
+encoding, or changed limits requires an explicit new schema version; future V2
+support must never reinterpret V1 bytes. V1's action vocabulary remains open so
+new structurally compatible actions can still reach Stage 2.
+
+Wire decode/materialization explicitly does **not** resolve actor authority,
+trust `ActorIdHint`, choose authoritative receive tick, assign or consume
+`ServerReceiveSequence`, deduplicate `IntentId`, decide retransmission semantics,
+construct accepted intents/batches, validate shift/session membership, perform
+Stage-2 gameplay validation, submit `HostSession`, or replicate state/events.
+Those remain later separately owner-gated Gate-3 layers.
+
+This decision record authorizes no FishNet gameplay handler, serialization
+implementation, receive sequencing, admission path, replication, snapshot/resync,
+reconnect, prediction, Ready, merge, cleanup, or next Gate-3 implementation.
+
+Sources: [Issue #176](https://github.com/baroentgray/the-logs-are-wrong/issues/176), [owner D-023 exact contract freeze comment 5443037732](https://github.com/baroentgray/the-logs-are-wrong/issues/176#issuecomment-5443037732), and [BAR-120](https://linear.app/baronet/issue/BAR-120/tlaw-077-architecture-desk-freeze-gate-3-intentenvelope-wire-contract).
