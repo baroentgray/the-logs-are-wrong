@@ -181,6 +181,11 @@ namespace TheLogsAreWrong.Gate3
             Register();
         }
 
+        private void OnEnable()
+        {
+            Register();
+        }
+
         private void OnDisable()
         {
             Unregister();

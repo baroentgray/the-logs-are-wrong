@@ -1,13 +1,18 @@
 using System;
+using System.Collections;
 using System.Linq;
 using System.Reflection;
 using FishNet.Broadcast;
 using FishNet.Connection;
+using FishNet.Managing;
+using FishNet.Managing.Server;
 using FishNet.Transporting;
 using NUnit.Framework;
 using TheLogsAreWrong.Domain.Identifiers;
 using TheLogsAreWrong.Domain.Intents;
 using TheLogsAreWrong.Domain.Primitives;
+using TheLogsAreWrong.Gate2;
+using UnityEngine;
 
 namespace TheLogsAreWrong.Gate3.Tests
 {
@@ -22,6 +27,49 @@ namespace TheLogsAreWrong.Gate3.Tests
             Assert.AreEqual(1, fields.Length);
             Assert.AreEqual("Payload", fields[0].Name);
             Assert.AreEqual(typeof(byte[]), fields[0].FieldType);
+        }
+
+        [Test]
+        public void Production_registration_is_restored_once_across_disable_enable_and_idempotent_teardown()
+        {
+            var root = new GameObject("Tlaw079RegistrationLifecycle");
+            root.SetActive(false);
+
+            try
+            {
+                var networkManager = root.AddComponent<NetworkManager>();
+                var serverManager = root.AddComponent<ServerManager>();
+                SetAutoProperty(networkManager, "ServerManager", serverManager);
+                SetAutoProperty(serverManager, "NetworkManager", networkManager);
+
+                var hostDriver = root.AddComponent<Gate2ProductionHostDriver>();
+                var ingress = root.AddComponent<Gate3IntentCarrierIngress>();
+                SetPrivateField(ingress, "_networkManager", networkManager);
+                SetPrivateField(ingress, "_hostDriver", hostDriver);
+
+                InvokeLifecycle(ingress, "Awake");
+                Assert.AreEqual(1, RegisteredCarrierHandlerCount(serverManager));
+                Assert.IsTrue(CarrierHandlerRequiresAuthentication(serverManager));
+
+                InvokeLifecycle(ingress, "OnDisable");
+                Assert.AreEqual(0, RegisteredCarrierHandlerCount(serverManager));
+
+                InvokeLifecycle(ingress, "OnEnable");
+                Assert.AreEqual(1, RegisteredCarrierHandlerCount(serverManager));
+
+                InvokeLifecycle(ingress, "OnEnable");
+                Assert.AreEqual(1, RegisteredCarrierHandlerCount(serverManager));
+
+                InvokeLifecycle(ingress, "OnDisable");
+                InvokeLifecycle(ingress, "OnDisable");
+                InvokeLifecycle(ingress, "OnDestroy");
+                InvokeLifecycle(ingress, "OnDestroy");
+                Assert.AreEqual(0, RegisteredCarrierHandlerCount(serverManager));
+            }
+            finally
+            {
+                UnityEngine.Object.DestroyImmediate(root);
+            }
         }
 
         [Test]
@@ -166,6 +214,58 @@ namespace TheLogsAreWrong.Gate3.Tests
         private static NetworkConnection Connection(int clientId)
         {
             return new NetworkConnection { ClientId = clientId };
+        }
+
+        private static void SetAutoProperty(object target, string propertyName, object value)
+        {
+            var field = target.GetType().GetField($"<{propertyName}>k__BackingField", BindingFlags.Instance | BindingFlags.NonPublic);
+            Assert.IsNotNull(field, $"Expected auto-property backing field for {target.GetType().Name}.{propertyName}.");
+            field.SetValue(target, value);
+        }
+
+        private static void SetPrivateField(object target, string fieldName, object value)
+        {
+            var field = target.GetType().GetField(fieldName, BindingFlags.Instance | BindingFlags.NonPublic);
+            Assert.IsNotNull(field, $"Expected private field {target.GetType().Name}.{fieldName}.");
+            field.SetValue(target, value);
+        }
+
+        private static void InvokeLifecycle(Gate3IntentCarrierIngress ingress, string methodName)
+        {
+            var method = typeof(Gate3IntentCarrierIngress).GetMethod(methodName, BindingFlags.Instance | BindingFlags.NonPublic);
+            Assert.IsNotNull(method, $"Expected production lifecycle method {methodName}.");
+            method.Invoke(ingress, null);
+        }
+
+        private static int RegisteredCarrierHandlerCount(ServerManager serverManager)
+        {
+            var handler = GetCarrierHandler(serverManager);
+            if (handler == null)
+            {
+                return 0;
+            }
+
+            var handlersField = handler.GetType().GetField("_handlers", BindingFlags.Instance | BindingFlags.NonPublic);
+            Assert.IsNotNull(handlersField, "Pinned FishNet client-broadcast handler shape changed.");
+            return ((ICollection)handlersField.GetValue(handler)).Count;
+        }
+
+        private static bool CarrierHandlerRequiresAuthentication(ServerManager serverManager)
+        {
+            var handler = GetCarrierHandler(serverManager);
+            Assert.IsNotNull(handler, "The carrier handler must exist before checking its authentication contract.");
+            var property = handler.GetType().BaseType.GetProperty("RequireAuthentication", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+            Assert.IsNotNull(property, "Pinned FishNet broadcast handler authentication property changed.");
+            return (bool)property.GetValue(handler);
+        }
+
+        private static object GetCarrierHandler(ServerManager serverManager)
+        {
+            var field = typeof(ServerManager).GetField("_broadcastHandlers", BindingFlags.Instance | BindingFlags.NonPublic);
+            Assert.IsNotNull(field, "Pinned FishNet server broadcast registry shape changed.");
+            var registry = (IDictionary)field.GetValue(serverManager);
+            Assert.LessOrEqual(registry.Count, 1, "The focused fixture must contain only the carrier registration.");
+            return registry.Values.Cast<object>().SingleOrDefault();
         }
 
         private static Gate3ServerReceiveTickObservation Observed(long tick)

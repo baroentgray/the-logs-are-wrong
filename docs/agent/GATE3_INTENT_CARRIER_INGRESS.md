@@ -7,8 +7,10 @@ production FishNet server registration for `Gate3IntentCarrierBroadcast`. The
 broadcast has exactly one field: the unmodified `byte[]` D-023 payload. It is
 registered with `requireAuthentication: true`, accepted only on
 `Channel.Reliable`, and explicitly unregistered when the component is disabled
-or destroyed. Registration and unregistration neither start nor stop any
-transport.
+or destroyed. Initial `Awake` registration and every later `OnEnable` both use
+the same private `_registered` guard: a valid component has exactly one
+handler after every enable, while repeated enables cannot duplicate it.
+Registration and unregistration neither start nor stop any transport.
 
 For each authenticated server callback, the local processor obtains identity
 only from the server-supplied `NetworkConnection.ClientId`, materializes the
@@ -37,14 +39,17 @@ server-receive sequence, accepted intent or batch, HostSession, transport
 start/stop, replication, snapshot, resync, reconnect, and prediction coupling.
 
 Pinned Unity `6000.3.21f1 (c02631ffc030)` ran
-`Tlaw079IntentCarrierIngressTests`: **9/9 passed**. The class proves one
-payload-only FishNet broadcast; a reliable NONE payload preserving the exact
+`Tlaw079IntentCarrierIngressTests`: **10/10 passed**. The class proves one
+payload-only FishNet broadcast; the real FishNet server registry contains the
+one authenticated handler at startup, none after disable, one after re-enable,
+never more than one after repeated enable, and none after idempotent
+disable/destroy teardown; a reliable NONE payload preserving the exact
 connection id, receive tick, and decoded envelope; PROCEDURE_ACTION payload
 preservation; rejection of unreliable traffic and invalid server client ids
 before tick capture/decode; receive-tick failure before malformed-payload
 decode; D-023 malformed and oversized local failure with no evidence; and
 retention of actor hint solely as untrusted client evidence. The full pinned
-Unity EditMode suite passed **94/94**.
+Unity EditMode suite passed **95/95**.
 
 The Release solution build completed with zero warnings and zero errors; the
 full .NET suite passed **1671/1671**. Preserved focused architecture/test

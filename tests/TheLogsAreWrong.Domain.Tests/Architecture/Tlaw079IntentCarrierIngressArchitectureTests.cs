@@ -17,6 +17,11 @@ public sealed class Tlaw079IntentCarrierIngressArchitectureTests
         Assert.Equal(1, Count(source, "IBroadcast"));
         Assert.Contains("RegisterBroadcast<Gate3IntentCarrierBroadcast>(OnCarrierBroadcast, requireAuthentication: true)", source, StringComparison.Ordinal);
         Assert.Contains("UnregisterBroadcast<Gate3IntentCarrierBroadcast>(OnCarrierBroadcast)", source, StringComparison.Ordinal);
+        Assert.Contains("private void OnEnable()", source, StringComparison.Ordinal);
+        Assert.True(
+            source.IndexOf("private void OnEnable()", StringComparison.Ordinal)
+            < source.IndexOf("private void OnDisable()", StringComparison.Ordinal),
+            "The production component must restore its one registration on enable before its disable teardown path.");
         Assert.Contains("NetworkConnection connection", source, StringComparison.Ordinal);
         Assert.Contains("Channel channel", source, StringComparison.Ordinal);
         Assert.Contains("connection.ClientId", source, StringComparison.Ordinal);
