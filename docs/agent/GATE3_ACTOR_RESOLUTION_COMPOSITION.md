@@ -58,6 +58,37 @@ dedupe, accepted-intent, batch, stage-two, HostSession, response, replication,
 snapshot, reconnect, prediction, or transport lifecycle code. They also guard
 the bootstrap wiring and preserve the predecessor owners.
 
+## Verification evidence
+
+Pinned Unity `6000.3.21f1 (c02631ffc030)` passed the focused
+`Tlaw080ActorResolutionCompositionTests` suite **7/7** and the full EditMode
+suite **102/102**. The latter includes the existing production-plugin parity
+contract after its prescribed deterministic deployment build
+(`IncludeSourceRevisionInInformationalVersion=false`, `DebugSymbols=false`).
+
+PortableAuthority Release and the full solution Release builds completed with
+zero warnings and zero errors. The full .NET suite passed **1673/1673**; the
+combined retained TLAW-046/067/068/070/071/072/073/074/075/076/078/079/080
+architecture slices passed **119/119**. C1 freshness reported
+`VALIDATED_CONFIG_C1_EXPORT_FRESH`, and exact-base/head `Tlaw.Verify` passed.
+
+The Windows x64 Development build reported `BUILD_RESULT=Succeeded`,
+`BUILD_ERRORS=0 BUILD_WARNINGS=0`, and `BUILD_SIZE=153620539`. Its ordinary
+`-tlaw-bootstrap-smoke` player exited `0`, emitted the existing
+PortableAuthority, TLAW-071 owner, `TLAW073_TRANSPORT_INERT`, and bootstrap
+quit markers, and emitted no TLAW-074 through TLAW-080 marker.
+
+The C1 deployment material remains 2326 decoded bytes with SHA-256
+`94FCBE2B0E08662E9E45DDFC4D310A1E3063F6A765FE36B596409021D930B541` and
+canonical projection SHA-256
+`4837EF28FC0480DC133B72A024110E3569E2CB2973E206A4542A7C70949F7AB1`.
+The Unity plugin inventory remains exactly three DLLs; the PortableAuthority
+plugin and fresh deployment build both hash to
+`BD1E5DDA62192587B12737CCE9BBBB272FB75C4B309BA173AF2AA7684E2A7085`.
+D-017 remains FishNet `4.7.2` / `de19b5d66459f60400ffd0edc443c4da173a01e7`
+and Steamworks.NET `2025.164.1` /
+`c21a8f0e31c56ae8707130967faf491f7dd7c0d8`.
+
 ## Explicitly not changed
 
 TLAW-074 transport start/stop ownership; TLAW-075 binding registry, binding
