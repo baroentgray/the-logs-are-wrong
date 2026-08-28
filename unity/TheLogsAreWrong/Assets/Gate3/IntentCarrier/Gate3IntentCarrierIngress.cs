@@ -178,7 +178,6 @@ namespace TheLogsAreWrong.Gate3
             }
 
             _processor = new Gate3IntentCarrierIngressProcessor(_hostDriver.ObserveAuthoritativeServerReceiveTick);
-            Register();
         }
 
         private void OnEnable()

@@ -7,9 +7,10 @@ production FishNet server registration for `Gate3IntentCarrierBroadcast`. The
 broadcast has exactly one field: the unmodified `byte[]` D-023 payload. It is
 registered with `requireAuthentication: true`, accepted only on
 `Channel.Reliable`, and explicitly unregistered when the component is disabled
-or destroyed. Initial `Awake` registration and every later `OnEnable` both use
-the same private `_registered` guard: a valid component has exactly one
-handler after every enable, while repeated enables cannot duplicate it.
+or destroyed. `Awake` only validates dependencies and creates the local
+processor. `OnEnable` is the sole production registration entry point and uses
+the private `_registered` guard: a valid component has exactly one handler
+after every enable, while repeated enables cannot duplicate it.
 Registration and unregistration neither start nor stop any transport.
 
 For each authenticated server callback, the local processor obtains identity
@@ -41,7 +42,8 @@ start/stop, replication, snapshot, resync, reconnect, and prediction coupling.
 Pinned Unity `6000.3.21f1 (c02631ffc030)` ran
 `Tlaw079IntentCarrierIngressTests`: **10/10 passed**. The class proves one
 payload-only FishNet broadcast; the real FishNet server registry contains the
-one authenticated handler at startup, none after disable, one after re-enable,
+zero handlers after an initially-disabled component's `Awake`, one
+authenticated handler after enable, none after disable, one after re-enable,
 never more than one after repeated enable, and none after idempotent
 disable/destroy teardown; a reliable NONE payload preserving the exact
 connection id, receive tick, and decoded envelope; PROCEDURE_ACTION payload

@@ -30,7 +30,7 @@ namespace TheLogsAreWrong.Gate3.Tests
         }
 
         [Test]
-        public void Production_registration_is_restored_once_across_disable_enable_and_idempotent_teardown()
+        public void Production_registration_is_owned_by_enable_and_restored_once_across_lifecycle()
         {
             var root = new GameObject("Tlaw079RegistrationLifecycle");
             root.SetActive(false);
@@ -48,6 +48,9 @@ namespace TheLogsAreWrong.Gate3.Tests
                 SetPrivateField(ingress, "_hostDriver", hostDriver);
 
                 InvokeLifecycle(ingress, "Awake");
+                Assert.AreEqual(0, RegisteredCarrierHandlerCount(serverManager));
+
+                InvokeLifecycle(ingress, "OnEnable");
                 Assert.AreEqual(1, RegisteredCarrierHandlerCount(serverManager));
                 Assert.IsTrue(CarrierHandlerRequiresAuthentication(serverManager));
 

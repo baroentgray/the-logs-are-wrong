@@ -18,6 +18,10 @@ public sealed class Tlaw079IntentCarrierIngressArchitectureTests
         Assert.Contains("RegisterBroadcast<Gate3IntentCarrierBroadcast>(OnCarrierBroadcast, requireAuthentication: true)", source, StringComparison.Ordinal);
         Assert.Contains("UnregisterBroadcast<Gate3IntentCarrierBroadcast>(OnCarrierBroadcast)", source, StringComparison.Ordinal);
         Assert.Contains("private void OnEnable()", source, StringComparison.Ordinal);
+        var awake = MethodBody(source, "private void Awake()", "private void OnEnable()");
+        var onEnable = MethodBody(source, "private void OnEnable()", "private void OnDisable()");
+        Assert.DoesNotContain("Register();", awake, StringComparison.Ordinal);
+        Assert.Contains("Register();", onEnable, StringComparison.Ordinal);
         Assert.True(
             source.IndexOf("private void OnEnable()", StringComparison.Ordinal)
             < source.IndexOf("private void OnDisable()", StringComparison.Ordinal),
@@ -84,6 +88,15 @@ public sealed class Tlaw079IntentCarrierIngressArchitectureTests
         }
 
         return count;
+    }
+
+    private static string MethodBody(string source, string startMarker, string endMarker)
+    {
+        var start = source.IndexOf(startMarker, StringComparison.Ordinal);
+        Assert.True(start >= 0, $"Missing method marker: {startMarker}");
+        var end = source.IndexOf(endMarker, start, StringComparison.Ordinal);
+        Assert.True(end > start, $"Missing following method marker: {endMarker}");
+        return source.Substring(start, end - start);
     }
 
     private static string FindRepositoryRoot()
