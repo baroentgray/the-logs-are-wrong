@@ -170,6 +170,9 @@ namespace TheLogsAreWrong.Gate3
         /// <summary>Most recent server-local callback outcome; never serialized or transmitted.</summary>
         public Gate3IntentCarrierIngressResult LastResult { get; private set; }
 
+        /// <summary>Successful decoded local evidence for the next bounded server-only composition seam.</summary>
+        public event Action<Gate3DecodedNetworkIntentEvidence> Decoded;
+
         private void Awake()
         {
             if (_networkManager == null || _hostDriver == null || _networkManager.ServerManager == null)
@@ -220,6 +223,10 @@ namespace TheLogsAreWrong.Gate3
         private void OnCarrierBroadcast(NetworkConnection connection, Gate3IntentCarrierBroadcast carrier, Channel channel)
         {
             LastResult = _processor.Process(connection, carrier, channel);
+            if (LastResult.HasEvidence)
+            {
+                Decoded?.Invoke(LastResult.Evidence);
+            }
         }
     }
 }
