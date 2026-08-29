@@ -97,6 +97,7 @@ does not pre-approve a generic host aggregate or dispatcher.
 Sources: [Issue #64](https://github.com/baroentgray/the-logs-are-wrong/issues/64) and [BAR-63](https://linear.app/baronet/issue/BAR-63/tlaw-023-apply-completed-saw-settlement-to-quota-runtime).
 
 ## D-014 — Gate 1 implements the frozen full ShiftSnapshot/replay contract
+
 The owner accepted TLAW-043 option B for the snapshot/replay blocker: the already
 frozen Gate-1 requirement is implemented rather than deferred. The accepted scope
 is exactly the `docs/LOG_STATE_MACHINE.md` contract — a full `ShiftSnapshot`
