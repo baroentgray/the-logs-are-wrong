@@ -97,7 +97,6 @@ does not pre-approve a generic host aggregate or dispatcher.
 Sources: [Issue #64](https://github.com/baroentgray/the-logs-are-wrong/issues/64) and [BAR-63](https://linear.app/baronet/issue/BAR-63/tlaw-023-apply-completed-saw-settlement-to-quota-runtime).
 
 ## D-014 — Gate 1 implements the frozen full ShiftSnapshot/replay contract
-
 The owner accepted TLAW-043 option B for the snapshot/replay blocker: the already
 frozen Gate-1 requirement is implemented rather than deferred. The accepted scope
 is exactly the `docs/LOG_STATE_MACHINE.md` contract — a full `ShiftSnapshot`
@@ -668,3 +667,9 @@ implementation, receive sequencing, admission path, replication, snapshot/resync
 reconnect, prediction, Ready, merge, cleanup, or next Gate-3 implementation.
 
 Sources: [Issue #176](https://github.com/baroentgray/the-logs-are-wrong/issues/176), [owner D-023 exact contract freeze comment 5443037732](https://github.com/baroentgray/the-logs-are-wrong/issues/176#issuecomment-5443037732), and [BAR-120](https://linear.app/baronet/issue/BAR-120/tlaw-077-architecture-desk-freeze-gate-3-intentenvelope-wire-contract).
+
+## D-024 — Gate-3 network admission deduplicates before per-tick receive-sequence allocation
+
+One plain-C# Gate-3 network-admission owner is lifecycle-bound to one authoritative HostSession/shift. It consumes only successful TLAW-080 resolved evidence. `ServerReceiveSequence` is scoped to one exact authoritative receive tick, starts at zero for every tick, is global across all connections within that tick, and is consumed only by first-seen intents admitted to that tick. `IntentId` dedupe is session/shift-lifetime and occurs before sequence allocation; duplicates never consume a new sequence or re-enter Stage 2. Pending accepted evidence is buffered by the unchanged TLAW-076 authoritative receive tick, including future tick buckets during host backlog; receive ticks are never rewritten to execution time. Materializing input for a host tick seals that tick, and later evidence for a sealed tick fails closed rather than rolling forward. TLAW-072 remains unchanged and is not reused as-is; existing PortableAuthority accepted-intent/batch and Stage-2/HostSession semantics remain the sole downstream authorities. Client-visible result/rejection replay, retransmission transport, replication, snapshots/resync/reconnect and prediction remain separately gated.
+
+Sources: [Issue #183](https://github.com/baroentgray/the-logs-are-wrong/issues/183), [owner Candidate A1 selection comment 5461300091](https://github.com/baroentgray/the-logs-are-wrong/issues/183#issuecomment-5461300091), and [BAR-124](https://linear.app/baronet/issue/BAR-124/tlaw-081-architecture-desk-freeze-authoritative-network-intent).
