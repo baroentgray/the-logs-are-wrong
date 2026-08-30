@@ -71,7 +71,10 @@ lifecycle ownership is changed.
 ## Executable contracts
 
 Pinned Unity `6000.3.21f1 (c02631ffc030)` focused class
-`Tlaw084ProductionAdmissionCompositionTests` passed **12/12** during implementation.
+`Tlaw084ProductionAdmissionCompositionTests` passed **12/12** during implementation;
+the full pinned EditMode suite passed **124/124** after the prescribed fresh
+PortableAuthority deployment build. The existing TLAW-082 class remains **10/10**
+within that full suite.
 It proves:
 
 - local→network and network→local use one zero-based contiguous sequence domain;
@@ -88,7 +91,11 @@ It proves:
 - wrong-shift materialization fails closed without clearing valid evidence;
 - reset/disposal rejects retained stale ingress and creates a fresh session owner.
 
-The .NET architecture subset for TLAW-080, TLAW-082, and TLAW-084 passed **7/7**.
+The .NET architecture subset for TLAW-080, TLAW-082, and TLAW-084 passed **7/7**;
+the full Release solution build completed with **0 warnings / 0 errors** and the
+full .NET suite passed **1678/1678**. The fresh deployment output and the committed
+PortableAuthority plugin both hash to
+`BD1E5DDA62192587B12737CCE9BBBB272FB75C4B309BA173AF2AA7684E2A7085`.
 Its guards require the one shared owner, exactly one temporal input source,
 TLAW-080's success-only event, bootstrap scene wiring, and TLAW-072's unchanged
 local/offline adapter boundary. Final full regression and exact-head CI evidence

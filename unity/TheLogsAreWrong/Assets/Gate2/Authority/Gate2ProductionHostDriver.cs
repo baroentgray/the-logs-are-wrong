@@ -353,7 +353,7 @@ namespace TheLogsAreWrong.Gate2
 
         /// <summary>
         /// The networked-production local ingress. It uses the same session receive-time observation as network
-        /// ingress and stops at the one shared D-025 owner; no FishNet path or second local sequencer is used.
+        /// ingress and stops at the one shared D-025 owner; no transport path or second local sequencer is used.
         /// </summary>
         public Gate3NetworkedLocalIntentSubmissionResult SubmitNetworkedLocalIntent(IntentEnvelope envelope, ActorId authoritativeActor)
         {
