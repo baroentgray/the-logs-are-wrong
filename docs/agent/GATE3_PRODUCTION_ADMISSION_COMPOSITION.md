@@ -71,13 +71,15 @@ lifecycle ownership is changed.
 ## Executable contracts
 
 Pinned Unity `6000.3.21f1 (c02631ffc030)` focused class
-`Tlaw084ProductionAdmissionCompositionTests` passed **12/12** during implementation;
+`Tlaw084ProductionAdmissionCompositionTests` passed **13/13** during implementation;
 the full pinned EditMode suite passed **124/124** after the prescribed fresh
 PortableAuthority deployment build. The existing TLAW-082 class remains **10/10**
 within that full suite.
 It proves:
 
 - local→network and network→local use one zero-based contiguous sequence domain;
+- TLAW-080 publishes exactly one successful resolved value, preserving its connection,
+  receive tick, envelope, and resolved actor before the shared owner consumes it;
 - mixed source bursts preserve serialized shared-owner order and exact resolved
   actor/receive tick;
 - cross-source duplicates consume no new sequence;

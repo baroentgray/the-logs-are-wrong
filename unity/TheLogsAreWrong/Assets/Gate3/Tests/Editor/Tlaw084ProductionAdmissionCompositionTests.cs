@@ -69,6 +69,39 @@ namespace TheLogsAreWrong.Gate3.Tests
         }
 
         [Test]
+        public void Tlaw080_success_event_publishes_the_exact_resolved_value_once_without_admitting_it()
+        {
+            var root = new GameObject("Tlaw084ResolvedEvent");
+            root.SetActive(false);
+            _roots.Add(root);
+            var actorResolution = root.AddComponent<Gate3ActorResolutionComposition>();
+            var expectedActor = ActorId.From("resolved_actor");
+            SetPrivateField(actorResolution, "_processor", new Gate3ActorResolutionProcessor((connection, hint) =>
+            {
+                var resolvedFactory = typeof(Gate3AuthoritativeActorResolution).GetMethod("Resolved", BindingFlags.Static | BindingFlags.NonPublic);
+                Assert.IsNotNull(resolvedFactory);
+                return (Gate3AuthoritativeActorResolution)resolvedFactory.Invoke(null, new object[] { expectedActor });
+            }));
+
+            var callbacks = 0;
+            Gate3ResolvedNetworkIntentEvidence published = default;
+            actorResolution.Resolved += evidence =>
+            {
+                callbacks = checked(callbacks + 1);
+                published = evidence;
+            };
+            var decoded = Decoded(57, 0, Envelope("event_exact", "untrusted_hint"));
+
+            InvokeLifecycle(actorResolution, "OnDecoded", decoded);
+
+            Assert.AreEqual(1, callbacks);
+            Assert.AreEqual(decoded.ConnectionId, published.ConnectionId);
+            Assert.AreEqual(decoded.AuthoritativeReceiveTick, published.AuthoritativeReceiveTick);
+            Assert.AreSame(decoded.Envelope, published.Envelope);
+            Assert.AreEqual(expectedActor, published.AuthoritativeActor);
+        }
+
+        [Test]
         public void Mixed_burst_uses_one_serialized_admission_order_and_preserves_exact_network_actor_and_receive_tick()
         {
             var fixture = CreateFixture(Array.Empty<long>(), new long[] { 0, 0 });
@@ -273,6 +306,18 @@ namespace TheLogsAreWrong.Gate3.Tests
             return (Gate3ResolvedNetworkIntentEvidence)constructor.Invoke(new object[] { connectionId, ServerTick.From(tick), envelope, ActorId.From(actor) });
         }
 
+        private static Gate3DecodedNetworkIntentEvidence Decoded(int connection, long tick, IntentEnvelope envelope)
+        {
+            Assert.IsTrue(Gate3ServerConnectionId.TryFromServerObservedTransportId(connection, out var connectionId));
+            var constructor = typeof(Gate3DecodedNetworkIntentEvidence).GetConstructor(
+                BindingFlags.Instance | BindingFlags.NonPublic,
+                null,
+                new[] { typeof(Gate3ServerConnectionId), typeof(ServerTick), typeof(IntentEnvelope) },
+                null);
+            Assert.IsNotNull(constructor);
+            return (Gate3DecodedNetworkIntentEvidence)constructor.Invoke(new object[] { connectionId, ServerTick.From(tick), envelope });
+        }
+
         private static void RaiseResolved(Gate3ActorResolutionComposition composition, Gate3ResolvedNetworkIntentEvidence evidence)
         {
             var field = typeof(Gate3ActorResolutionComposition).GetField("Resolved", BindingFlags.Instance | BindingFlags.NonPublic);
@@ -309,11 +354,12 @@ namespace TheLogsAreWrong.Gate3.Tests
             return field.GetValue(target);
         }
 
-        private static void InvokeLifecycle(object target, string methodName)
+        private static void InvokeLifecycle(object target, string methodName, params object[] arguments)
         {
-            var method = target.GetType().GetMethod(methodName, BindingFlags.Instance | BindingFlags.NonPublic);
+            var method = target.GetType().GetMethod(methodName, BindingFlags.Instance | BindingFlags.NonPublic, null,
+                arguments == null || arguments.Length == 0 ? Type.EmptyTypes : Array.ConvertAll(arguments, argument => argument.GetType()), null);
             Assert.IsNotNull(method, "Expected lifecycle method: " + methodName);
-            method.Invoke(target, null);
+            method.Invoke(target, arguments);
         }
 
         private readonly struct Fixture
