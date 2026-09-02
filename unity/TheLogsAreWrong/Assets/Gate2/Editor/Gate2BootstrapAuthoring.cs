@@ -22,6 +22,7 @@ namespace TheLogsAreWrong.Gate2.EditorTools
         private const string ConnectionBindingScriptPath = "Assets/Gate3/Connection/Gate3ServerConnectionActorBindingBridge.cs";
         private const string IntentCarrierIngressScriptPath = "Assets/Gate3/IntentCarrier/Gate3IntentCarrierIngress.cs";
         private const string ActorResolutionCompositionScriptPath = "Assets/Gate3/ActorResolution/Gate3ActorResolutionComposition.cs";
+        private const string ProductionAdmissionCompositionScriptPath = "Assets/Gate3/Admission/Gate3ProductionAdmissionComposition.cs";
 
         public static void CreateBootstrapScene()
         {
@@ -34,6 +35,7 @@ namespace TheLogsAreWrong.Gate2.EditorTools
                 AssetDatabase.ImportAsset(ConnectionBindingScriptPath, ImportAssetOptions.ForceSynchronousImport);
                 AssetDatabase.ImportAsset(IntentCarrierIngressScriptPath, ImportAssetOptions.ForceSynchronousImport);
                 AssetDatabase.ImportAsset(ActorResolutionCompositionScriptPath, ImportAssetOptions.ForceSynchronousImport);
+                AssetDatabase.ImportAsset(ProductionAdmissionCompositionScriptPath, ImportAssetOptions.ForceSynchronousImport);
                 if (AssetDatabase.LoadAssetAtPath<MonoScript>(ConnectionBindingScriptPath) == null)
                 {
                     throw new FileNotFoundException("The TLAW-075 connection binding script must be an imported Unity asset before bootstrap scene authoring.");
@@ -47,6 +49,11 @@ namespace TheLogsAreWrong.Gate2.EditorTools
                 if (AssetDatabase.LoadAssetAtPath<MonoScript>(ActorResolutionCompositionScriptPath) == null)
                 {
                     throw new FileNotFoundException("The TLAW-080 actor-resolution composition script must be an imported Unity asset before bootstrap scene authoring.");
+                }
+
+                if (AssetDatabase.LoadAssetAtPath<MonoScript>(ProductionAdmissionCompositionScriptPath) == null)
+                {
+                    throw new FileNotFoundException("The TLAW-084 production admission composition script must be an imported Unity asset before bootstrap scene authoring.");
                 }
 
                 var root = new GameObject(RootName);
@@ -113,6 +120,12 @@ namespace TheLogsAreWrong.Gate2.EditorTools
                 actorResolutionSerialized.FindProperty("_carrierIngress").objectReferenceValue = intentCarrierIngress;
                 actorResolutionSerialized.FindProperty("_connectionBinding").objectReferenceValue = connectionBinding;
                 actorResolutionSerialized.ApplyModifiedPropertiesWithoutUndo();
+
+                var productionAdmission = root.AddComponent<Gate3ProductionAdmissionComposition>();
+                var productionAdmissionSerialized = new SerializedObject(productionAdmission);
+                productionAdmissionSerialized.FindProperty("_hostDriver").objectReferenceValue = owner;
+                productionAdmissionSerialized.FindProperty("_actorResolution").objectReferenceValue = actorResolution;
+                productionAdmissionSerialized.ApplyModifiedPropertiesWithoutUndo();
 
                 var transportSerialized = new SerializedObject(transport);
                 var peerToPeer = transportSerialized.FindProperty(Gate3TransportBootstrap.PeerToPeerSerializedProperty);

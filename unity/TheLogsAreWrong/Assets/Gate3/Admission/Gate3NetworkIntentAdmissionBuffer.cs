@@ -51,6 +51,28 @@ namespace TheLogsAreWrong.Gate3
         }
     }
 
+    /// <summary>
+    /// Source-neutral server-local evidence that has reached the one D-025 shared admission owner. The trusted
+    /// source boundary is outside this value: local evidence is normalized by the production composition, while
+    /// network evidence reaches the same owner only through successful actor resolution.
+    /// </summary>
+    internal readonly struct Gate3ProductionAdmissionEvidence
+    {
+        internal Gate3ProductionAdmissionEvidence(
+            IntentEnvelope envelope,
+            ActorId authoritativeActor,
+            ServerTick authoritativeReceiveTick)
+        {
+            Envelope = envelope;
+            AuthoritativeActor = authoritativeActor;
+            AuthoritativeReceiveTick = authoritativeReceiveTick;
+        }
+
+        public IntentEnvelope Envelope { get; }
+        public ActorId AuthoritativeActor { get; }
+        public ServerTick AuthoritativeReceiveTick { get; }
+    }
+
     /// <summary>Server-local materialization outcomes for one exact receive tick.</summary>
     public enum Gate3NetworkIntentMaterializationStatus
     {
@@ -132,52 +154,32 @@ namespace TheLogsAreWrong.Gate3
                     return Gate3NetworkIntentAdmissionResult.Rejected(Gate3NetworkIntentAdmissionStatus.InvalidResolvedEvidence);
                 }
 
-                var envelope = evidence.Envelope;
-                if (envelope.ShiftId != _shiftId)
-                {
-                    return Gate3NetworkIntentAdmissionResult.Rejected(Gate3NetworkIntentAdmissionStatus.ShiftMismatch);
-                }
-
-                if (!_seenIntentIds.Add(envelope.IntentId))
-                {
-                    return Gate3NetworkIntentAdmissionResult.Rejected(Gate3NetworkIntentAdmissionStatus.DuplicateIntentId);
-                }
-
-                var receiveTick = evidence.AuthoritativeReceiveTick;
-                if (_sealedReceiveTicks.Contains(receiveTick))
-                {
-                    return Gate3NetworkIntentAdmissionResult.Rejected(Gate3NetworkIntentAdmissionStatus.ReceiveTickClosed);
-                }
-
-                if (!_pendingByReceiveTick.TryGetValue(receiveTick, out var bucket))
-                {
-                    bucket = new PendingReceiveTickBucket();
-                    _pendingByReceiveTick.Add(receiveTick, bucket);
-                }
-
-                if (bucket.IsExhausted)
-                {
-                    return Gate3NetworkIntentAdmissionResult.Rejected(Gate3NetworkIntentAdmissionStatus.ReceiveSequenceExhausted);
-                }
-
-                var receiveSequence = bucket.NextSequence;
-                var acceptedIntent = new AuthoritativeAcceptedIntent(
-                    envelope,
+                return AdmitResolved(new Gate3ProductionAdmissionEvidence(
+                    evidence.Envelope,
                     evidence.AuthoritativeActor,
-                    receiveTick,
-                    receiveSequence);
-                bucket.AcceptedIntents.Add(acceptedIntent);
+                    evidence.AuthoritativeReceiveTick));
+            }
+        }
 
-                if (!receiveSequence.TryNext(out var successor))
+        /// <summary>
+        /// Consumes trusted local networked-production evidence under the same one sequence, dedupe, bucket, and
+        /// seal state as resolved network evidence. It constructs no receipt before entering this shared owner.
+        /// </summary>
+        internal Gate3NetworkIntentAdmissionResult Admit(Gate3ProductionAdmissionEvidence evidence)
+        {
+            lock (_sync)
+            {
+                if (_disposed)
                 {
-                    bucket.IsExhausted = true;
-                }
-                else
-                {
-                    bucket.NextSequence = successor;
+                    return Gate3NetworkIntentAdmissionResult.Rejected(Gate3NetworkIntentAdmissionStatus.BufferDisposed);
                 }
 
-                return Gate3NetworkIntentAdmissionResult.Admitted(acceptedIntent);
+                if (!IsValidProductionEvidence(evidence))
+                {
+                    return Gate3NetworkIntentAdmissionResult.Rejected(Gate3NetworkIntentAdmissionStatus.InvalidResolvedEvidence);
+                }
+
+                return AdmitResolved(evidence);
             }
         }
 
@@ -240,9 +242,67 @@ namespace TheLogsAreWrong.Gate3
 
         private static bool IsValidResolvedEvidence(Gate3ResolvedNetworkIntentEvidence evidence)
         {
-            var envelope = evidence.Envelope;
             return evidence.ConnectionId.IsValid
-                   && !evidence.AuthoritativeReceiveTick.IsDefault
+                   && IsValidProductionEvidence(new Gate3ProductionAdmissionEvidence(
+                       evidence.Envelope,
+                       evidence.AuthoritativeActor,
+                       evidence.AuthoritativeReceiveTick));
+        }
+
+        private Gate3NetworkIntentAdmissionResult AdmitResolved(Gate3ProductionAdmissionEvidence evidence)
+        {
+            var envelope = evidence.Envelope;
+            if (envelope.ShiftId != _shiftId)
+            {
+                return Gate3NetworkIntentAdmissionResult.Rejected(Gate3NetworkIntentAdmissionStatus.ShiftMismatch);
+            }
+
+            if (!_seenIntentIds.Add(envelope.IntentId))
+            {
+                return Gate3NetworkIntentAdmissionResult.Rejected(Gate3NetworkIntentAdmissionStatus.DuplicateIntentId);
+            }
+
+            var receiveTick = evidence.AuthoritativeReceiveTick;
+            if (_sealedReceiveTicks.Contains(receiveTick))
+            {
+                return Gate3NetworkIntentAdmissionResult.Rejected(Gate3NetworkIntentAdmissionStatus.ReceiveTickClosed);
+            }
+
+            if (!_pendingByReceiveTick.TryGetValue(receiveTick, out var bucket))
+            {
+                bucket = new PendingReceiveTickBucket();
+                _pendingByReceiveTick.Add(receiveTick, bucket);
+            }
+
+            if (bucket.IsExhausted)
+            {
+                return Gate3NetworkIntentAdmissionResult.Rejected(Gate3NetworkIntentAdmissionStatus.ReceiveSequenceExhausted);
+            }
+
+            var receiveSequence = bucket.NextSequence;
+            var acceptedIntent = new AuthoritativeAcceptedIntent(
+                envelope,
+                evidence.AuthoritativeActor,
+                receiveTick,
+                receiveSequence);
+            bucket.AcceptedIntents.Add(acceptedIntent);
+
+            if (!receiveSequence.TryNext(out var successor))
+            {
+                bucket.IsExhausted = true;
+            }
+            else
+            {
+                bucket.NextSequence = successor;
+            }
+
+            return Gate3NetworkIntentAdmissionResult.Admitted(acceptedIntent);
+        }
+
+        private static bool IsValidProductionEvidence(Gate3ProductionAdmissionEvidence evidence)
+        {
+            var envelope = evidence.Envelope;
+            return !evidence.AuthoritativeReceiveTick.IsDefault
                    && !evidence.AuthoritativeActor.IsDefault
                    && envelope != null
                    && !envelope.ShiftId.IsDefault

@@ -143,6 +143,16 @@ namespace TheLogsAreWrong.Gate2
         AlreadyAdmittedHostTickInput GetInput(ShiftId shiftId, ServerTick tick);
     }
 
+    /// <summary>
+    /// Optional TLAW-owned phase boundary for a final already-admitted input source. It has no sequencing,
+    /// gameplay, or batch authority: it only prevents a due cadence tick from sealing while its exact
+    /// authoritative receive-time window remains open.
+    /// </summary>
+    public interface IIngressBeforeSealHostInputSource
+    {
+        bool CanSeal(ShiftId shiftId, ServerTick tick);
+    }
+
     /// <summary>Explicit Gate-2 bootstrap input: no gameplay admission is implemented in this increment.</summary>
     public sealed class EmptyAlreadyAdmittedHostInputSource : IAlreadyAdmittedHostInputSource
     {
@@ -289,6 +299,7 @@ namespace TheLogsAreWrong.Gate2
         private IAlreadyAdmittedHostInputSource _inputSource;
         private IValidatedConfigurationStartupSource _configurationSource;
         private Gate2LocalIntentAdmissionAdapter _localIntentAdmission;
+        private Gate3ProductionAdmissionComposition _networkedProductionAdmission;
         private Gate3ServerReceiveTickObservationSource _receiveTickObservationSource;
         private IDisposable _lease;
         private HostSession _session;
@@ -338,6 +349,20 @@ namespace TheLogsAreWrong.Gate2
             }
 
             return _localIntentAdmission.SubmitLocalIntent(envelope, authoritativeActor);
+        }
+
+        /// <summary>
+        /// The networked-production local ingress. It uses the same session receive-time observation as network
+        /// ingress and stops at the one shared D-025 owner; no transport path or second local sequencer is used.
+        /// </summary>
+        public Gate3NetworkedLocalIntentSubmissionResult SubmitNetworkedLocalIntent(IntentEnvelope envelope, ActorId authoritativeActor)
+        {
+            if (Lifecycle != ProductionHostOwnerLifecycle.Running || _networkedProductionAdmission == null)
+            {
+                return Gate3NetworkedLocalIntentSubmissionResult.OwnerNotRunning();
+            }
+
+            return _networkedProductionAdmission.SubmitTrustedLocalIntent(envelope, authoritativeActor);
         }
 
         /// <summary>
@@ -398,6 +423,25 @@ namespace TheLogsAreWrong.Gate2
         }
 
         /// <summary>
+        /// Establishes the one scene-owned D-025 composition before this owner starts. The composition supplies
+        /// exactly one final input source only after the HostSession's C1 configuration and time origin exist.
+        /// </summary>
+        public void ConfigureNetworkedProductionAdmission(Gate3ProductionAdmissionComposition composition)
+        {
+            if (Lifecycle != ProductionHostOwnerLifecycle.Unstarted)
+            {
+                throw new InvalidOperationException("A production owner can be configured only before startup.");
+            }
+
+            if (_testingConfigured)
+            {
+                throw new InvalidOperationException("Networked production admission cannot replace an explicit test input configuration.");
+            }
+
+            _networkedProductionAdmission = composition ?? throw new ArgumentNullException(nameof(composition));
+        }
+
+        /// <summary>
         /// Value-only test seam for the existing owner. It injects deterministic elapsed evidence and explicit
         /// no-input/failure evidence without exposing a second session factory or tick executor.
         /// </summary>
@@ -439,6 +483,40 @@ namespace TheLogsAreWrong.Gate2
             _selectedProfileId = selectedProfileId ?? throw new ArgumentNullException(nameof(selectedProfileId));
             _testingConfigured = true;
             _useProductionLocalAdmission = true;
+        }
+
+        /// <summary>
+        /// Value-only deterministic seam for the scene-owned D-025 composition. It injects only elapsed evidence
+        /// and committed C1 material; the already-admitted source is still created by the configured production
+        /// composition during the ordinary owner startup lifecycle.
+        /// </summary>
+        public void ConfigureNetworkedProductionAdmissionForTesting(
+            Gate2DeploymentTextAsset artifactBase64,
+            Gate2DeploymentTextAsset manifest,
+            long[] elapsedMilliseconds,
+            long[] observedElapsedMilliseconds,
+            string selectedProfileId)
+        {
+            if (Lifecycle != ProductionHostOwnerLifecycle.Unstarted)
+            {
+                throw new InvalidOperationException("A production owner can be configured only before startup.");
+            }
+
+            if (_networkedProductionAdmission == null)
+            {
+                throw new InvalidOperationException("The scene-owned production admission composition must be configured before its deterministic test clock.");
+            }
+
+            _elapsedTimeSource = new ScriptedElapsedTimeSource(
+                elapsedMilliseconds ?? throw new ArgumentNullException(nameof(elapsedMilliseconds)),
+                observedElapsedMilliseconds ?? throw new ArgumentNullException(nameof(observedElapsedMilliseconds)));
+            _inputSource = null;
+            _configurationSource = new Gate2C1DeploymentStartupSource(
+                artifactBase64 ?? throw new ArgumentNullException(nameof(artifactBase64)),
+                manifest ?? throw new ArgumentNullException(nameof(manifest)));
+            _selectedProfileId = selectedProfileId ?? throw new ArgumentNullException(nameof(selectedProfileId));
+            _testingConfigured = true;
+            _useProductionLocalAdmission = false;
         }
 
 #if UNITY_EDITOR
@@ -571,7 +649,11 @@ namespace TheLogsAreWrong.Gate2
                 _cadence = new HostTickCadence();
                 _session = new HostSession(configuration.Shift, configuration.Anomalies, profileId);
                 _receiveTickObservationSource = new Gate3ServerReceiveTickObservationSource(_elapsedTimeSource);
-                if (_useProductionLocalAdmission)
+                if (_networkedProductionAdmission != null)
+                {
+                    _inputSource = _networkedProductionAdmission.BeginSession(configuration.Shift.ShiftId, ObserveAuthoritativeServerReceiveTick);
+                }
+                else if (_useProductionLocalAdmission)
                 {
                     _localIntentAdmission = new Gate2LocalIntentAdmissionAdapter(configuration.Shift.ShiftId);
                     _inputSource = _localIntentAdmission;
@@ -606,6 +688,12 @@ namespace TheLogsAreWrong.Gate2
                 while (_cadence.TryGetDueTicks(out var dueTicks))
                 {
                     var tick = dueTicks.First;
+                    if (_inputSource is IIngressBeforeSealHostInputSource ingressBeforeSeal
+                        && !ingressBeforeSeal.CanSeal(_session.ShiftState.ShiftId, tick))
+                    {
+                        break;
+                    }
+
                     var input = _inputSource.GetInput(_session.ShiftState.ShiftId, tick);
                     if (input == null)
                     {
@@ -643,7 +731,7 @@ namespace TheLogsAreWrong.Gate2
             _elapsedTimeSource = new StopwatchElapsedTimeSource();
             _inputSource = null;
             _configurationSource = new Gate2C1DeploymentStartupSource(_c1ArtifactBase64, _c1Manifest);
-            _useProductionLocalAdmission = true;
+            _useProductionLocalAdmission = _networkedProductionAdmission == null;
         }
 
         private void FaultOwner(Exception exception, string marker)
@@ -673,6 +761,11 @@ namespace TheLogsAreWrong.Gate2
         private void DisposeSessionAndReleaseLease()
         {
             _receiveTickObservationSource = null;
+
+            if (_networkedProductionAdmission != null)
+            {
+                _networkedProductionAdmission.EndSession();
+            }
 
             if (_localIntentAdmission != null)
             {

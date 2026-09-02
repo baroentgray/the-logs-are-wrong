@@ -105,6 +105,12 @@ namespace TheLogsAreWrong.Gate3
         /// <summary>Most recent server-local resolution outcome; it is never serialized or transmitted.</summary>
         public Gate3ActorResolutionResult LastResult { get; private set; }
 
+        /// <summary>
+        /// Publishes the exact successful resolved evidence once. Subscribers own later admission; this component
+        /// remains only the decoded-evidence to authoritative-actor-resolution boundary.
+        /// </summary>
+        public event Action<Gate3ResolvedNetworkIntentEvidence> Resolved;
+
         private void Awake()
         {
             if (_carrierIngress == null || _connectionBinding == null)
@@ -155,6 +161,10 @@ namespace TheLogsAreWrong.Gate3
         private void OnDecoded(Gate3DecodedNetworkIntentEvidence decoded)
         {
             LastResult = _processor.Process(decoded);
+            if (LastResult.HasEvidence)
+            {
+                Resolved?.Invoke(LastResult.Evidence);
+            }
         }
     }
 }
