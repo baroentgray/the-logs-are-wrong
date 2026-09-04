@@ -46,6 +46,19 @@ Trusted local networked-production ingress remains off FishNet and does not allo
 
 ## Focused evidence
 
-`Tlaw086ClientIntentDispositionTests` covers the V1 golden vector, all three canonical disposition round trips, strict malformed failure cases, explicit rejection-code coverage, reservation/replay privacy, exact 4096/4097 capacity behavior, disconnect/reused-connection isolation, and session reset/disposal isolation. `Tlaw086ClientIntentDispositionArchitectureTests` guards the code/scene composition and forbids D-026 authority expansion into D-024/D-025, HostSession, transport lifecycle, sequence, or replication.
+`Tlaw086ClientIntentDispositionTests` covers the V1 golden vector, all three canonical disposition round trips, strict malformed failure cases, explicit rejection-code coverage, reservation/replay privacy, exact 4096/4097 capacity behavior, disconnect/reused-connection isolation, real D-023 → TLAW-080 → D-025 → driver → Stage-2 projection, a real HostSession continuity fault, and session reset/disposal isolation. `Tlaw086ClientIntentDispositionArchitectureTests` guards the code/scene composition and forbids D-026 authority expansion into D-024/D-025, HostSession, transport lifecycle, sequence, or replication.
 
-The final candidate packet records actual pinned Unity, .NET, verifier, Gate0, and CI results bound to the exact candidate head.
+The candidate verification was executed on pinned Unity `6000.3.21f1 (c02631ffc030)`:
+
+| Evidence | Actual result |
+| --- | --- |
+| Focused D-026 EditMode class | 15 passed, 0 failed |
+| Full Unity EditMode suite | 140 passed, 0 failed, 0 skipped |
+| D-026 architecture slice | 3 passed, 0 failed |
+| Full .NET suite | 1681 passed, 0 failed |
+| C1 freshness | `VALIDATED_CONFIG_C1_EXPORT_FRESH` |
+| PortableAuthority deterministic Release | 0 warnings, 0 errors; fresh/plugin SHA `BD1E5DDA62192587B12737CCE9BBBB272FB75C4B309BA173AF2AA7684E2A7085` |
+| Windows x64 Development build | `Succeeded`, 0 errors, 0 warnings; 153671932-byte build report |
+| Bootstrap player smoke | exit 0; existing PortableAuthority/owner/inert transport markers and 60-frame clean quit |
+
+The final candidate packet records the exact-head verifier, Gate0, clean-tree, and CI artifact results.
