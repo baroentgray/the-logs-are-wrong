@@ -30,7 +30,7 @@ No V1 payload serializes `ServerReceiveSequence`, event sequence, connection id,
 
 After authenticated TLAW-079 has already produced an ordinary valid D-023 envelope, the production composition obtains the current TLAW-075 connection lifetime and reserves result capacity/correlation *before* it permits actor resolution or D-025 admission. Capacity is exactly 4096 records for the shift; record 4097 receives the correlatable `REJECTED / RESULT_CAPACITY_EXHAUSTED` result and does not enter D-025.
 
-An existing D-026 correlation is explicitly **not** a duplicate/admission decision. Eligible same-origin and cross-origin resubmissions continue through actor resolution and the one existing D-024/D-025 shared admission call. Only after D-024 returns `DuplicateIntentId` does D-026 replay the retained same-origin `PENDING`/terminal result or emit the current-origin-only `INTENT_ID_ALREADY_USED` result. This preserves D-024's frozen `SHIFT_MISMATCH`-before-duplicate ordering and prevents a second `IntentId` owner. Two retained rejections provably never consumed a D-024 `IntentId`: `ACTOR_NOT_BOUND` never reached D-024, and D-024 rejects `SHIFT_MISMATCH` before its seen-`IntentId` add. A corrected resubmission of either therefore reaches D-024 normally and starts a new pending result only after D-024 admits it; every other retained result corresponds to a consumed `IntentId` and stays D-024's duplicate decision.
+An existing D-026 correlation is explicitly **not** a duplicate/admission decision. Eligible same-origin and cross-origin resubmissions continue through actor resolution and the one existing D-024/D-025 shared admission call. Only after D-024 returns `DuplicateIntentId` does D-026 replay the retained same-origin `PENDING`/terminal result or emit the current-origin-only `INTENT_ID_ALREADY_USED` result. This preserves D-024's frozen `SHIFT_MISMATCH`-before-duplicate ordering and prevents a second `IntentId` owner. Two retained rejections provably never consumed a D-024 `IntentId`: `ACTOR_NOT_BOUND` never reached D-024, and D-024 rejects `SHIFT_MISMATCH` before its seen-`IntentId` add. Such a record is therefore never the D-024-consumed original, and that single fact governs both directions. A corrected resubmission of either reaches D-024 normally and starts a new pending result only after D-024 admits it. Conversely, when D-024 reports duplicate against a still pre-D-024 retained record, the consumed original belongs to the trusted-local path or another attempt, so the requester receives only the current-origin generic `INTENT_ID_ALREADY_USED` even when origin and connection lifetime match, and the retained record is not mutated. Every other retained result corresponds to a consumed `IntentId` and stays D-024's duplicate decision.
 
 With a live recipient, actor resolution maps `ActorNotBound` to `REJECTED / ACTOR_NOT_BOUND`. Valid resolved evidence goes unchanged to the existing D-025 owner. Expected D-025 terminal outcomes map to `SHIFT_MISMATCH`, `RECEIVE_TICK_CLOSED`, or `RECEIVE_SEQUENCE_EXHAUSTED`. D-025 admission success is retained and delivered only as `PENDING`.
 
@@ -48,19 +48,19 @@ Trusted local networked-production ingress remains off FishNet and does not allo
 
 ## Focused evidence
 
-`Tlaw086ClientIntentDispositionTests` covers the V1 golden vector, all three canonical disposition round trips, strict malformed failure cases including payloads over 1024 bytes, explicit rejection-code coverage, exact 4096/4097 capacity behavior, disconnect/reused-connection isolation, real same-origin/cross-origin D-024 replay, D-024's shift-before-duplicate ordering, a corrected resubmission after a shift-mismatched result that D-024 never consumed, exact `SHIFT_MISMATCH`/`RECEIVE_TICK_CLOSED`/`RECEIVE_SEQUENCE_EXHAUSTED` admission mappings, real D-023 → TLAW-080 → D-025 → driver → Stage-2 projection, a real HostSession continuity fault, and session reset/disposal isolation. `Tlaw086ClientIntentDispositionArchitectureTests` guards the code/scene composition, the one D-024 call site, preserved D-024 ordering, the exact pre-D-024 retained-rejection set, and forbidden D-026 authority expansion into HostSession, transport lifecycle, sequence, or replication.
+`Tlaw086ClientIntentDispositionTests` covers the V1 golden vector, all three canonical disposition round trips, strict malformed failure cases including payloads over 1024 bytes, explicit rejection-code coverage, exact 4096/4097 capacity behavior, disconnect/reused-connection isolation, real same-origin/cross-origin D-024 replay, D-024's shift-before-duplicate ordering, a corrected resubmission after a shift-mismatched result that D-024 never consumed, a trusted-local original whose duplicate never replays a same-origin pre-D-024 result, exact `SHIFT_MISMATCH`/`RECEIVE_TICK_CLOSED`/`RECEIVE_SEQUENCE_EXHAUSTED` admission mappings, real D-023 → TLAW-080 → D-025 → driver → Stage-2 projection, a real HostSession continuity fault, and session reset/disposal isolation. `Tlaw086ClientIntentDispositionArchitectureTests` guards the code/scene composition, the one D-024 call site, preserved D-024 ordering, the single exact pre-D-024 retained-result set and its use on both the admission and replay paths, and forbidden D-026 authority expansion into HostSession, transport lifecycle, sequence, or replication.
 
 The candidate verification was executed on pinned Unity `6000.3.21f1 (c02631ffc030)`:
 
 | Evidence | Actual result |
 | --- | --- |
-| Focused D-026 EditMode class | 21 passed, 0 failed |
-| Full Unity EditMode suite | 146 passed, 0 failed, 0 skipped |
+| Focused D-026 EditMode class | 23 passed, 0 failed |
+| Full Unity EditMode suite | 148 passed, 0 failed, 0 skipped |
 | D-026 architecture slice | 3 passed, 0 failed |
 | Full .NET suite | 1681 passed, 0 failed |
 | C1 freshness | `VALIDATED_CONFIG_C1_EXPORT_FRESH` |
 | PortableAuthority deterministic Release | 0 warnings, 0 errors; fresh/plugin SHA `BD1E5DDA62192587B12737CCE9BBBB272FB75C4B309BA173AF2AA7684E2A7085` |
-| Windows x64 Development build | `Succeeded`, 0 errors, 0 warnings; 153675972-byte build report |
+| Windows x64 Development build | `Succeeded`, 0 errors, 0 warnings; 153676036-byte build report |
 | Bootstrap player smoke | exit 0; existing PortableAuthority/owner/inert transport markers and 60-frame clean quit |
 
 The final candidate packet records the exact-head verifier, Gate0, clean-tree, and CI artifact results.

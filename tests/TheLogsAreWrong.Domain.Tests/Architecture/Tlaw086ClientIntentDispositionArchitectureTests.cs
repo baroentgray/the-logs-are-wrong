@@ -24,7 +24,7 @@ public sealed class Tlaw086ClientIntentDispositionArchitectureTests
         Assert.Contains("UNSUPPORTED_ACTION", ledger, StringComparison.Ordinal);
         Assert.Contains("ExistingIntentIdRequiresD024", ledger, StringComparison.Ordinal);
         Assert.Contains("ResolveDuplicateAfterD024", ledger, StringComparison.Ordinal);
-        Assert.Contains("IsPreD024RetainedRejection", ledger, StringComparison.Ordinal);
+        Assert.Contains("IsPreD024RetainedResult", ledger, StringComparison.Ordinal);
         Assert.Contains("TryMapStageTwoRejection", ledger, StringComparison.Ordinal);
         Assert.DoesNotContain("ToString()", ledger, StringComparison.Ordinal);
 
@@ -78,7 +78,15 @@ public sealed class Tlaw086ClientIntentDispositionArchitectureTests
             "D-024 must retain its frozen shift-before-duplicate ordering; D-026 may only consume the resulting status.");
 
         var ledgerSource = Read(root, "unity", "TheLogsAreWrong", "Assets", "Gate3", "Results", "Gate3ClientIntentDispositionLedger.cs");
-        Assert.Contains("rejectionCode == \"ACTOR_NOT_BOUND\" || rejectionCode == \"SHIFT_MISMATCH\"", ledgerSource, StringComparison.Ordinal);
+        Assert.Contains(
+            "disposition.RejectionCode == \"ACTOR_NOT_BOUND\" || disposition.RejectionCode == \"SHIFT_MISMATCH\"",
+            ledgerSource,
+            StringComparison.Ordinal);
+        Assert.Equal(1, CountOccurrences(ledgerSource, "private static bool IsPreD024RetainedResult"));
+        Assert.Contains(
+            "&& !IsPreD024RetainedResult(retained.Disposition)",
+            ledgerSource,
+            StringComparison.Ordinal);
 
         var execute = driver.IndexOf("var result = _session.ExecuteTick(tick, input.AcceptedIntents, input.ActiveTools);", StringComparison.Ordinal);
         var published = driver.IndexOf("AuthoritativeTickSucceeded?.Invoke(tick, result);", StringComparison.Ordinal);

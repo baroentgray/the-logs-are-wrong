@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using TheLogsAreWrong.Domain.Identifiers;
 using TheLogsAreWrong.Domain.Intents;
 using TheLogsAreWrong.Domain.Primitives;
@@ -39,6 +39,9 @@ namespace TheLogsAreWrong.Gate3
 
         /// <summary>Most recent D-026 reservation/admission disposition; server-local observability only.</summary>
         public Gate3ClientIntentDispositionReservation LastReservation { get; private set; }
+
+        /// <summary>Most recent disposition handed to the result carrier; server-local observability only.</summary>
+        public Gate3ClientIntentDisposition LastDeliveredDisposition { get; private set; }
 
         private void Awake()
         {
@@ -98,6 +101,7 @@ namespace TheLogsAreWrong.Gate3
             }
 
             LastReservation = default;
+            LastDeliveredDisposition = null;
             _pendingResolutionAttempt = null;
         }
 
@@ -324,6 +328,7 @@ namespace TheLogsAreWrong.Gate3
 
         private void Deliver(Gate3NetworkOrigin origin, Gate3ClientIntentDisposition disposition)
         {
+            LastDeliveredDisposition = disposition;
             _resultCarrier.TryDeliver(origin, disposition);
         }
 

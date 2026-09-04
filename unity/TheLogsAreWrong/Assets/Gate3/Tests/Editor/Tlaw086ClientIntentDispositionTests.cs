@@ -236,7 +236,10 @@ namespace TheLogsAreWrong.Gate3.Tests
             var envelope = Envelope("terminal_replay");
             Assert.AreEqual(Gate3ClientIntentDispositionReservationStatus.ReservedPending,
                 ledger.Reserve(envelope, origin, ServerTick.From(12)).Status);
-            Assert.IsTrue(ledger.TryTerminalizeAdmission(envelope.IntentId, "ACTOR_NOT_BOUND"));
+
+            // RECEIVE_TICK_CLOSED is a D-024-consuming terminal: D-024 records the IntentId before it observes the
+            // sealed receive tick, so a same-origin resubmission is a genuine D-024 duplicate of this exact record.
+            Assert.IsTrue(ledger.TryTerminalizeAdmission(envelope.IntentId, "RECEIVE_TICK_CLOSED"));
             Assert.IsTrue(ledger.TryGetDisposition(envelope.IntentId, out var terminal));
             Assert.IsTrue(Gate3ClientIntentResultV1Codec.TryEncode(terminal, out var originalBytes, out var firstFailure), firstFailure.ToString());
 
@@ -246,6 +249,7 @@ namespace TheLogsAreWrong.Gate3.Tests
             Assert.AreEqual(1, ledger.Count);
             Assert.IsTrue(Gate3ClientIntentResultV1Codec.TryEncode(replay.Disposition, out var replayBytes, out var replayFailure), replayFailure.ToString());
             CollectionAssert.AreEqual(originalBytes, replayBytes);
+            Assert.AreEqual("RECEIVE_TICK_CLOSED", replay.Disposition.RejectionCode);
         }
 
         [Test]
@@ -407,6 +411,78 @@ namespace TheLogsAreWrong.Gate3.Tests
 
             fixture.Driver.PumpForTesting();
             Assert.AreEqual(1, fixture.Driver.ExecutedTickCount);
+        }
+
+        [Test]
+        public void A_pre_d024_retained_result_is_never_replayed_when_d024_proves_the_original_is_the_trusted_local_path()
+        {
+            var fixture = CreateProductionFixture(new[] { 1000L }, new[] { 0L, 0L, 0L, 1001L }, 64);
+            var envelope = Envelope("local_original_network_retry");
+
+            SendDecodedCarrier(fixture, 64, envelope);
+            var ledger = CurrentLedger(fixture.Disposition);
+            Assert.IsTrue(ledger.TryGetDisposition(envelope.IntentId, out var preD024));
+            Assert.AreEqual("ACTOR_NOT_BOUND", preD024.RejectionCode,
+                "The unbound network attempt must retain the pre-D-024 result for its own origin.");
+
+            var local = fixture.Admission.SubmitTrustedLocalIntent(envelope, ActorId.From("local_actor"));
+            Assert.AreEqual(Gate3NetworkedLocalIntentSubmissionStatus.Admitted, local.Status,
+                "The trusted local path must become the one D-024-consumed gameplay original for this IntentId.");
+            Assert.AreEqual(1, ledger.Count,
+                "Trusted local ingress must not allocate a D-026 network record.");
+
+            Assert.AreEqual(Gate3ServerConnectionActorBindingResult.Bound,
+                fixture.Binding.BindTrustedServerActor(Connection(64), ActorId.From("actor_64")));
+            SendDecodedCarrier(fixture, 64, envelope);
+
+            Assert.AreEqual(Gate3ClientIntentDispositionReservationStatus.ExistingIntentIdRequiresD024, fixture.Disposition.LastReservation.Status);
+            Assert.AreEqual(Gate3NetworkIntentAdmissionStatus.DuplicateIntentId, fixture.Admission.LastNetworkAdmission.Status,
+                "D-024 owns the duplicate decision and must see the corrected resubmission exactly once.");
+
+            var delivered = fixture.Disposition.LastDeliveredDisposition;
+            Assert.IsNotNull(delivered);
+            Assert.AreEqual(Gate3ClientIntentDispositionKind.REJECTED, delivered.Kind);
+            Assert.AreEqual("INTENT_ID_ALREADY_USED", delivered.RejectionCode,
+                "A pre-D-024 retained result cannot be the D-024-consumed original, so it must never be replayed.");
+
+            Assert.IsTrue(ledger.TryGetDisposition(envelope.IntentId, out var stillRetained));
+            Assert.AreEqual("ACTOR_NOT_BOUND", stillRetained.RejectionCode,
+                "The generic duplicate result is unretained and must not mutate the retained record.");
+            Assert.AreEqual(1, ledger.Count);
+
+            fixture.Driver.PumpForTesting();
+            Assert.AreEqual(1, fixture.Driver.ExecutedTickCount,
+                "The duplicate must not create a second receive sequence or Stage-Two entry.");
+        }
+
+        [Test]
+        public void Ledger_returns_generic_intent_id_already_used_for_every_same_origin_pre_d024_retained_result()
+        {
+            foreach (var preD024Code in new[] { "ACTOR_NOT_BOUND", "SHIFT_MISMATCH" })
+            {
+                using var ledger = new Gate3ClientIntentDispositionLedger(Shift);
+                var origin = Origin(65, 1);
+                var envelope = Envelope("pre_d024_" + preD024Code);
+                Assert.AreEqual(Gate3ClientIntentDispositionReservationStatus.ReservedPending,
+                    ledger.Reserve(envelope, origin, ServerTick.From(4)).Status);
+                Assert.IsTrue(ledger.TryTerminalizeAdmission(envelope.IntentId, preD024Code));
+
+                var reservation = ledger.Reserve(envelope, origin, ServerTick.From(9));
+                Assert.AreEqual(Gate3ClientIntentDispositionReservationStatus.ExistingIntentIdRequiresD024, reservation.Status);
+
+                var resolved = ledger.ResolveDuplicateAfterD024(envelope, origin, ServerTick.From(9), reservation.CreatedRecord);
+
+                Assert.AreEqual(origin, resolved.Origin);
+                Assert.IsTrue(resolved.DeliveryAuthorized);
+                Assert.AreEqual(Gate3ClientIntentDispositionKind.REJECTED, resolved.Disposition.Kind);
+                Assert.AreEqual("INTENT_ID_ALREADY_USED", resolved.Disposition.RejectionCode,
+                    $"A retained same-origin {preD024Code} result never consumed the D-024 IntentId and must not be replayed.");
+                Assert.AreEqual(ServerTick.From(9), resolved.Disposition.AuthoritativeReceiveTick);
+
+                Assert.IsTrue(ledger.TryGetDisposition(envelope.IntentId, out var retained));
+                Assert.AreEqual(preD024Code, retained.RejectionCode);
+                Assert.AreEqual(1, ledger.Count);
+            }
         }
 
         [Test]

@@ -658,8 +658,7 @@ namespace TheLogsAreWrong.Gate3
                        && retained.Disposition.Kind == Gate3ClientIntentDispositionKind.PENDING;
             }
 
-            if (retained.Disposition.Kind != Gate3ClientIntentDispositionKind.REJECTED
-                || !IsPreD024RetainedRejection(retained.Disposition.RejectionCode))
+            if (!IsPreD024RetainedResult(retained.Disposition))
             {
                 return false;
             }
@@ -672,8 +671,10 @@ namespace TheLogsAreWrong.Gate3
 
         /// <summary>
         /// Resolves result replay/privacy only after the existing D-024 shared owner reported DuplicateIntentId.
-        /// This method never determines whether gameplay admission may continue and never mutates another origin's
-        /// retained result.
+        /// Exact replay is reserved for a retained record that represents a D-024-consumed network attempt; a
+        /// same-origin pre-D-024 retained result means the consumed original is the trusted-local path or another
+        /// attempt, so it yields only the current-origin generic result. This method never determines whether
+        /// gameplay admission may continue and never mutates another origin's retained result.
         /// </summary>
         public Gate3ClientIntentDispositionDelivery ResolveDuplicateAfterD024(
             IntentEnvelope envelope,
@@ -702,7 +703,9 @@ namespace TheLogsAreWrong.Gate3
                 return new Gate3ClientIntentDispositionDelivery(retained.Origin, retained.Disposition, retained.DeliveryAuthorized);
             }
 
-            if (retained.Origin == currentOrigin && retained.DeliveryAuthorized)
+            if (retained.Origin == currentOrigin
+                && retained.DeliveryAuthorized
+                && !IsPreD024RetainedResult(retained.Disposition))
             {
                 return new Gate3ClientIntentDispositionDelivery(retained.Origin, retained.Disposition, true);
             }
@@ -940,12 +943,14 @@ namespace TheLogsAreWrong.Gate3
         }
 
         /// <summary>
-        /// The exact retained rejections D-024 produced without consuming the IntentId. `ACTOR_NOT_BOUND` never
-        /// reached D-024 at all, and D-024's frozen ordering rejects `SHIFT_MISMATCH` before its seen-IntentId add.
-        /// Every other retained result corresponds to a consumed IntentId and stays D-024's duplicate decision.
+        /// The exact retained results D-024 produced without consuming the IntentId. `ACTOR_NOT_BOUND` never reached
+        /// D-024 at all, and D-024's frozen ordering rejects `SHIFT_MISMATCH` before its seen-IntentId add. Such a
+        /// record is therefore never the D-024-consumed original: it neither gates a new admission nor is replayable
+        /// as one. Every other retained result corresponds to a consumed IntentId and stays D-024's decision.
         /// </summary>
-        private static bool IsPreD024RetainedRejection(string rejectionCode) =>
-            rejectionCode == "ACTOR_NOT_BOUND" || rejectionCode == "SHIFT_MISMATCH";
+        private static bool IsPreD024RetainedResult(Gate3ClientIntentDisposition disposition) =>
+            disposition.Kind == Gate3ClientIntentDispositionKind.REJECTED
+            && (disposition.RejectionCode == "ACTOR_NOT_BOUND" || disposition.RejectionCode == "SHIFT_MISMATCH");
 
         private bool IsValidNewEvidence(IntentEnvelope envelope, Gate3NetworkOrigin origin, ServerTick tick) =>
             envelope != null
