@@ -1,5 +1,6 @@
 using System;
 using TheLogsAreWrong.Domain.Identifiers;
+using TheLogsAreWrong.Domain.Intents;
 using TheLogsAreWrong.Domain.Primitives;
 using TheLogsAreWrong.Domain.Runtime;
 using TheLogsAreWrong.Gate2;
@@ -32,6 +33,7 @@ namespace TheLogsAreWrong.Gate3
         private Gate3ClientIntentResultCarrier _resultCarrier;
 
         private Gate3ClientIntentDispositionLedger _ledger;
+        private PendingResolutionAttempt _pendingResolutionAttempt;
         private bool _subscribed;
         private bool _tickSubscribed;
 
@@ -96,6 +98,7 @@ namespace TheLogsAreWrong.Gate3
             }
 
             LastReservation = default;
+            _pendingResolutionAttempt = null;
         }
 
         private void Subscribe()
@@ -133,8 +136,8 @@ namespace TheLogsAreWrong.Gate3
         }
 
         /// <summary>
-        /// The only pre-D-025 reservation point. A retained same-origin replay or a fail-closed capacity/privacy
-        /// rejection returns false so the original bytes never re-enter actor resolution, D-024, Stage 2, or a tick.
+        /// The only pre-D-025 retention point. Existing D-026 correlation deliberately remains eligible for the sole
+        /// D-024 duplicate decision; only capacity/invariant failures stop the decoded evidence before resolution.
         /// </summary>
         private bool ReserveBeforeResolution(Gate3DecodedNetworkIntentEvidence decoded)
         {
@@ -149,9 +152,9 @@ namespace TheLogsAreWrong.Gate3
             switch (LastReservation.Status)
             {
                 case Gate3ClientIntentDispositionReservationStatus.ReservedPending:
+                case Gate3ClientIntentDispositionReservationStatus.ExistingIntentIdRequiresD024:
+                    _pendingResolutionAttempt = new PendingResolutionAttempt(decoded.Envelope, origin, decoded.AuthoritativeReceiveTick, LastReservation);
                     return true;
-                case Gate3ClientIntentDispositionReservationStatus.ReplaySameOrigin:
-                case Gate3ClientIntentDispositionReservationStatus.IntentIdAlreadyUsed:
                 case Gate3ClientIntentDispositionReservationStatus.ResultCapacityExhausted:
                     Deliver(origin, LastReservation.Disposition);
                     return false;
@@ -165,13 +168,13 @@ namespace TheLogsAreWrong.Gate3
 
         private void OnResolutionProcessed(Gate3DecodedNetworkIntentEvidence decoded, Gate3ActorResolutionResult resolution)
         {
-            if (_ledger == null || !_ledger.TryGetDisposition(decoded.Envelope.IntentId, out var current)
-                || current.Kind != Gate3ClientIntentDispositionKind.PENDING)
+            var attempt = TakePendingResolutionAttempt(decoded);
+            if (_ledger == null || attempt == null)
             {
                 return;
             }
 
-            if (!TryGetCurrentOrigin(decoded.ConnectionId, out var origin))
+            if (!TryGetCurrentOrigin(decoded.ConnectionId, out var currentOrigin) || currentOrigin != attempt.Origin)
             {
                 return;
             }
@@ -179,17 +182,22 @@ namespace TheLogsAreWrong.Gate3
             switch (resolution.Status)
             {
                 case Gate3AuthoritativeActorResolutionStatus.ActorNotBound:
-                    if (!_ledger.TryTerminalizeAdmission(decoded.Envelope.IntentId, "ACTOR_NOT_BOUND"))
+                    if (attempt.Reservation.CreatedRecord)
                     {
-                        throw new InvalidOperationException("The reserved D-026 actor-not-bound record could not become terminal.");
+                        TerminalizeAndDeliver(decoded.Envelope.IntentId, "ACTOR_NOT_BOUND");
                     }
-
-                    DeliverCurrent(decoded.Envelope.IntentId);
+                    else
+                    {
+                        Deliver(attempt.Origin, _ledger.CreateUnretainedAdmissionRejection(
+                            decoded.Envelope,
+                            decoded.AuthoritativeReceiveTick,
+                            "ACTOR_NOT_BOUND"));
+                    }
                     return;
 
                 case Gate3AuthoritativeActorResolutionStatus.Resolved:
                     var admission = _admission.AdmitResolvedNetworkIntent(resolution.Evidence);
-                    HandleAdmission(decoded.Envelope.IntentId, admission);
+                    HandleAdmission(attempt, admission);
                     return;
 
                 case Gate3AuthoritativeActorResolutionStatus.InvalidConnection:
@@ -201,24 +209,42 @@ namespace TheLogsAreWrong.Gate3
             }
         }
 
-        private void HandleAdmission(IntentId intentId, Gate3NetworkIntentAdmissionResult admission)
+        private void HandleAdmission(PendingResolutionAttempt attempt, Gate3NetworkIntentAdmissionResult admission)
         {
             switch (admission.Status)
             {
                 case Gate3NetworkIntentAdmissionStatus.Admitted:
-                    DeliverCurrent(intentId);
+                    if (!_ledger.TryBeginAdmittedAfterD024(
+                            attempt.Envelope,
+                            attempt.Origin,
+                            attempt.AuthoritativeReceiveTick,
+                            attempt.Reservation.CreatedRecord))
+                    {
+                        throw new InvalidOperationException("D-024 admitted evidence whose D-026 result correlation could not begin pending state.");
+                    }
+
+                    DeliverCurrent(attempt.Envelope.IntentId);
                     return;
                 case Gate3NetworkIntentAdmissionStatus.ShiftMismatch:
-                    TerminalizeAndDeliver(intentId, "SHIFT_MISMATCH");
+                    TerminalizeOrDeliverUnretained(attempt, "SHIFT_MISMATCH");
                     return;
                 case Gate3NetworkIntentAdmissionStatus.ReceiveTickClosed:
-                    TerminalizeAndDeliver(intentId, "RECEIVE_TICK_CLOSED");
+                    TerminalizeOrDeliverUnretained(attempt, "RECEIVE_TICK_CLOSED");
                     return;
                 case Gate3NetworkIntentAdmissionStatus.ReceiveSequenceExhausted:
-                    TerminalizeAndDeliver(intentId, "RECEIVE_SEQUENCE_EXHAUSTED");
+                    TerminalizeOrDeliverUnretained(attempt, "RECEIVE_SEQUENCE_EXHAUSTED");
                     return;
                 case Gate3NetworkIntentAdmissionStatus.DuplicateIntentId:
-                    TerminalizeAndDeliver(intentId, "INTENT_ID_ALREADY_USED");
+                    var replay = _ledger.ResolveDuplicateAfterD024(
+                        attempt.Envelope,
+                        attempt.Origin,
+                        attempt.AuthoritativeReceiveTick,
+                        attempt.Reservation.CreatedRecord);
+                    if (replay.DeliveryAuthorized)
+                    {
+                        Deliver(replay.Origin, replay.Disposition);
+                    }
+
                     return;
                 case Gate3NetworkIntentAdmissionStatus.InvalidResolvedEvidence:
                 case Gate3NetworkIntentAdmissionStatus.BufferDisposed:
@@ -262,6 +288,32 @@ namespace TheLogsAreWrong.Gate3
             DeliverCurrent(intentId);
         }
 
+        private void TerminalizeOrDeliverUnretained(PendingResolutionAttempt attempt, string code)
+        {
+            if (attempt.Reservation.CreatedRecord)
+            {
+                TerminalizeAndDeliver(attempt.Envelope.IntentId, code);
+                return;
+            }
+
+            Deliver(attempt.Origin, _ledger.CreateUnretainedAdmissionRejection(
+                attempt.Envelope,
+                attempt.AuthoritativeReceiveTick,
+                code));
+        }
+
+        private PendingResolutionAttempt TakePendingResolutionAttempt(Gate3DecodedNetworkIntentEvidence decoded)
+        {
+            var attempt = _pendingResolutionAttempt;
+            _pendingResolutionAttempt = null;
+            if (attempt == null || !ReferenceEquals(attempt.Envelope, decoded.Envelope))
+            {
+                throw new InvalidOperationException("D-026 actor resolution did not preserve the exact reservation evidence.");
+            }
+
+            return attempt;
+        }
+
         private void DeliverCurrent(IntentId intentId)
         {
             if (_ledger.TryGetDelivery(intentId, out var delivery) && delivery.DeliveryAuthorized)
@@ -285,6 +337,26 @@ namespace TheLogsAreWrong.Gate3
 
             origin = default;
             return false;
+        }
+
+        private sealed class PendingResolutionAttempt
+        {
+            internal PendingResolutionAttempt(
+                IntentEnvelope envelope,
+                Gate3NetworkOrigin origin,
+                ServerTick authoritativeReceiveTick,
+                Gate3ClientIntentDispositionReservation reservation)
+            {
+                Envelope = envelope;
+                Origin = origin;
+                AuthoritativeReceiveTick = authoritativeReceiveTick;
+                Reservation = reservation;
+            }
+
+            internal IntentEnvelope Envelope { get; }
+            internal Gate3NetworkOrigin Origin { get; }
+            internal ServerTick AuthoritativeReceiveTick { get; }
+            internal Gate3ClientIntentDispositionReservation Reservation { get; }
         }
     }
 }

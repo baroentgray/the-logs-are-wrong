@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Reflection;
 using System.Text.RegularExpressions;
@@ -13,6 +13,7 @@ using TheLogsAreWrong.Domain.Identifiers;
 using TheLogsAreWrong.Domain.Intents;
 using TheLogsAreWrong.Domain.Primitives;
 using TheLogsAreWrong.Domain.Runtime;
+using TheLogsAreWrong.Domain.Sequencing;
 using TheLogsAreWrong.Gate2;
 using UnityEditor;
 using UnityEngine;
@@ -119,6 +120,12 @@ namespace TheLogsAreWrong.Gate3.Tests
         }
 
         [Test]
+        public void Result_v1_fails_closed_for_a_payload_over_the_frozen_1024_byte_limit()
+        {
+            AssertDecodeFails(new byte[Gate3ClientIntentResultV1Codec.MaxPayloadBytes + 1], Gate3ClientIntentResultV1Failure.MESSAGE_TOO_LARGE);
+        }
+
+        [Test]
         public void Result_v1_encode_rejects_no_bom_and_inconsistent_disposition_shapes_without_payload()
         {
             Assert.IsFalse(Gate3ClientIntentResultV1Codec.TryEncode(
@@ -152,7 +159,7 @@ namespace TheLogsAreWrong.Gate3.Tests
         }
 
         [Test]
-        public void Ledger_reserves_pending_before_admission_and_replays_only_the_same_authorized_origin()
+        public void Ledger_reserves_only_new_records_and_defers_existing_intent_id_handling_to_d024()
         {
             using var ledger = new Gate3ClientIntentDispositionLedger(Shift);
             var original = Origin(14, 1);
@@ -165,10 +172,10 @@ namespace TheLogsAreWrong.Gate3.Tests
 
             Assert.AreEqual(Gate3ClientIntentDispositionReservationStatus.ReservedPending, reserved.Status);
             Assert.AreEqual(Gate3ClientIntentDispositionKind.PENDING, reserved.Disposition.Kind);
-            Assert.AreEqual(Gate3ClientIntentDispositionReservationStatus.ReplaySameOrigin, sameOrigin.Status);
+            Assert.AreEqual(Gate3ClientIntentDispositionReservationStatus.ExistingIntentIdRequiresD024, sameOrigin.Status);
             Assert.AreEqual(ServerTick.From(8), sameOrigin.Disposition.AuthoritativeReceiveTick);
-            Assert.AreEqual(Gate3ClientIntentDispositionReservationStatus.IntentIdAlreadyUsed, differentOrigin.Status);
-            Assert.AreEqual("INTENT_ID_ALREADY_USED", differentOrigin.Disposition.RejectionCode);
+            Assert.AreEqual(Gate3ClientIntentDispositionReservationStatus.ExistingIntentIdRequiresD024, differentOrigin.Status);
+            Assert.AreEqual(Gate3ClientIntentDispositionKind.PENDING, differentOrigin.Disposition.Kind);
             Assert.AreEqual(1, ledger.Count);
         }
 
@@ -203,7 +210,7 @@ namespace TheLogsAreWrong.Gate3.Tests
             ledger.RevokeDelivery(oldOrigin);
 
             Assert.IsFalse(ledger.IsDeliveryAuthorized(envelope.IntentId, oldOrigin));
-            Assert.AreEqual(Gate3ClientIntentDispositionReservationStatus.IntentIdAlreadyUsed,
+            Assert.AreEqual(Gate3ClientIntentDispositionReservationStatus.ExistingIntentIdRequiresD024,
                 ledger.Reserve(envelope, replacement, ServerTick.From(3)).Status);
         }
 
@@ -233,11 +240,101 @@ namespace TheLogsAreWrong.Gate3.Tests
             Assert.IsTrue(ledger.TryGetDisposition(envelope.IntentId, out var terminal));
             Assert.IsTrue(Gate3ClientIntentResultV1Codec.TryEncode(terminal, out var originalBytes, out var firstFailure), firstFailure.ToString());
 
-            var replay = ledger.Reserve(envelope, origin, ServerTick.From(99));
-            Assert.AreEqual(Gate3ClientIntentDispositionReservationStatus.ReplaySameOrigin, replay.Status);
+            var replayReservation = ledger.Reserve(envelope, origin, ServerTick.From(99));
+            Assert.AreEqual(Gate3ClientIntentDispositionReservationStatus.ExistingIntentIdRequiresD024, replayReservation.Status);
+            var replay = ledger.ResolveDuplicateAfterD024(envelope, origin, ServerTick.From(99), replayReservation.CreatedRecord);
             Assert.AreEqual(1, ledger.Count);
             Assert.IsTrue(Gate3ClientIntentResultV1Codec.TryEncode(replay.Disposition, out var replayBytes, out var replayFailure), replayFailure.ToString());
             CollectionAssert.AreEqual(originalBytes, replayBytes);
+        }
+
+        [Test]
+        public void Real_d024_sees_same_and_cross_origin_replays_once_without_a_second_sequence_or_stage_two_entry()
+        {
+            var fixture = CreateProductionFixture(new[] { 1000L }, new[] { 0L, 0L, 0L, 1001L }, 52);
+            StartLiveConnection(fixture, 53);
+            Assert.AreEqual(Gate3ServerConnectionActorBindingResult.Bound,
+                fixture.Binding.BindTrustedServerActor(Connection(52), ActorId.From("actor_52")));
+            Assert.AreEqual(Gate3ServerConnectionActorBindingResult.Bound,
+                fixture.Binding.BindTrustedServerActor(Connection(53), ActorId.From("actor_53")));
+            var envelope = Envelope("d024_replay");
+
+            SendDecodedCarrier(fixture, 52, envelope);
+            Assert.AreEqual(Gate3NetworkIntentAdmissionStatus.Admitted, fixture.Admission.LastNetworkAdmission.Status);
+
+            SendDecodedCarrier(fixture, 52, envelope);
+            Assert.AreEqual(Gate3ClientIntentDispositionReservationStatus.ExistingIntentIdRequiresD024, fixture.Disposition.LastReservation.Status);
+            Assert.AreEqual(Gate3NetworkIntentAdmissionStatus.DuplicateIntentId, fixture.Admission.LastNetworkAdmission.Status,
+                "The eligible same-origin replay must reach D-024 exactly through the existing shared admission path.");
+
+            SendDecodedCarrier(fixture, 53, envelope);
+            Assert.AreEqual(Gate3ClientIntentDispositionReservationStatus.ExistingIntentIdRequiresD024, fixture.Disposition.LastReservation.Status);
+            Assert.AreEqual(Gate3NetworkIntentAdmissionStatus.DuplicateIntentId, fixture.Admission.LastNetworkAdmission.Status,
+                "A cross-origin replay must also let D-024 make the gameplay duplicate decision.");
+
+            var ledger = CurrentLedger(fixture.Disposition);
+            Assert.AreEqual(1, ledger.Count);
+            Assert.IsTrue(ledger.TryGetDisposition(envelope.IntentId, out var pending));
+            Assert.AreEqual(Gate3ClientIntentDispositionKind.PENDING, pending.Kind);
+
+            fixture.Driver.PumpForTesting();
+
+            Assert.AreEqual(1, fixture.Driver.ExecutedTickCount,
+                "Neither duplicate may create a second accepted receipt or Stage-Two entry.");
+            Assert.IsTrue(ledger.TryGetDisposition(envelope.IntentId, out var terminal));
+            Assert.AreEqual("UNSUPPORTED_ACTION", terminal.RejectionCode);
+        }
+
+        [Test]
+        public void Real_d024_preserves_the_frozen_shift_mismatch_before_duplicate_ordering()
+        {
+            var fixture = CreateProductionFixture(Array.Empty<long>(), new[] { 0L, 0L }, 54);
+            Assert.AreEqual(Gate3ServerConnectionActorBindingResult.Bound,
+                fixture.Binding.BindTrustedServerActor(Connection(54), ActorId.From("actor_54")));
+            var original = Envelope("shift_before_duplicate");
+
+            SendDecodedCarrier(fixture, 54, original);
+            SendDecodedCarrier(fixture, 54, Envelope(ShiftId.From("P0_SHIFT_B"), "shift_before_duplicate"));
+
+            Assert.AreEqual(Gate3ClientIntentDispositionReservationStatus.ExistingIntentIdRequiresD024, fixture.Disposition.LastReservation.Status);
+            Assert.AreEqual(Gate3NetworkIntentAdmissionStatus.ShiftMismatch, fixture.Admission.LastNetworkAdmission.Status,
+                "D-026 must not preempt D-024's frozen shift-before-duplicate ordering.");
+            var ledger = CurrentLedger(fixture.Disposition);
+            Assert.IsTrue(ledger.TryGetDisposition(original.IntentId, out var retained));
+            Assert.AreEqual(Gate3ClientIntentDispositionKind.PENDING, retained.Kind,
+                "A malformed replay must not overwrite the original pending result retained for its owner.");
+        }
+
+        [Test]
+        public void Real_d025_admission_mappings_are_exact_for_shift_closed_tick_and_sequence_exhaustion()
+        {
+            var fixture = CreateProductionFixture(Array.Empty<long>(), new[] { 0L, 0L, 1001L, 1001L, 1001L }, 55);
+            Assert.AreEqual(Gate3ServerConnectionActorBindingResult.Bound,
+                fixture.Binding.BindTrustedServerActor(Connection(55), ActorId.From("actor_55")));
+
+            var wrongShift = Envelope(ShiftId.From("P0_SHIFT_B"), "mapping_shift");
+            SendDecodedCarrier(fixture, 55, wrongShift);
+            AssertAdmissionTerminal(fixture, wrongShift, Gate3NetworkIntentAdmissionStatus.ShiftMismatch, "SHIFT_MISMATCH");
+
+            var inputSource = (IAlreadyAdmittedHostInputSource)PrivateField(fixture.Driver, "_inputSource");
+            inputSource.GetInput(Shift, ServerTick.Zero);
+            var closedTick = Envelope("mapping_closed_tick");
+            SendDecodedCarrier(fixture, 55, closedTick);
+            AssertAdmissionTerminal(fixture, closedTick, Gate3NetworkIntentAdmissionStatus.ReceiveTickClosed, "RECEIVE_TICK_CLOSED");
+
+            var firstAtTickOne = Envelope("mapping_sequence_first");
+            SendDecodedCarrier(fixture, 55, firstAtTickOne);
+            Assert.AreEqual(Gate3NetworkIntentAdmissionStatus.Admitted, fixture.Admission.LastNetworkAdmission.Status);
+            SetNextSequence(fixture.Admission, ServerTick.From(1), ServerReceiveSequence.From(long.MaxValue));
+
+            var terminalSequence = Envelope("mapping_sequence_terminal");
+            SendDecodedCarrier(fixture, 55, terminalSequence);
+            Assert.AreEqual(Gate3NetworkIntentAdmissionStatus.Admitted, fixture.Admission.LastNetworkAdmission.Status);
+            Assert.AreEqual(ServerReceiveSequence.From(long.MaxValue), fixture.Admission.LastNetworkAdmission.AcceptedIntent.ReceiveSequence);
+
+            var exhausted = Envelope("mapping_sequence_exhausted");
+            SendDecodedCarrier(fixture, 55, exhausted);
+            AssertAdmissionTerminal(fixture, exhausted, Gate3NetworkIntentAdmissionStatus.ReceiveSequenceExhausted, "RECEIVE_SEQUENCE_EXHAUSTED");
         }
 
         [Test]
@@ -260,6 +357,56 @@ namespace TheLogsAreWrong.Gate3.Tests
             Assert.AreEqual(1, ledger.Count, "A valid D-023 envelope with no live authorized recipient must remain server-local and create no ordinary result.");
             Assert.AreEqual(Gate3AuthoritativeActorResolutionStatus.ActorNotBound, fixture.ActorResolution.LastResult.Status,
                 "The non-live packet must not enter actor resolution after D-026 fails closed.");
+        }
+
+        [Test]
+        public void A_pre_d024_actor_not_bound_result_can_reenter_the_sole_d024_path_after_a_trusted_binding_exists()
+        {
+            var fixture = CreateProductionFixture(new[] { 1000L }, new[] { 0L, 0L, 1001L }, 62);
+            var envelope = Envelope("bound_after_unbound");
+
+            SendDecodedCarrier(fixture, 62, envelope);
+            var ledger = CurrentLedger(fixture.Disposition);
+            Assert.IsTrue(ledger.TryGetDisposition(envelope.IntentId, out var unbound));
+            Assert.AreEqual("ACTOR_NOT_BOUND", unbound.RejectionCode);
+
+            Assert.AreEqual(Gate3ServerConnectionActorBindingResult.Bound,
+                fixture.Binding.BindTrustedServerActor(Connection(62), ActorId.From("actor_62")));
+            SendDecodedCarrier(fixture, 62, envelope);
+
+            Assert.AreEqual(Gate3ClientIntentDispositionReservationStatus.ExistingIntentIdRequiresD024, fixture.Disposition.LastReservation.Status);
+            Assert.AreEqual(Gate3NetworkIntentAdmissionStatus.Admitted, fixture.Admission.LastNetworkAdmission.Status,
+                "The prior ActorNotBound result never entered D-024 and therefore cannot become a second duplicate gate.");
+            Assert.IsTrue(ledger.TryGetDisposition(envelope.IntentId, out var pending));
+            Assert.AreEqual(Gate3ClientIntentDispositionKind.PENDING, pending.Kind);
+
+            fixture.Driver.PumpForTesting();
+            Assert.AreEqual(1, fixture.Driver.ExecutedTickCount);
+        }
+
+        [Test]
+        public void A_shift_mismatched_result_never_consumed_d024_and_must_not_block_the_corrected_resubmission()
+        {
+            var fixture = CreateProductionFixture(new[] { 1000L }, new[] { 0L, 0L, 1001L }, 63);
+            Assert.AreEqual(Gate3ServerConnectionActorBindingResult.Bound,
+                fixture.Binding.BindTrustedServerActor(Connection(63), ActorId.From("actor_63")));
+
+            var wrongShift = Envelope(ShiftId.From("P0_SHIFT_B"), "shift_then_correct");
+            SendDecodedCarrier(fixture, 63, wrongShift);
+            AssertAdmissionTerminal(fixture, wrongShift, Gate3NetworkIntentAdmissionStatus.ShiftMismatch, "SHIFT_MISMATCH");
+
+            var correctShift = Envelope("shift_then_correct");
+            SendDecodedCarrier(fixture, 63, correctShift);
+
+            Assert.AreEqual(Gate3ClientIntentDispositionReservationStatus.ExistingIntentIdRequiresD024, fixture.Disposition.LastReservation.Status);
+            Assert.AreEqual(Gate3NetworkIntentAdmissionStatus.Admitted, fixture.Admission.LastNetworkAdmission.Status,
+                "D-024 rejects a shift mismatch before it consumes the IntentId, so the corrected resubmission must still reach the sole D-024 decision.");
+            var ledger = CurrentLedger(fixture.Disposition);
+            Assert.IsTrue(ledger.TryGetDisposition(correctShift.IntentId, out var pending));
+            Assert.AreEqual(Gate3ClientIntentDispositionKind.PENDING, pending.Kind);
+
+            fixture.Driver.PumpForTesting();
+            Assert.AreEqual(1, fixture.Driver.ExecutedTickCount);
         }
 
         [Test]
@@ -330,8 +477,10 @@ namespace TheLogsAreWrong.Gate3.Tests
         private static Gate3ClientIntentDisposition Rejected(string intent, long receiveTick, StateVersion? stateVersion, string rejectionCode) =>
             new Gate3ClientIntentDisposition(Shift, IntentId.From(intent), Gate3ClientIntentDispositionKind.REJECTED, ServerTick.From(receiveTick), stateVersion, rejectionCode);
 
-        private static IntentEnvelope Envelope(string intent) =>
-            new IntentEnvelope(Shift, IntentId.From(intent), ActorId.From("client_hint"), TargetId.From("target"), IntentActionId.From("unsupported_action"), StateVersion.Zero, ServerTick.Zero, NoIntentParameters.Instance);
+        private static IntentEnvelope Envelope(string intent) => Envelope(Shift, intent);
+
+        private static IntentEnvelope Envelope(ShiftId shiftId, string intent) =>
+            new IntentEnvelope(shiftId, IntentId.From(intent), ActorId.From("client_hint"), TargetId.From("target"), IntentActionId.From("unsupported_action"), StateVersion.Zero, ServerTick.Zero, NoIntentParameters.Instance);
 
         private ProductionFixture CreateProductionFixture(long[] elapsedMilliseconds, long[] observedElapsedMilliseconds, int connectionId)
         {
@@ -398,6 +547,43 @@ namespace TheLogsAreWrong.Gate3.Tests
                 new Gate3IntentCarrierBroadcast { Payload = payload },
                 Channel.Reliable
             });
+        }
+
+        private static void StartLiveConnection(ProductionFixture fixture, int connectionId)
+        {
+            var transport = PrivateField(fixture.Binding, "_transport") as FishySteamworks.FishySteamworks;
+            Assert.IsNotNull(transport, "TLAW-075 must retain the existing server-observed connection lifecycle bridge.");
+            transport.HandleRemoteConnectionState(new RemoteConnectionStateArgs(RemoteConnectionState.Started, connectionId, 0));
+            Assert.AreEqual(2, fixture.Binding.LiveConnectionCount);
+        }
+
+        private static void AssertAdmissionTerminal(
+            ProductionFixture fixture,
+            IntentEnvelope envelope,
+            Gate3NetworkIntentAdmissionStatus expectedAdmission,
+            string expectedCode)
+        {
+            Assert.AreEqual(Gate3ClientIntentDispositionReservationStatus.ReservedPending, fixture.Disposition.LastReservation.Status);
+            Assert.AreEqual(expectedAdmission, fixture.Admission.LastNetworkAdmission.Status);
+            var ledger = CurrentLedger(fixture.Disposition);
+            Assert.IsTrue(ledger.TryGetDisposition(envelope.IntentId, out var result));
+            Assert.AreEqual(Gate3ClientIntentDispositionKind.REJECTED, result.Kind);
+            Assert.AreEqual(expectedCode, result.RejectionCode);
+        }
+
+        private static void SetNextSequence(
+            Gate3ProductionAdmissionComposition admission,
+            ServerTick receiveTick,
+            ServerReceiveSequence sequence)
+        {
+            var sharedOwner = PrivateField(admission, "_sharedOwner");
+            var buckets = PrivateField(sharedOwner, "_pendingByReceiveTick") as System.Collections.IDictionary;
+            Assert.IsNotNull(buckets, "The existing D-024 owner must retain the current receive-tick bucket.");
+            var bucket = buckets[receiveTick];
+            Assert.IsNotNull(bucket, "The real D-024 admission must create the exact tick-one bucket before exhaustion is probed.");
+            var nextSequence = bucket.GetType().GetField("NextSequence", BindingFlags.Instance | BindingFlags.Public);
+            Assert.IsNotNull(nextSequence, "The frozen D-024 bucket must retain its checked sequence value.");
+            nextSequence.SetValue(bucket, sequence);
         }
 
         private static Gate3ClientIntentDispositionLedger CurrentLedger(Gate3ClientIntentDispositionComposition disposition)

@@ -1,4 +1,4 @@
-namespace TheLogsAreWrong.Domain.Tests.Architecture;
+﻿namespace TheLogsAreWrong.Domain.Tests.Architecture;
 
 /// <summary>Repository guard for the bounded D-026 client-intent disposition/replay boundary.</summary>
 public sealed class Tlaw086ClientIntentDispositionArchitectureTests
@@ -22,6 +22,9 @@ public sealed class Tlaw086ClientIntentDispositionArchitectureTests
         Assert.Contains("INTENT_ID_ALREADY_USED", ledger, StringComparison.Ordinal);
         Assert.Contains("INTENT_ALREADY_PROCESSED", ledger, StringComparison.Ordinal);
         Assert.Contains("UNSUPPORTED_ACTION", ledger, StringComparison.Ordinal);
+        Assert.Contains("ExistingIntentIdRequiresD024", ledger, StringComparison.Ordinal);
+        Assert.Contains("ResolveDuplicateAfterD024", ledger, StringComparison.Ordinal);
+        Assert.Contains("IsPreD024RetainedRejection", ledger, StringComparison.Ordinal);
         Assert.Contains("TryMapStageTwoRejection", ledger, StringComparison.Ordinal);
         Assert.DoesNotContain("ToString()", ledger, StringComparison.Ordinal);
 
@@ -42,11 +45,15 @@ public sealed class Tlaw086ClientIntentDispositionArchitectureTests
         var actorResolution = Read(root, "unity", "TheLogsAreWrong", "Assets", "Gate3", "ActorResolution", "Gate3ActorResolutionComposition.cs");
         var driver = Read(root, "unity", "TheLogsAreWrong", "Assets", "Gate2", "Authority", "Gate2ProductionHostDriver.cs");
         var admission = Read(root, "unity", "TheLogsAreWrong", "Assets", "Gate3", "Admission", "Gate3ProductionAdmissionComposition.cs");
+        var d024 = Read(root, "unity", "TheLogsAreWrong", "Assets", "Gate3", "Admission", "Gate3NetworkIntentAdmissionBuffer.cs");
 
         Assert.Contains("BeforeResolution += ReserveBeforeResolution", composition, StringComparison.Ordinal);
         Assert.Contains("ResolutionProcessed += OnResolutionProcessed", composition, StringComparison.Ordinal);
         Assert.Contains("_ledger.Reserve(decoded.Envelope, origin, decoded.AuthoritativeReceiveTick)", composition, StringComparison.Ordinal);
         Assert.Contains("_admission.AdmitResolvedNetworkIntent(resolution.Evidence)", composition, StringComparison.Ordinal);
+        Assert.Contains("ExistingIntentIdRequiresD024", composition, StringComparison.Ordinal);
+        Assert.Contains("ResolveDuplicateAfterD024", composition, StringComparison.Ordinal);
+        Assert.Equal(1, CountOccurrences(composition, "_admission.AdmitResolvedNetworkIntent(resolution.Evidence)"));
         Assert.Contains("_hostDriver.AuthoritativeTickSucceeded += OnAuthoritativeTickSucceeded", composition, StringComparison.Ordinal);
         Assert.Contains("_ledger.ProjectSuccessfulTick(execution.StageTwo)", composition, StringComparison.Ordinal);
         Assert.Contains("ACTOR_NOT_BOUND", composition, StringComparison.Ordinal);
@@ -64,6 +71,14 @@ public sealed class Tlaw086ClientIntentDispositionArchitectureTests
         Assert.Contains("_resultDisposition?.BeginSession(shiftId)", admission, StringComparison.Ordinal);
         Assert.Contains("_resultDisposition?.EndSession()", admission, StringComparison.Ordinal);
         Assert.DoesNotContain("Gate3ClientIntentDispositionLedger", admission, StringComparison.Ordinal);
+
+        var shiftMismatch = d024.IndexOf("if (envelope.ShiftId != _shiftId)", StringComparison.Ordinal);
+        var duplicate = d024.IndexOf("if (!_seenIntentIds.Add(envelope.IntentId))", StringComparison.Ordinal);
+        Assert.True(shiftMismatch >= 0 && duplicate > shiftMismatch,
+            "D-024 must retain its frozen shift-before-duplicate ordering; D-026 may only consume the resulting status.");
+
+        var ledgerSource = Read(root, "unity", "TheLogsAreWrong", "Assets", "Gate3", "Results", "Gate3ClientIntentDispositionLedger.cs");
+        Assert.Contains("rejectionCode == \"ACTOR_NOT_BOUND\" || rejectionCode == \"SHIFT_MISMATCH\"", ledgerSource, StringComparison.Ordinal);
 
         var execute = driver.IndexOf("var result = _session.ExecuteTick(tick, input.AcceptedIntents, input.ActiveTools);", StringComparison.Ordinal);
         var published = driver.IndexOf("AuthoritativeTickSucceeded?.Invoke(tick, result);", StringComparison.Ordinal);
@@ -114,6 +129,17 @@ public sealed class Tlaw086ClientIntentDispositionArchitectureTests
         var path = Path.Combine([root, .. segments]);
         Assert.True(File.Exists(path), "Required TLAW-086 path is missing: " + path);
         return File.ReadAllText(path);
+    }
+
+    private static int CountOccurrences(string source, string value)
+    {
+        var count = 0;
+        for (var index = source.IndexOf(value, StringComparison.Ordinal); index >= 0; index = source.IndexOf(value, index + value.Length, StringComparison.Ordinal))
+        {
+            count++;
+        }
+
+        return count;
     }
 
     private static string FindRepositoryRoot()

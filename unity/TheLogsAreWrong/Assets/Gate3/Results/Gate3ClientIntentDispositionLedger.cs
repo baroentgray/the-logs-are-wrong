@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Text;
 using TheLogsAreWrong.Domain.Events;
@@ -550,14 +550,16 @@ namespace TheLogsAreWrong.Gate3
     public enum Gate3ClientIntentDispositionReservationStatus
     {
         ReservedPending,
-        ReplaySameOrigin,
-        IntentIdAlreadyUsed,
+        ExistingIntentIdRequiresD024,
         ResultCapacityExhausted,
         InvalidEvidence,
         LedgerDisposed
     }
 
-    /// <summary>One server-local reserve/replay decision. Only the caller chooses whether a deliverable is currently live.</summary>
+    /// <summary>
+    /// One server-local capacity/correlation reservation. Existing IntentId state is deliberately not a gameplay
+    /// duplicate decision: eligible evidence must continue to the one D-024 owner before D-026 chooses delivery.
+    /// </summary>
     public readonly struct Gate3ClientIntentDispositionReservation
     {
         internal Gate3ClientIntentDispositionReservation(Gate3ClientIntentDispositionReservationStatus status, Gate3ClientIntentDisposition disposition)
@@ -569,6 +571,7 @@ namespace TheLogsAreWrong.Gate3
         public Gate3ClientIntentDispositionReservationStatus Status { get; }
         public Gate3ClientIntentDisposition Disposition { get; }
         public bool HasDisposition => Disposition != null;
+        public bool CreatedRecord => Status == Gate3ClientIntentDispositionReservationStatus.ReservedPending;
     }
 
     /// <summary>
@@ -595,7 +598,10 @@ namespace TheLogsAreWrong.Gate3
 
         public int Count => _records.Count;
 
-        /// <summary>Reserves retention before a new decoded network intent may enter the unchanged D-025 owner.</summary>
+        /// <summary>
+        /// Reserves retention before a genuinely new decoded network intent may enter the unchanged D-025 owner.
+        /// An existing result correlation never preempts D-024: it only avoids allocating a second D-026 record.
+        /// </summary>
         public Gate3ClientIntentDispositionReservation Reserve(IntentEnvelope envelope, Gate3NetworkOrigin origin, ServerTick authoritativeReceiveTick)
         {
             if (_disposed)
@@ -610,14 +616,9 @@ namespace TheLogsAreWrong.Gate3
 
             if (_records.TryGetValue(envelope.IntentId, out var existing))
             {
-                if (existing.Origin == origin && existing.DeliveryAuthorized)
-                {
-                    return new Gate3ClientIntentDispositionReservation(Gate3ClientIntentDispositionReservationStatus.ReplaySameOrigin, existing.Disposition);
-                }
-
                 return new Gate3ClientIntentDispositionReservation(
-                    Gate3ClientIntentDispositionReservationStatus.IntentIdAlreadyUsed,
-                    Rejected(envelope.ShiftId, envelope.IntentId, authoritativeReceiveTick, null, "INTENT_ID_ALREADY_USED"));
+                    Gate3ClientIntentDispositionReservationStatus.ExistingIntentIdRequiresD024,
+                    existing.Disposition);
             }
 
             if (_records.Count >= Capacity)
@@ -630,6 +631,106 @@ namespace TheLogsAreWrong.Gate3
             var pending = Pending(envelope.ShiftId, envelope.IntentId, authoritativeReceiveTick);
             _records.Add(envelope.IntentId, new Record(origin, pending));
             return new Gate3ClientIntentDispositionReservation(Gate3ClientIntentDispositionReservationStatus.ReservedPending, pending);
+        }
+
+        /// <summary>
+        /// Keeps a newly reserved pending record, or restarts only a retained result that provably never consumed a
+        /// D-024 IntentId, after D-024 has now actually admitted the exact evidence. ActorNotBound never reached
+        /// D-024, and D-024 rejects a shift mismatch before it records the IntentId, so both remain result
+        /// correlation for a new gameplay admission rather than a D-026 duplicate decision.
+        /// </summary>
+        public bool TryBeginAdmittedAfterD024(
+            IntentEnvelope envelope,
+            Gate3NetworkOrigin currentOrigin,
+            ServerTick authoritativeReceiveTick,
+            bool reservationCreatedRecord)
+        {
+            if (_disposed
+                || !IsValidNewEvidence(envelope, currentOrigin, authoritativeReceiveTick)
+                || !_records.TryGetValue(envelope.IntentId, out var retained))
+            {
+                return false;
+            }
+
+            if (reservationCreatedRecord)
+            {
+                return retained.Origin == currentOrigin
+                       && retained.Disposition.Kind == Gate3ClientIntentDispositionKind.PENDING;
+            }
+
+            if (retained.Disposition.Kind != Gate3ClientIntentDispositionKind.REJECTED
+                || !IsPreD024RetainedRejection(retained.Disposition.RejectionCode))
+            {
+                return false;
+            }
+
+            retained.Origin = currentOrigin;
+            retained.DeliveryAuthorized = true;
+            retained.Disposition = Pending(envelope.ShiftId, envelope.IntentId, authoritativeReceiveTick);
+            return true;
+        }
+
+        /// <summary>
+        /// Resolves result replay/privacy only after the existing D-024 shared owner reported DuplicateIntentId.
+        /// This method never determines whether gameplay admission may continue and never mutates another origin's
+        /// retained result.
+        /// </summary>
+        public Gate3ClientIntentDispositionDelivery ResolveDuplicateAfterD024(
+            IntentEnvelope envelope,
+            Gate3NetworkOrigin currentOrigin,
+            ServerTick authoritativeReceiveTick,
+            bool reservationCreatedRecord)
+        {
+            if (_disposed || !IsValidNewEvidence(envelope, currentOrigin, authoritativeReceiveTick))
+            {
+                throw new InvalidOperationException("D-026 duplicate replay requires exact valid decoded evidence after D-024.");
+            }
+
+            if (!_records.TryGetValue(envelope.IntentId, out var retained))
+            {
+                throw new InvalidOperationException("D-024 reported a duplicate without the D-026 reservation correlation.");
+            }
+
+            if (reservationCreatedRecord)
+            {
+                if (retained.Origin != currentOrigin
+                    || !TryTerminalize(envelope.IntentId, null, "INTENT_ID_ALREADY_USED"))
+                {
+                    throw new InvalidOperationException("A newly reserved D-026 record could not become its D-024 duplicate terminal result.");
+                }
+
+                return new Gate3ClientIntentDispositionDelivery(retained.Origin, retained.Disposition, retained.DeliveryAuthorized);
+            }
+
+            if (retained.Origin == currentOrigin && retained.DeliveryAuthorized)
+            {
+                return new Gate3ClientIntentDispositionDelivery(retained.Origin, retained.Disposition, true);
+            }
+
+            return new Gate3ClientIntentDispositionDelivery(
+                currentOrigin,
+                Rejected(envelope.ShiftId, envelope.IntentId, authoritativeReceiveTick, null, "INTENT_ID_ALREADY_USED"),
+                true);
+        }
+
+        /// <summary>Creates an unretained current-origin admission rejection without exposing another origin's record.</summary>
+        public Gate3ClientIntentDisposition CreateUnretainedAdmissionRejection(
+            IntentEnvelope envelope,
+            ServerTick authoritativeReceiveTick,
+            string rejectionCode)
+        {
+            if (_disposed
+                || envelope == null
+                || envelope.ShiftId.IsDefault
+                || envelope.IntentId.IsDefault
+                || authoritativeReceiveTick.IsDefault
+                || authoritativeReceiveTick.Value < 0
+                || string.IsNullOrEmpty(rejectionCode))
+            {
+                throw new InvalidOperationException("D-026 requires valid decoded evidence for an unretained admission result.");
+            }
+
+            return Rejected(envelope.ShiftId, envelope.IntentId, authoritativeReceiveTick, null, rejectionCode);
         }
 
         /// <summary>Commits one admission-stage terminal mapping while preserving the pre-admission origin and receive tick.</summary>
@@ -838,6 +939,14 @@ namespace TheLogsAreWrong.Gate3
             return true;
         }
 
+        /// <summary>
+        /// The exact retained rejections D-024 produced without consuming the IntentId. `ACTOR_NOT_BOUND` never
+        /// reached D-024 at all, and D-024's frozen ordering rejects `SHIFT_MISMATCH` before its seen-IntentId add.
+        /// Every other retained result corresponds to a consumed IntentId and stays D-024's duplicate decision.
+        /// </summary>
+        private static bool IsPreD024RetainedRejection(string rejectionCode) =>
+            rejectionCode == "ACTOR_NOT_BOUND" || rejectionCode == "SHIFT_MISMATCH";
+
         private bool IsValidNewEvidence(IntentEnvelope envelope, Gate3NetworkOrigin origin, ServerTick tick) =>
             envelope != null
             && !envelope.ShiftId.IsDefault
@@ -864,7 +973,7 @@ namespace TheLogsAreWrong.Gate3
                 DeliveryAuthorized = true;
             }
 
-            internal Gate3NetworkOrigin Origin { get; }
+            internal Gate3NetworkOrigin Origin { get; set; }
             internal Gate3ClientIntentDisposition Disposition { get; set; }
             internal bool DeliveryAuthorized { get; set; }
         }
