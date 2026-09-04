@@ -170,7 +170,7 @@ not add a lock executor. Gate 1 has no button, control-surface or actor-position
 model, so `nearest_line_button` has no Gate-1 referent. Gate 2 resolves physical
 nearest-button selection and presentation against the actual control surfaces.
 
-Sources: [Issue #109 comment 5238424632](https://github.com/baroentgray/the-logs-are-wrong/issues/109#issuecomment-5238424632), `docs/PROTOTYPE_SCOPE.md`, `docs/FIRST_SHIFT_SPEC.md`, `docs/ANOMALY_MATRIX.md`, `data/anomalies.prototype.yaml`, and [docs/agent/GATE1_EXIT_AUDIT.md](GATE1_EXIT_AUDIT.md).
+Sources: [Issue #109 comment 5238424632](https://github.com/baroentgray/the-logs-are-wrong/issues/109#issuecomment-5238424632), `docs/PROTOTYPE_SCOPE.md`, `docs/FIRST_SHIFT_SPEC.md`, `docs/ANOMALY_MATRIX.md`, `data/anomalies.prototype.yaml`, and `docs/agent/GATE1_EXIT_AUDIT.md`.
 
 ## D-017 — Exact Unity/network package pins are accepted
 
