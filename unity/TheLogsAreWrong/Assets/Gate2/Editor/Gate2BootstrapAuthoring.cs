@@ -23,6 +23,8 @@ namespace TheLogsAreWrong.Gate2.EditorTools
         private const string IntentCarrierIngressScriptPath = "Assets/Gate3/IntentCarrier/Gate3IntentCarrierIngress.cs";
         private const string ActorResolutionCompositionScriptPath = "Assets/Gate3/ActorResolution/Gate3ActorResolutionComposition.cs";
         private const string ProductionAdmissionCompositionScriptPath = "Assets/Gate3/Admission/Gate3ProductionAdmissionComposition.cs";
+        private const string ClientIntentResultCarrierScriptPath = "Assets/Gate3/Results/Gate3ClientIntentResultCarrier.cs";
+        private const string ClientIntentDispositionCompositionScriptPath = "Assets/Gate3/Results/Gate3ClientIntentDispositionComposition.cs";
 
         public static void CreateBootstrapScene()
         {
@@ -36,6 +38,8 @@ namespace TheLogsAreWrong.Gate2.EditorTools
                 AssetDatabase.ImportAsset(IntentCarrierIngressScriptPath, ImportAssetOptions.ForceSynchronousImport);
                 AssetDatabase.ImportAsset(ActorResolutionCompositionScriptPath, ImportAssetOptions.ForceSynchronousImport);
                 AssetDatabase.ImportAsset(ProductionAdmissionCompositionScriptPath, ImportAssetOptions.ForceSynchronousImport);
+                AssetDatabase.ImportAsset(ClientIntentResultCarrierScriptPath, ImportAssetOptions.ForceSynchronousImport);
+                AssetDatabase.ImportAsset(ClientIntentDispositionCompositionScriptPath, ImportAssetOptions.ForceSynchronousImport);
                 if (AssetDatabase.LoadAssetAtPath<MonoScript>(ConnectionBindingScriptPath) == null)
                 {
                     throw new FileNotFoundException("The TLAW-075 connection binding script must be an imported Unity asset before bootstrap scene authoring.");
@@ -54,6 +58,12 @@ namespace TheLogsAreWrong.Gate2.EditorTools
                 if (AssetDatabase.LoadAssetAtPath<MonoScript>(ProductionAdmissionCompositionScriptPath) == null)
                 {
                     throw new FileNotFoundException("The TLAW-084 production admission composition script must be an imported Unity asset before bootstrap scene authoring.");
+                }
+
+                if (AssetDatabase.LoadAssetAtPath<MonoScript>(ClientIntentResultCarrierScriptPath) == null
+                    || AssetDatabase.LoadAssetAtPath<MonoScript>(ClientIntentDispositionCompositionScriptPath) == null)
+                {
+                    throw new FileNotFoundException("The TLAW-086 result carrier and disposition composition scripts must be imported Unity assets before bootstrap scene authoring.");
                 }
 
                 var root = new GameObject(RootName);
@@ -126,6 +136,21 @@ namespace TheLogsAreWrong.Gate2.EditorTools
                 productionAdmissionSerialized.FindProperty("_hostDriver").objectReferenceValue = owner;
                 productionAdmissionSerialized.FindProperty("_actorResolution").objectReferenceValue = actorResolution;
                 productionAdmissionSerialized.ApplyModifiedPropertiesWithoutUndo();
+
+                var resultCarrier = root.AddComponent<Gate3ClientIntentResultCarrier>();
+                var resultCarrierSerialized = new SerializedObject(resultCarrier);
+                resultCarrierSerialized.FindProperty("_networkManager").objectReferenceValue = networkManager;
+                resultCarrierSerialized.FindProperty("_connectionBinding").objectReferenceValue = connectionBinding;
+                resultCarrierSerialized.ApplyModifiedPropertiesWithoutUndo();
+
+                var disposition = root.AddComponent<Gate3ClientIntentDispositionComposition>();
+                var dispositionSerialized = new SerializedObject(disposition);
+                dispositionSerialized.FindProperty("_hostDriver").objectReferenceValue = owner;
+                dispositionSerialized.FindProperty("_actorResolution").objectReferenceValue = actorResolution;
+                dispositionSerialized.FindProperty("_admission").objectReferenceValue = productionAdmission;
+                dispositionSerialized.FindProperty("_connectionBinding").objectReferenceValue = connectionBinding;
+                dispositionSerialized.FindProperty("_resultCarrier").objectReferenceValue = resultCarrier;
+                dispositionSerialized.ApplyModifiedPropertiesWithoutUndo();
 
                 var transportSerialized = new SerializedObject(transport);
                 var peerToPeer = transportSerialized.FindProperty(Gate3TransportBootstrap.PeerToPeerSerializedProperty);
