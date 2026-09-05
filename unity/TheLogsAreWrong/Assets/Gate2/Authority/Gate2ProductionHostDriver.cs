@@ -329,6 +329,13 @@ namespace TheLogsAreWrong.Gate2
 
         public Exception Fault { get; private set; }
 
+        /// <summary>
+        /// Server-local notification emitted only after the real HostSession has returned a successful exact tick.
+        /// It grants no alternative execution path and is used by D-026 solely to project retained client results
+        /// from the returned Stage Two trace before cadence retirement.
+        /// </summary>
+        internal event Action<ServerTick, HostStageSevenEventExecution> AuthoritativeTickSucceeded;
+
 #if UNITY_EDITOR
         /// <summary>
         /// Editor-only observation of the exact real driver result for executable boundary tests. This is not
@@ -702,6 +709,7 @@ namespace TheLogsAreWrong.Gate2
 
                     DeliveredAlreadyAdmittedInputCount = checked(DeliveredAlreadyAdmittedInputCount + 1);
                     var result = _session.ExecuteTick(tick, input.AcceptedIntents, input.ActiveTools);
+                    AuthoritativeTickSucceeded?.Invoke(tick, result);
                     var retired = _cadence.RetireNextDueTick();
                     if (retired != tick)
                     {

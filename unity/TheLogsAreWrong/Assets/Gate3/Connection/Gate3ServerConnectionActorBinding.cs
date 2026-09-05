@@ -5,6 +5,38 @@ using TheLogsAreWrong.Domain.Identifiers;
 namespace TheLogsAreWrong.Gate3
 {
     /// <summary>
+    /// Opaque server-observed lifetime for one currently live transport connection. A numeric ClientId can be reused;
+    /// this monotonically allocated token deliberately cannot be reused for delivery/replay authorization.
+    /// </summary>
+    public readonly struct Gate3ServerConnectionLifetime : IEquatable<Gate3ServerConnectionLifetime>
+    {
+        private readonly long _value;
+
+        private Gate3ServerConnectionLifetime(long value) => _value = value;
+
+        public bool IsValid => _value > 0;
+        public long Value => IsValid
+            ? _value
+            : throw new InvalidOperationException("The default Gate-3 connection lifetime is invalid.");
+
+        public static Gate3ServerConnectionLifetime From(long value)
+        {
+            if (value <= 0)
+            {
+                throw new ArgumentOutOfRangeException(nameof(value), "A server connection lifetime must be positive.");
+            }
+
+            return new Gate3ServerConnectionLifetime(value);
+        }
+
+        public bool Equals(Gate3ServerConnectionLifetime other) => _value == other._value;
+        public override bool Equals(object obj) => obj is Gate3ServerConnectionLifetime other && Equals(other);
+        public override int GetHashCode() => _value.GetHashCode();
+        public static bool operator ==(Gate3ServerConnectionLifetime left, Gate3ServerConnectionLifetime right) => left.Equals(right);
+        public static bool operator !=(Gate3ServerConnectionLifetime left, Gate3ServerConnectionLifetime right) => !left.Equals(right);
+    }
+
+    /// <summary>
     /// Canonical key for an identity observed by the server-side transport callback. The default
     /// value is deliberately invalid because Fishy's first reusable connection id is zero.
     /// </summary>

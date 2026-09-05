@@ -63,6 +63,8 @@ namespace TheLogsAreWrong.Gate3
         private Gate3ProductionAdmissionInputSource _inputSource;
         private Func<Gate3ServerReceiveTickObservation> _observeReceiveTick;
         private bool _subscribed;
+        private bool _resultDispositionAttached;
+        private Gate3ClientIntentDispositionComposition _resultDisposition;
 
         /// <summary>Most recent shared-owner disposition of resolved network evidence; server-local only.</summary>
         public Gate3NetworkIntentAdmissionResult LastNetworkAdmission { get; private set; }
@@ -114,7 +116,24 @@ namespace TheLogsAreWrong.Gate3
             _observeReceiveTick = observeReceiveTick ?? throw new ArgumentNullException(nameof(observeReceiveTick));
             _sharedOwner = new Gate3NetworkIntentAdmissionBuffer(shiftId);
             _inputSource = new Gate3ProductionAdmissionInputSource(_sharedOwner, _observeReceiveTick);
+            _resultDisposition?.BeginSession(shiftId);
             return _inputSource;
+        }
+
+        /// <summary>
+        /// D-026 attaches before session creation and becomes the only continuation from actor resolution to this
+        /// unchanged D-025 owner. Without it, the retained pre-D-026 direct resolved-evidence subscription remains.
+        /// </summary>
+        internal void AttachResultDispositionComposition(Gate3ClientIntentDispositionComposition resultDisposition)
+        {
+            if (_sharedOwner != null || _inputSource != null)
+            {
+                throw new InvalidOperationException("The D-026 disposition composition must attach before the production admission session begins.");
+            }
+
+            _resultDisposition = resultDisposition ?? throw new ArgumentNullException(nameof(resultDisposition));
+            _resultDispositionAttached = true;
+            Unsubscribe();
         }
 
         /// <summary>
@@ -146,6 +165,8 @@ namespace TheLogsAreWrong.Gate3
         /// <summary>Disposes all lifecycle-bound shared state so retained old ingress cannot enter a fresh session.</summary>
         internal void EndSession()
         {
+            _resultDisposition?.EndSession();
+
             if (_inputSource != null)
             {
                 _inputSource.Dispose();
@@ -164,7 +185,7 @@ namespace TheLogsAreWrong.Gate3
 
         private void Subscribe()
         {
-            if (_subscribed)
+            if (_subscribed || _resultDispositionAttached)
             {
                 return;
             }
@@ -184,16 +205,20 @@ namespace TheLogsAreWrong.Gate3
             _subscribed = false;
         }
 
-        private void OnResolvedNetworkIntent(Gate3ResolvedNetworkIntentEvidence evidence)
+        /// <summary>Delegates only already-resolved evidence to the sole D-025 admission/order owner.</summary>
+        internal Gate3NetworkIntentAdmissionResult AdmitResolvedNetworkIntent(Gate3ResolvedNetworkIntentEvidence evidence)
         {
             if (_sharedOwner == null)
             {
                 LastNetworkAdmission = Gate3NetworkIntentAdmissionResult.Rejected(Gate3NetworkIntentAdmissionStatus.BufferDisposed);
-                return;
+                return LastNetworkAdmission;
             }
 
             LastNetworkAdmission = _sharedOwner.Admit(evidence);
+            return LastNetworkAdmission;
         }
+
+        private void OnResolvedNetworkIntent(Gate3ResolvedNetworkIntentEvidence evidence) => AdmitResolvedNetworkIntent(evidence);
     }
 
     /// <summary>

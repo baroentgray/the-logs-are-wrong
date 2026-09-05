@@ -6,6 +6,9 @@ using UnityEngine;
 
 namespace TheLogsAreWrong.Gate3
 {
+    /// <summary>Optional D-026 continuation gate invoked after decoded ingress and before actor resolution/admission.</summary>
+    public delegate bool Gate3DecodedNetworkIntentPreResolutionHandler(Gate3DecodedNetworkIntentEvidence decoded);
+
     /// <summary>Successful server-local identity evidence only; it is not an admitted or accepted intent.</summary>
     public readonly struct Gate3ResolvedNetworkIntentEvidence
     {
@@ -111,6 +114,15 @@ namespace TheLogsAreWrong.Gate3
         /// </summary>
         public event Action<Gate3ResolvedNetworkIntentEvidence> Resolved;
 
+        /// <summary>
+        /// Optional bounded D-026 reservation gate. A false result means no actor resolution or D-025 admission may
+        /// follow this decoded evidence; it is used only for retained replay/capacity fail-closed handling.
+        /// </summary>
+        public event Gate3DecodedNetworkIntentPreResolutionHandler BeforeResolution;
+
+        /// <summary>Publishes the exact existing resolution result for the D-026 result owner before D-025 admission.</summary>
+        public event Action<Gate3DecodedNetworkIntentEvidence, Gate3ActorResolutionResult> ResolutionProcessed;
+
         private void Awake()
         {
             if (_carrierIngress == null || _connectionBinding == null)
@@ -160,11 +172,36 @@ namespace TheLogsAreWrong.Gate3
 
         private void OnDecoded(Gate3DecodedNetworkIntentEvidence decoded)
         {
+            if (!CanContinueToResolution(decoded))
+            {
+                return;
+            }
+
             LastResult = _processor.Process(decoded);
+            ResolutionProcessed?.Invoke(decoded, LastResult);
             if (LastResult.HasEvidence)
             {
                 Resolved?.Invoke(LastResult.Evidence);
             }
+        }
+
+        private bool CanContinueToResolution(Gate3DecodedNetworkIntentEvidence decoded)
+        {
+            var handlers = BeforeResolution;
+            if (handlers == null)
+            {
+                return true;
+            }
+
+            foreach (Gate3DecodedNetworkIntentPreResolutionHandler handler in handlers.GetInvocationList())
+            {
+                if (!handler(decoded))
+                {
+                    return false;
+                }
+            }
+
+            return true;
         }
     }
 }

@@ -119,7 +119,7 @@ NavMeshSettings:
     debug:
       m_Flags: 0
   m_NavMeshData: {fileID: 0}
---- !u!1 &165937632
+--- !u!1 &962010973
 GameObject:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
@@ -127,54 +127,10 @@ GameObject:
   m_PrefabAsset: {fileID: 0}
   serializedVersion: 6
   m_Component:
-  - component: {fileID: 165937634}
-  - component: {fileID: 165937633}
-  m_Layer: 0
-  m_Name: Gate3SteamRuntime
-  m_TagString: Untagged
-  m_Icon: {fileID: 0}
-  m_NavMeshLayer: 0
-  m_StaticEditorFlags: 0
-  m_IsActive: 0
---- !u!114 &165937633
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 165937632}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: ef4bffeda13d7a748973ff9204401c07, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: Assembly-CSharp::SteamManager
---- !u!4 &165937634
-Transform:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 165937632}
-  serializedVersion: 2
-  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: 0, y: 0, z: 0}
-  m_LocalScale: {x: 1, y: 1, z: 1}
-  m_ConstrainProportionsScale: 0
-  m_Children: []
-  m_Father: {fileID: 0}
-  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
---- !u!1 &184245858
-GameObject:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  serializedVersion: 6
-  m_Component:
-  - component: {fileID: 184245859}
-  - component: {fileID: 184245862}
-  - component: {fileID: 184245861}
-  - component: {fileID: 184245860}
+  - component: {fileID: 962010974}
+  - component: {fileID: 962010977}
+  - component: {fileID: 962010976}
+  - component: {fileID: 962010975}
   m_Layer: 0
   m_Name: Gate2BootstrapFloor
   m_TagString: Untagged
@@ -182,28 +138,28 @@ GameObject:
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
   m_IsActive: 1
---- !u!4 &184245859
+--- !u!4 &962010974
 Transform:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 184245858}
+  m_GameObject: {fileID: 962010973}
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
   m_LocalPosition: {x: 0, y: 0, z: 0}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
-  m_Father: {fileID: 1710927314}
+  m_Father: {fileID: 1784800928}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
---- !u!23 &184245860
+--- !u!23 &962010975
 MeshRenderer:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 184245858}
+  m_GameObject: {fileID: 962010973}
   m_Enabled: 1
   m_CastShadows: 1
   m_ReceiveShadows: 1
@@ -246,13 +202,13 @@ MeshRenderer:
   m_SortingOrder: 0
   m_MaskInteraction: 0
   m_AdditionalVertexStreams: {fileID: 0}
---- !u!64 &184245861
+--- !u!64 &962010976
 MeshCollider:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 184245858}
+  m_GameObject: {fileID: 962010973}
   m_Material: {fileID: 0}
   m_IncludeLayers:
     serializedVersion: 2
@@ -268,15 +224,15 @@ MeshCollider:
   m_Convex: 0
   m_CookingOptions: 30
   m_Mesh: {fileID: 10209, guid: 0000000000000000e000000000000000, type: 0}
---- !u!33 &184245862
+--- !u!33 &962010977
 MeshFilter:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 184245858}
+  m_GameObject: {fileID: 962010973}
   m_Mesh: {fileID: 10209, guid: 0000000000000000e000000000000000, type: 0}
---- !u!1 &442825318
+--- !u!1 &1321381050
 GameObject:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
@@ -284,91 +240,8 @@ GameObject:
   m_PrefabAsset: {fileID: 0}
   serializedVersion: 6
   m_Component:
-  - component: {fileID: 442825319}
-  - component: {fileID: 442825320}
-  m_Layer: 0
-  m_Name: Gate2BootstrapCamera
-  m_TagString: MainCamera
-  m_Icon: {fileID: 0}
-  m_NavMeshLayer: 0
-  m_StaticEditorFlags: 0
-  m_IsActive: 1
---- !u!4 &442825319
-Transform:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 442825318}
-  serializedVersion: 2
-  m_LocalRotation: {x: 0.1305262, y: -0, z: -0, w: 0.9914449}
-  m_LocalPosition: {x: 0, y: 3, z: -8}
-  m_LocalScale: {x: 1, y: 1, z: 1}
-  m_ConstrainProportionsScale: 0
-  m_Children: []
-  m_Father: {fileID: 1710927314}
-  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
---- !u!20 &442825320
-Camera:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 442825318}
-  m_Enabled: 1
-  serializedVersion: 2
-  m_ClearFlags: 2
-  m_BackGroundColor: {r: 0.05, g: 0.05, b: 0.06, a: 1}
-  m_projectionMatrixMode: 1
-  m_GateFitMode: 2
-  m_FOVAxisMode: 0
-  m_Iso: 200
-  m_ShutterSpeed: 0.005
-  m_Aperture: 16
-  m_FocusDistance: 10
-  m_FocalLength: 50
-  m_BladeCount: 5
-  m_Curvature: {x: 2, y: 11}
-  m_BarrelClipping: 0.25
-  m_Anamorphism: 0
-  m_SensorSize: {x: 36, y: 24}
-  m_LensShift: {x: 0, y: 0}
-  m_NormalizedViewPortRect:
-    serializedVersion: 2
-    x: 0
-    y: 0
-    width: 1
-    height: 1
-  near clip plane: 0.3
-  far clip plane: 1000
-  field of view: 60
-  orthographic: 0
-  orthographic size: 5
-  m_Depth: 0
-  m_CullingMask:
-    serializedVersion: 2
-    m_Bits: 4294967295
-  m_RenderingPath: -1
-  m_TargetTexture: {fileID: 0}
-  m_TargetDisplay: 0
-  m_TargetEye: 3
-  m_HDR: 1
-  m_AllowMSAA: 1
-  m_AllowDynamicResolution: 0
-  m_ForceIntoRT: 0
-  m_OcclusionCulling: 1
-  m_StereoConvergence: 10
-  m_StereoSeparation: 0.022
---- !u!1 &858134243
-GameObject:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  serializedVersion: 6
-  m_Component:
-  - component: {fileID: 858134244}
-  - component: {fileID: 858134245}
+  - component: {fileID: 1321381051}
+  - component: {fileID: 1321381052}
   m_Layer: 0
   m_Name: Gate2BootstrapLight
   m_TagString: Untagged
@@ -376,28 +249,28 @@ GameObject:
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
   m_IsActive: 1
---- !u!4 &858134244
+--- !u!4 &1321381051
 Transform:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 858134243}
+  m_GameObject: {fileID: 1321381050}
   serializedVersion: 2
   m_LocalRotation: {x: 0.40821794, y: -0.23456973, z: 0.10938166, w: 0.8754261}
   m_LocalPosition: {x: 0, y: 0, z: 0}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
-  m_Father: {fileID: 1710927314}
+  m_Father: {fileID: 1784800928}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
---- !u!108 &858134245
+--- !u!108 &1321381052
 Light:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 858134243}
+  m_GameObject: {fileID: 1321381050}
   m_Enabled: 1
   serializedVersion: 12
   m_Type: 1
@@ -456,7 +329,7 @@ Light:
   m_LightUnit: 1
   m_LuxAtDistance: 1
   m_EnableSpotReflector: 1
---- !u!1 &1710927302
+--- !u!1 &1524230632
 GameObject:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
@@ -464,18 +337,147 @@ GameObject:
   m_PrefabAsset: {fileID: 0}
   serializedVersion: 6
   m_Component:
-  - component: {fileID: 1710927314}
-  - component: {fileID: 1710927313}
-  - component: {fileID: 1710927312}
-  - component: {fileID: 1710927311}
-  - component: {fileID: 1710927310}
-  - component: {fileID: 1710927309}
-  - component: {fileID: 1710927308}
-  - component: {fileID: 1710927307}
-  - component: {fileID: 1710927306}
-  - component: {fileID: 1710927305}
-  - component: {fileID: 1710927304}
-  - component: {fileID: 1710927303}
+  - component: {fileID: 1524230634}
+  - component: {fileID: 1524230633}
+  m_Layer: 0
+  m_Name: Gate3SteamRuntime
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 0
+--- !u!114 &1524230633
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1524230632}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: ef4bffeda13d7a748973ff9204401c07, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::SteamManager
+--- !u!4 &1524230634
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1524230632}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 0}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!1 &1531021859
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 1531021860}
+  - component: {fileID: 1531021861}
+  m_Layer: 0
+  m_Name: Gate2BootstrapCamera
+  m_TagString: MainCamera
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!4 &1531021860
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1531021859}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0.1305262, y: -0, z: -0, w: 0.9914449}
+  m_LocalPosition: {x: 0, y: 3, z: -8}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 1784800928}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!20 &1531021861
+Camera:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1531021859}
+  m_Enabled: 1
+  serializedVersion: 2
+  m_ClearFlags: 2
+  m_BackGroundColor: {r: 0.05, g: 0.05, b: 0.06, a: 1}
+  m_projectionMatrixMode: 1
+  m_GateFitMode: 2
+  m_FOVAxisMode: 0
+  m_Iso: 200
+  m_ShutterSpeed: 0.005
+  m_Aperture: 16
+  m_FocusDistance: 10
+  m_FocalLength: 50
+  m_BladeCount: 5
+  m_Curvature: {x: 2, y: 11}
+  m_BarrelClipping: 0.25
+  m_Anamorphism: 0
+  m_SensorSize: {x: 36, y: 24}
+  m_LensShift: {x: 0, y: 0}
+  m_NormalizedViewPortRect:
+    serializedVersion: 2
+    x: 0
+    y: 0
+    width: 1
+    height: 1
+  near clip plane: 0.3
+  far clip plane: 1000
+  field of view: 60
+  orthographic: 0
+  orthographic size: 5
+  m_Depth: 0
+  m_CullingMask:
+    serializedVersion: 2
+    m_Bits: 4294967295
+  m_RenderingPath: -1
+  m_TargetTexture: {fileID: 0}
+  m_TargetDisplay: 0
+  m_TargetEye: 3
+  m_HDR: 1
+  m_AllowMSAA: 1
+  m_AllowDynamicResolution: 0
+  m_ForceIntoRT: 0
+  m_OcclusionCulling: 1
+  m_StereoConvergence: 10
+  m_StereoSeparation: 0.022
+--- !u!1 &1784800914
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 1784800928}
+  - component: {fileID: 1784800927}
+  - component: {fileID: 1784800926}
+  - component: {fileID: 1784800925}
+  - component: {fileID: 1784800924}
+  - component: {fileID: 1784800923}
+  - component: {fileID: 1784800922}
+  - component: {fileID: 1784800921}
+  - component: {fileID: 1784800920}
+  - component: {fileID: 1784800919}
+  - component: {fileID: 1784800918}
+  - component: {fileID: 1784800917}
+  - component: {fileID: 1784800916}
+  - component: {fileID: 1784800915}
   m_Layer: 0
   m_Name: Gate2BootstrapRoot
   m_TagString: Untagged
@@ -483,98 +485,129 @@ GameObject:
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
   m_IsActive: 1
---- !u!114 &1710927303
+--- !u!114 &1784800915
 MonoBehaviour:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 1710927302}
+  m_GameObject: {fileID: 1784800914}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 32db3f27d3af468b8a1ab5e61ebd2fc7, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::TheLogsAreWrong.Gate3.Gate3ClientIntentDispositionComposition
+  _hostDriver: {fileID: 1784800926}
+  _actorResolution: {fileID: 1784800918}
+  _admission: {fileID: 1784800917}
+  _connectionBinding: {fileID: 1784800920}
+  _resultCarrier: {fileID: 1784800916}
+--- !u!114 &1784800916
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1784800914}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: cd09364becdd4047b0039d0859a11a9e, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::TheLogsAreWrong.Gate3.Gate3ClientIntentResultCarrier
+  _networkManager: {fileID: 1784800925}
+  _connectionBinding: {fileID: 1784800920}
+--- !u!114 &1784800917
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1784800914}
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 8c5a7ae68d2b4e0ca6f467c75caa8304, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::TheLogsAreWrong.Gate3.Gate3ProductionAdmissionComposition
-  _hostDriver: {fileID: 1710927312}
-  _actorResolution: {fileID: 1710927304}
---- !u!114 &1710927304
+  _hostDriver: {fileID: 1784800926}
+  _actorResolution: {fileID: 1784800918}
+--- !u!114 &1784800918
 MonoBehaviour:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 1710927302}
+  m_GameObject: {fileID: 1784800914}
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: b27cbc457b6e4f4a8fd3a21b85a795e7, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::TheLogsAreWrong.Gate3.Gate3ActorResolutionComposition
-  _carrierIngress: {fileID: 1710927305}
-  _connectionBinding: {fileID: 1710927306}
---- !u!114 &1710927305
+  _carrierIngress: {fileID: 1784800919}
+  _connectionBinding: {fileID: 1784800920}
+--- !u!114 &1784800919
 MonoBehaviour:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 1710927302}
+  m_GameObject: {fileID: 1784800914}
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: ebbcbc99da09d5c4fb29f2531a5082cc, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::TheLogsAreWrong.Gate3.Gate3IntentCarrierIngress
-  _networkManager: {fileID: 1710927311}
-  _hostDriver: {fileID: 1710927312}
---- !u!114 &1710927306
+  _networkManager: {fileID: 1784800925}
+  _hostDriver: {fileID: 1784800926}
+--- !u!114 &1784800920
 MonoBehaviour:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 1710927302}
+  m_GameObject: {fileID: 1784800914}
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: b38685344e6b9644190ff12e8051fd8c, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::TheLogsAreWrong.Gate3.Gate3ServerConnectionActorBindingBridge
-  _transport: {fileID: 1710927309}
---- !u!114 &1710927307
+  _transport: {fileID: 1784800923}
+--- !u!114 &1784800921
 MonoBehaviour:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 1710927302}
+  m_GameObject: {fileID: 1784800914}
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: f9c2e8efaf5146df9442c4930d46c2bd, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::TheLogsAreWrong.Gate3.Gate3TransportLifecycle
-  _networkManager: {fileID: 1710927311}
-  _transport: {fileID: 1710927309}
-  _steamRuntime: {fileID: 165937632}
+  _networkManager: {fileID: 1784800925}
+  _transport: {fileID: 1784800923}
+  _steamRuntime: {fileID: 1524230632}
   _transitionTimeoutSeconds: 15
---- !u!114 &1710927308
+--- !u!114 &1784800922
 MonoBehaviour:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 1710927302}
+  m_GameObject: {fileID: 1784800914}
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 1356355e449a535408307b87778e9721, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::TheLogsAreWrong.Gate3.Gate3TransportBootstrap
-  _networkManager: {fileID: 1710927311}
-  _transport: {fileID: 1710927309}
---- !u!114 &1710927309
+  _networkManager: {fileID: 1784800925}
+  _transport: {fileID: 1784800923}
+--- !u!114 &1784800923
 MonoBehaviour:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 1710927302}
+  m_GameObject: {fileID: 1784800914}
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 28b19962fe839804180bd02ce1a545f0, type: 3}
@@ -585,19 +618,19 @@ MonoBehaviour:
   _maximumClients: 9001
   _peerToPeer: 1
   _clientAddress: 
---- !u!114 &1710927310
+--- !u!114 &1784800924
 MonoBehaviour:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 1710927302}
+  m_GameObject: {fileID: 1784800914}
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 34e4a322dca349547989b14021da4e23, type: 3}
   m_Name: 
   m_EditorClassIdentifier: FishNet.Runtime::FishNet.Managing.Transporting.TransportManager
-  Transport: {fileID: 1710927309}
+  Transport: {fileID: 1784800923}
   _maximumClientPacketSize: 20480
   _intermediateLayer: {fileID: 0}
   _latencySimulator:
@@ -606,13 +639,13 @@ MonoBehaviour:
     _latency: 0
     _outOfOrder: 0
     _packetLoss: 0
---- !u!114 &1710927311
+--- !u!114 &1784800925
 MonoBehaviour:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 1710927302}
+  m_GameObject: {fileID: 1784800914}
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: d2c95dfde7d73b54dbbdc23155d35d36, type: 3}
@@ -625,13 +658,13 @@ MonoBehaviour:
   _dontDestroyOnLoad: 0
   _objectPool: {fileID: 0}
   _persistence: 0
---- !u!114 &1710927312
+--- !u!114 &1784800926
 MonoBehaviour:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 1710927302}
+  m_GameObject: {fileID: 1784800914}
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: ce4dbdcb7368b1f4f8c8712006f7bff2, type: 3}
@@ -640,40 +673,40 @@ MonoBehaviour:
   _c1ArtifactBase64: {fileID: -7152877127606029791, guid: 0a60b29bf1c8427f9a8c7c2d6f56a069, type: 3}
   _c1Manifest: {fileID: -7152877127606029791, guid: 5d7a507de5cc4ebc8e400509464b1070, type: 3}
   _selectedProfileId: learning
---- !u!114 &1710927313
+--- !u!114 &1784800927
 MonoBehaviour:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 1710927302}
+  m_GameObject: {fileID: 1784800914}
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 2ca15cc2b3169df4bb71fedb13d4618f, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::TheLogsAreWrong.Gate2.Gate2BootstrapRoot
   _smokeFrames: 60
---- !u!4 &1710927314
+--- !u!4 &1784800928
 Transform:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 1710927302}
+  m_GameObject: {fileID: 1784800914}
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
   m_LocalPosition: {x: 0, y: 0, z: 0}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children:
-  - {fileID: 442825319}
-  - {fileID: 858134244}
-  - {fileID: 184245859}
+  - {fileID: 1531021860}
+  - {fileID: 1321381051}
+  - {fileID: 962010974}
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1660057539 &9223372036854775807
 SceneRoots:
   m_ObjectHideFlags: 0
   m_Roots:
-  - {fileID: 1710927314}
-  - {fileID: 165937634}
+  - {fileID: 1784800928}
+  - {fileID: 1524230634}
