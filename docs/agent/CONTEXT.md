@@ -8,6 +8,10 @@ Gate 0 is closed and protected from accidental edits. Its frozen documents and a
 
 The canonical source hierarchy is recorded in `CONTEXT_INDEX.md`. Treat GitHub merged code and the exact reviewed SHA as the executable contract; use Linear for work queue/status; treat this pack as operational context, `CURRENT_STATE.md` as the single non-authoritative volatile current-state cache, and `ACTIVE_RUNS.md` plus `HANDOFF.md` as generated non-authoritative projections.
 
+## Non-authoritative memory layer
+
+`tlaw-memory` and its local Basic Memory index are a non-authoritative retrieval/cache layer. They may help locate or reconstruct relevant project context; they cannot determine or override authoritative status, grant owner authorization or workflow permission, or establish a reviewed SHA, repository state, gameplay decision, architecture decision, asset disposition, gate state, or any other authoritative project fact. Verify every such claim against the higher-authority sources already defined in `CONTEXT_INDEX.md`. A memory label such as `LOCKED`, `ACCEPTED`, or `REJECTED` only mirrors an identified authoritative source. Missing, stale, contradictory, or unsourced memory is never permission to infer or guess.
+
 ## Preserved merged semantics
 
 `EventSequence` uses zero as `None`/unassigned, while `StateVersion` and `ServerTick` retain initialized zero as a real value. Preserve that distinction; it was clarified for the time/event-journal increment in [Issue #2](https://github.com/baroentgray/the-logs-are-wrong/issues/2) and [PR #4](https://github.com/baroentgray/the-logs-are-wrong/pull/4).
