@@ -1,0 +1,127 @@
+{
+  "gate": "TLAW_COMPOUND_APPLICATOR_01_COMPOUND_PROXY_CLEANUP_01_REVIEW_01",
+  "review_date": "2026-09-14",
+  "verdict": "APPROVE WITH NON-BLOCKING NOTES",
+  "promotion_eligible": true,
+  "custody": {
+    "zip_sha256": "94ffb12fdc94cf8dc41a4d7707f89863738af2c674c37212113327d656bb302f",
+    "zip_size": 2118182,
+    "status": "PASS"
+  },
+  "artifacts": {
+    "input_blend": "0d9a66777a28b949e910885082ae3c4a4c54382a4957c331508e9c10fb226c1a",
+    "input_glb": "04966c05f08e94a88409b526d4c3b529e450a70f2171b270057f79df1d3e1d0f",
+    "output_blend": "be48b0910205b2a6135a131e49d2b3f099b75e1cbccea449d4cd98639968527a",
+    "output_glb": "eba529c0ebd04086d5fe4c4defb731e3580ca408a31e140f341a4da730a8cd65"
+  },
+  "prior_independent_review": {
+    "sha256": "8d358fed4b41d4ec3b5a001da1c3695ecba416b5eec06076b13508b5b5756beb",
+    "size": 20716,
+    "available_in_review_runtime": true
+  },
+  "delta": {
+    "removed_nodes": [
+      "CompoundProxy"
+    ],
+    "added_nodes": [],
+    "removed_mesh_names": [
+      "Cube.198"
+    ],
+    "shared_parent_deltas": 0,
+    "shared_transform_deltas": 0,
+    "shared_position_deltas": 0,
+    "shared_normal_deltas": 0,
+    "shared_index_deltas": 0,
+    "uv_float_noise_nodes": 149,
+    "uv_max_abs_delta": 5.960464477539063e-08,
+    "material_definition_deltas": 0,
+    "unexplained_exported_delta": 0
+  },
+  "compound_proxy": {
+    "object_absent": true,
+    "mesh_absent": true,
+    "exact_geometry_duplicate_found": false,
+    "route_ochre_users_before": 32,
+    "route_ochre_users_after": 31,
+    "route_ochre_preserved": true
+  },
+  "applicator": {
+    "nodes": 17,
+    "meshes": 13,
+    "triangles": 4576,
+    "changed_exported_objects": 0,
+    "root_pose_blender": [
+      0.6000000238418579,
+      3.25,
+      0.0
+    ]
+  },
+  "anchors": {
+    "input": 19,
+    "output": 19,
+    "transform_delta": 0,
+    "ap_procedure_blender": [
+      -0.30000001192092896,
+      4.0,
+      0.0
+    ]
+  },
+  "procedure": {
+    "samples": 41,
+    "applicator_real": 0,
+    "procedure_geometry_real": 0,
+    "local_splashguard_clearance_m": 0.025000052452087473,
+    "fan_nozzle_clearance_m": 0.1399999427795411,
+    "procedure_guide_clearance_m": 0.005000019073486239
+  },
+  "negative_controls": {
+    "A_surface_fail_stations": 11,
+    "B_surface_fail_stations": 15,
+    "C_surface_fail_stations": 4,
+    "independent_volume_detector_all_fail": true
+  },
+  "static_contacts": [
+    [
+      "Applicator_Foot",
+      "MainShopFloor",
+      16
+    ]
+  ],
+  "working_volumes": {
+    "west_red_tape_applicator_hits": 0,
+    "ap_procedure_player_box_applicator_hits": 0
+  },
+  "glb": {
+    "scenes": 1,
+    "nodes": 323,
+    "meshes": 276,
+    "triangles": 36048,
+    "materials": 25,
+    "review_nodes": 0,
+    "cameras": 0,
+    "lights": 0,
+    "missing_uv_primitives": 0,
+    "missing_normal_primitives": 0,
+    "invalid_indices": 0,
+    "zero_area_triangles": 0,
+    "zero_length_normals": 0,
+    "opposed_face_normals": 0
+  },
+  "material_note": {
+    "TLAW_MechanicalMetal_roughness_input": 0.4699999988079071,
+    "TLAW_MechanicalMetal_roughness_output": 0.4699999988079071
+  },
+  "worker_official_validator_secondary_evidence": {
+    "pass": 23,
+    "fail": 0,
+    "untested": 1,
+    "skip": 4,
+    "engine_import": "UNTESTED"
+  },
+  "review_runtime": {
+    "blender_available": false,
+    "unity_run": false,
+    "production_mutation": false
+  },
+  "persistent_project_copy_required": true
+}
