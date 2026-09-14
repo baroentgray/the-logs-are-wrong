@@ -8,10 +8,10 @@ Git/LFS custody manifest for the reviewed Compound Applicator production lineage
 
 Disposition remains controlled by identified owner / Control Center decisions.
 
-Gate: `TLAW_DURABLE_PRODUCTION_ARTIFACTS_GIT_LFS_01`  
-Live base: `origin/main` `8bd02c8f21a3efe7425186f55f8e3cb9030021fe`  
-Branch: `task/TLAW-durable-production-artifacts-lfs-01`  
-Canonical promotion performed by this gate: **NO**  
+Gate: `TLAW_DURABLE_PRODUCTION_ARTIFACTS_GIT_LFS_01`
+Live base: `origin/main` `8bd02c8f21a3efe7425186f55f8e3cb9030021fe`
+Branch: `task/TLAW-durable-production-artifacts-lfs-01`
+Canonical promotion performed by this gate: **NO**
 Active canonical identity changed by this gate: **NO**
 
 ---

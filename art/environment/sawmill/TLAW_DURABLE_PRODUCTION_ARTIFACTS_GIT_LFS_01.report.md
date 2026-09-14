@@ -201,3 +201,85 @@ Local recovery copies and `TLAW_Handoff\CURRENT` were **not** deleted. CURRENT r
 ## Hard boundaries honored
 
 No Blender edits. No re-export. No geometry/material changes. No Unity. No Pipeline. No Astra. No gameplay/domain changes. No candidate cleanup. No canonical promotion. No active-canonical identity change. No PR merge. No following gate.
+
+---
+
+## CI remediation (controlled resume)
+
+Not a new gate. Bounded remediation of PR #194 after `Repository verification` failed on head `ac1275340ab3695a4c909e5f099d7439b102c1f3`.
+
+### Prior failing CI
+
+| run | event | conclusion | URL |
+|---|---|---|---|
+| `34889939932` | pull_request | failure | https://github.com/baroentgray/the-logs-are-wrong/actions/runs/34889939932 |
+| `34890120585` | pull_request | failure | https://github.com/baroentgray/the-logs-are-wrong/actions/runs/34890120585 |
+
+Restore/build/tests were otherwise successful. Failure lane: `git diff --check` (Tlaw.Verify `diff-check` / `diff-range-check`).
+
+### Root cause
+
+Trailing whitespace in imported immutable provenance reports (markdown two-space hard line-breaks) plus removable trailing whitespace in the custody-owned manifest.
+
+Exact files from `git diff --check 8bd02c8f…...HEAD`:
+
+- `art/environment/sawmill/TLAW_COMPOUND_APPLICATOR_01_CORR01.report.md`
+- `art/environment/sawmill/TLAW_COMPOUND_APPLICATOR_01_CORR01_REVIEW_01.report.md`
+- `art/environment/sawmill/TLAW_COMPOUND_APPLICATOR_01_CORR01_CANONICAL_INTEGRATION_01.report.md`
+- `art/environment/sawmill/TLAW_COMPOUND_APPLICATOR_01_COMPOUND_PROXY_CLEANUP_01.report.md`
+- `art/environment/sawmill/TLAW_COMPOUND_APPLICATOR_01_COMPOUND_PROXY_CLEANUP_01_REVIEW_01.report.md`
+- `art/environment/sawmill/TLAW_DURABLE_PRODUCTION_ARTIFACTS_GIT_LFS_01.manifest.md`
+
+Production binaries / LFS pointers were not the failure.
+
+### Fix
+
+1. Removed trailing whitespace from custody-owned `TLAW_DURABLE_PRODUCTION_ARTIFACTS_GIT_LFS_01.manifest.md` (not historical immutable evidence).
+2. Added path-specific `.gitattributes` rules only for the five imported reports:
+
+```
+art/environment/sawmill/TLAW_COMPOUND_APPLICATOR_01_CORR01.report.md whitespace=-trailing-space
+art/environment/sawmill/TLAW_COMPOUND_APPLICATOR_01_CORR01_REVIEW_01.report.md whitespace=-trailing-space
+art/environment/sawmill/TLAW_COMPOUND_APPLICATOR_01_CORR01_CANONICAL_INTEGRATION_01.report.md whitespace=-trailing-space
+art/environment/sawmill/TLAW_COMPOUND_APPLICATOR_01_COMPOUND_PROXY_CLEANUP_01.report.md whitespace=-trailing-space
+art/environment/sawmill/TLAW_COMPOUND_APPLICATOR_01_COMPOUND_PROXY_CLEANUP_01_REVIEW_01.report.md whitespace=-trailing-space
+```
+
+Did not use `*.md -whitespace`. Did not disable whitespace checking for `art/`. LFS rules for `*.blend` and `*.glb` unchanged.
+
+### Immutable evidence hashes (BEFORE == AFTER)
+
+| file | SHA-256 | result |
+|---|---|---|
+| `TLAW_COMPOUND_APPLICATOR_01_CORR01.report.md` | `1d1d3848e1bbab98976516518e6b987e3c794569801efc48ed60573e63cb928d` | PRESERVED |
+| `TLAW_COMPOUND_APPLICATOR_01_CORR01_REVIEW_01.report.md` | `3243e3ab28a22e7665631acd63661892743bc723e4b4374f43ec5e17f0186647` | PRESERVED |
+| `TLAW_COMPOUND_APPLICATOR_01_CORR01_CANONICAL_INTEGRATION_01.report.md` | `871ca600e02d5d61cf09ba4c682a80ac5a46d149caf2f488ca4648883e0244d8` | PRESERVED |
+| `TLAW_COMPOUND_APPLICATOR_01_COMPOUND_PROXY_CLEANUP_01.report.md` | `641e4deb7d0dfd072cd3f9c9b7b3050c0baa7dd37765d92069d69ccdf40b7d30` | PRESERVED |
+| `TLAW_COMPOUND_APPLICATOR_01_COMPOUND_PROXY_CLEANUP_01_REVIEW_01.report.md` | `55c9d7e77fc85e220b2d59983944530cacbd7ece39e16909654fc2e557ffeba7` | PRESERVED |
+| `TLAW_COMPOUND_APPLICATOR_01_COMPOUND_PROXY_CLEANUP_01_REVIEW_01.validation.json` | `13e25fa22e7acbacad29fb7cfbebf412150cc53719614fe25897dc2719aec936` | PRESERVED |
+
+### Production binaries (spot-check)
+
+| artifact | SHA-256 | result |
+|---|---|---|
+| canonical `.blend` | `3ccf52e23b4321fb81f651f367253ecd380c09f5bdf3a4ad6b25684c74f982a5` | PRESERVED |
+| canonical GLB | `48b1884ad81c7f6aebc7cb75c6e46da5e279bb7c7810052d91ab6931e925d665` | PRESERVED |
+| cleanup candidate `.blend` | `be48b0910205b2a6135a131e49d2b3f099b75e1cbccea449d4cd98639968527a` | PRESERVED |
+| cleanup candidate GLB | `eba529c0ebd04086d5fe4c4defb731e3580ca408a31e140f341a4da730a8cd65` | PRESERVED |
+
+### Local / CI verification
+
+Recorded after the remediation commit and GitHub run. See follow-up fields in this section after push.
+
+- Previous head: `ac1275340ab3695a4c909e5f099d7439b102c1f3`
+- Follow-up commit SHA: pending this remediation commit
+- Local `git diff --check` on working-tree fix: PASS (exit 0)
+- Local Tlaw.Verify: pending clean worktree run after commit
+- GitHub Repository verification: pending
+- PR #194 remains OPEN / NOT MERGED
+- Active canonical unchanged
+- Promotion not performed
+
+Custody-owned manifest SHA after whitespace cleanup (identity intentionally changed):
+
+`TLAW_DURABLE_PRODUCTION_ARTIFACTS_GIT_LFS_01.manifest.md` previously `b3c6af2e…` / 10554 B. New hash recorded in the remediation commit.
