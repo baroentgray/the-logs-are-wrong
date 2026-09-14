@@ -269,17 +269,18 @@ Did not use `*.md -whitespace`. Did not disable whitespace checking for `art/`. 
 
 ### Local / CI verification
 
-Recorded after the remediation commit and GitHub run. See follow-up fields in this section after push.
-
 - Previous head: `ac1275340ab3695a4c909e5f099d7439b102c1f3`
-- Follow-up commit SHA: pending this remediation commit
-- Local `git diff --check` on working-tree fix: PASS (exit 0)
-- Local Tlaw.Verify: pending clean worktree run after commit
-- GitHub Repository verification: pending
+- Follow-up commit SHA: `cfef52abf10ecc13982c2ab814bcbcf20ec11d82`
+- Local `git diff --check 8bd02c8f…...HEAD`: PASS (exit 0)
+- Local Tlaw.Verify in clean worktree of `cfef52ab…` with `--expected-head cfef52ab… --expected-base 8bd02c8f… --allow-detached-head`: **PASS** (restore/build/tests 1681/0, diff-check PASS, Gate 0 PASS)
+- GitHub Repository verification on `cfef52ab…`: **SUCCESS**
+  - run `34892145064`
+  - job `Deterministic verification` pass (1m9s)
+  - https://github.com/baroentgray/the-logs-are-wrong/actions/runs/34892145064
 - PR #194 remains OPEN / NOT MERGED
 - Active canonical unchanged
 - Promotion not performed
 
 Custody-owned manifest SHA after whitespace cleanup (identity intentionally changed):
 
-`TLAW_DURABLE_PRODUCTION_ARTIFACTS_GIT_LFS_01.manifest.md` previously `b3c6af2e…` / 10554 B. New hash recorded in the remediation commit.
+`TLAW_DURABLE_PRODUCTION_ARTIFACTS_GIT_LFS_01.manifest.md` previously `b3c6af2efd5cfb7067801afc7ff07ab7697ca4697cbca5394786add8b45c6895` / 10554 B; after cleanup `5cb627efd9cb61fe4be3c97aae68c3b29a28f0d8875bac56d86186c4a509e950` / 10546 B.
