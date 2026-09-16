@@ -26,8 +26,10 @@ RESULT=PASS WITH WARN
 OWNER_GATE_ID=TLAW_COMPOUND_APPLICATOR_01_CANONICAL_PROMOTION_01
 BASE_MAIN_SHA=93a87f625269b4e5cff304065eb6dc876c3944ad
 BRANCH=task/TLAW-compound-applicator-canonical-promotion-01
-COMMIT_SHA=PENDING_THIS_CHANGESET
-PR_NUMBER=PENDING
+PROMOTION_RECORD_COMMIT=e5f2f38d3c860239f931f55fbdb104aea69966f9
+COMMIT_SHA=e5f2f38d3c860239f931f55fbdb104aea69966f9
+PR_NUMBER=195
+PR_URL=https://github.com/baroentgray/the-logs-are-wrong/pull/195
 PREVIOUS_CANONICAL_BLEND_SHA256=3ccf52e23b4321fb81f651f367253ecd380c09f5bdf3a4ad6b25684c74f982a5
 PREVIOUS_CANONICAL_GLB_SHA256=48b1884ad81c7f6aebc7cb75c6e46da5e279bb7c7810052d91ab6931e925d665
 TARGET_CANONICAL_BLEND_SHA256=be48b0910205b2a6135a131e49d2b3f099b75e1cbccea449d4cd98639968527a
@@ -35,15 +37,16 @@ TARGET_CANONICAL_GLB_SHA256=eba529c0ebd04086d5fe4c4defb731e3580ca408a31e140f341a
 PRODUCTION_BINARY_MUTATION=NO
 PROMOTION_ELIGIBILITY=CONFIRMED
 PROMOTION_ELIGIBLE=YES
-LOCAL_VERIFY=PENDING
+LOCAL_VERIFY=PASS
 GITHUB_CI=PENDING
 PR_MERGED=NO
 EFFECTIVE_ACTIVE_CANONICAL=3ccf52e23b4321fb81f651f367253ecd380c09f5bdf3a4ad6b25684c74f982a5
 PROMOTION_CHANGESET_READY=YES
 ```
 
-`COMMIT_SHA` / `PR_NUMBER` / local verify / CI are filled on the same branch after
-commit, PR open, and verification. They do not change production bytes.
+`COMMIT_SHA` is the disposition-content commit. A follow-up docs commit on the
+same PR may record these identities; it does not change production bytes.
+GitHub CI is recorded as PENDING until the final PR head reports SUCCESS.
 
 ---
 
@@ -315,11 +318,12 @@ Filled after commit + PR on this same branch.
 |---|---|
 | BRANCH | `task/TLAW-compound-applicator-canonical-promotion-01` |
 | BASE_MAIN_SHA | `93a87f625269b4e5cff304065eb6dc876c3944ad` |
-| COMMIT_SHA | PENDING_THIS_CHANGESET |
-| PR_NUMBER | PENDING |
+| COMMIT_SHA | `e5f2f38d3c860239f931f55fbdb104aea69966f9` |
+| PR_NUMBER | 195 |
+| PR_URL | https://github.com/baroentgray/the-logs-are-wrong/pull/195 |
 | PR_MERGED | NO |
-| LOCAL_VERIFY | PENDING (`git diff --check` + `Tlaw.Verify`) |
-| GITHUB_CI | PENDING |
+| LOCAL_VERIFY | PASS (`git diff --check` + `Tlaw.Verify`; 1681 passed / 0 failed on `e5f2f38d…`) |
+| GITHUB_CI | PENDING on final PR head |
 
 Suggested commit message:
 
