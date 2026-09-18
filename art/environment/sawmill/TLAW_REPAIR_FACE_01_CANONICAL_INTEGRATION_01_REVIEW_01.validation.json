@@ -1,0 +1,135 @@
+{
+  "gate": "TLAW_REPAIR_FACE_01_CANONICAL_INTEGRATION_01_REVIEW_01",
+  "review_date": "2026-09-18",
+  "verdict": "APPROVE_WITH_NON_BLOCKING_NOTES",
+  "promotion_eligible": true,
+  "base_main_sha": "65fa89c5179798eedf248590b4f1ed87c9b90905",
+  "custody": {
+    "handoff_zip_sha256": "2f9cf0ae1f0496294f554414e292796c40b0b48f3782c72e00fa7cad39306128",
+    "handoff_zip_size": 7639338,
+    "integrated_blend_sha256": "b940f515e42795aaab785662067da1b39ef26226ddbc76410398faf4be683a5b",
+    "integrated_blend_size": 629460,
+    "integrated_glb_sha256": "68912b8b8862daea523ba5d8532a63451de4cd1a6b0a3f0416160020d5090ca7",
+    "integrated_glb_size": 2415104,
+    "worker_report_sha256": "2efa931652bf2fdba026345fc57c8629d50d7ccc897ad9170f99b31508994bab",
+    "worker_report_size": 8747
+  },
+  "raw_glb": {
+    "scenes": 1,
+    "nodes": 329,
+    "meshes": 281,
+    "triangles": 37252,
+    "materials": 25,
+    "cameras": 0,
+    "lights": 0,
+    "review_nodes": 0,
+    "animations": 5,
+    "repair_triangles": 1248,
+    "audit": "PASS"
+  },
+  "blender_audit": "WARN_UNAVAILABLE",
+  "canonical_delta": {
+    "removed": [
+      "RepairFaceProxy"
+    ],
+    "added": [
+      "TLAW_REPAIR_FACE_01",
+      "RepairFace_MountFrame",
+      "RepairFace_MainPanel",
+      "RepairFace_FixedHinges",
+      "RepairFace_PanelHingeLeaves",
+      "RepairFace_PullMounts",
+      "RepairFace_FoldFlatPull"
+    ],
+    "shared_nodes": 322,
+    "shared_parent_deltas": 0,
+    "shared_transform_deltas": 0,
+    "shared_position_deltas": 0,
+    "shared_normal_deltas": 0,
+    "shared_index_deltas": 0,
+    "shared_material_assignment_deltas": 0,
+    "uv_noise_nodes": 56,
+    "uv_max_abs_delta": 5.960464477539063e-08,
+    "other_canonical_changed_objects": 0,
+    "unexplained_delta": 0
+  },
+  "repair_subtree": {
+    "nodes": 7,
+    "meshes": 6,
+    "triangles": 1248,
+    "geometry_exact_vs_standalone": true,
+    "uv_exact_vs_standalone": true,
+    "material_assignments_exact_vs_standalone": true,
+    "root_world_pose_matches_proxy": true,
+    "max_child_local_translation_export_noise_m": 5.960464477539063e-08
+  },
+  "materials": {
+    "count": 25,
+    "duplicate_dot001": 0,
+    "definition_deltas_vs_canonical": 0,
+    "repair_materials": [
+      "TLAW_TableContactSteel",
+      "TLAW_MechanicalSteel",
+      "TLAW_SawPaint"
+    ]
+  },
+  "proxy": {
+    "repair_face_proxy": "ABSENT",
+    "repair_panel_proxy": "PRESENT"
+  },
+  "static": {
+    "unexplained_static_intersections": 0,
+    "intended_contact": "RepairFace_MountFrame <-> RepairPanelProxy",
+    "mount_axis_overlap_m": 1.86264515e-08
+  },
+  "repair_standing": {
+    "separation_m": 0.10999999,
+    "painted_line_gap_m": 0.0875,
+    "dedicated_repair_route": "NOT_DEFINED"
+  },
+  "player_routes": {
+    "actual_intrusion": false,
+    "pallet_push_centerline_distance_m": 2.6050000488758087,
+    "pallet_push_spare_after_half_width_m": 2.305000048875809,
+    "inspection_documentation_centerline_distance_m": 2.72885044808865,
+    "inspection_documentation_spare_after_half_width_m": 2.4288504480886504
+  },
+  "anchors": {
+    "count": "19/19",
+    "transform_delta": 0,
+    "ap_repair_blender": [
+      2.049999952316284,
+      -1.399999976158142,
+      0.0
+    ]
+  },
+  "closed_static_contract": {
+    "status": "PASS",
+    "pivot_hierarchy": "PASS",
+    "repair_animation_added": false,
+    "opening_sweep": "NOT_APPROVED"
+  },
+  "validator": {
+    "bundled_pass": 25,
+    "bundled_fail": 0,
+    "bundled_untested": 1,
+    "bundled_skip": 4,
+    "independent_official_rerun": false,
+    "reason": "Blender unavailable"
+  },
+  "negative_controls": {
+    "NC_A_repairstanding": "FAIL_AS_REQUIRED",
+    "NC_A_shift_blender_y_m": -0.15,
+    "NC_A_meshes_in_volume": 6,
+    "NC_B_cabinet": "FAIL_AS_REQUIRED",
+    "NC_B_shift_blender_y_m": 0.05,
+    "NC_B_candidate_vertices_strictly_inside_proxy_convex_volume": 2432
+  },
+  "post_review": {
+    "integrated_sha_match": true,
+    "active_canonical_mutation": false,
+    "standalone_mutation": false,
+    "worker_report_mutation": false
+  },
+  "persistent_project_copy_required": true
+}
