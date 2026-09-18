@@ -12,8 +12,9 @@ are preserved. Imported immutable review reports are not altered.
 
 This Repair Face-specific record does **not** rewrite Compound Applicator
 historical lineage in `TLAW_DURABLE_PRODUCTION_ARTIFACTS_GIT_LFS_01.manifest.md`.
-After merge of this promotion PR it supersedes that file's claim that `be48b091…`
-/ `eba529c0…` are the effective active canonical.
+After merge of this promotion PR, `be48b091…` / `eba529c0…` become previous
+canonical parent. The Compound Applicator custody manifest receives a matching
+current-state overlay; its historical PR #195 section is preserved.
 
 ---
 
@@ -30,6 +31,8 @@ Repository base: `origin/main` `e0e4073f10fae5058a0059d66c17ced5cc7b46f9` (PR #1
 `PRODUCTION_BINARY_MUTATION=NO`
 
 `PROMOTION_EFFECTIVE_ON_MERGE_ONLY=YES`
+
+`INTEGRATED_CANDIDATE ≠ ACTIVE_CANONICAL UNTIL MERGE`
 
 This promotion changeset does **not** modify production binaries. Exact reviewed
 integrated Repair Face bytes already versioned on `main` become the new canonical
@@ -72,13 +75,13 @@ interaction timing, or repair gameplay/procedure.
 
 Durable warnings retained (not converted to PASS):
 
-- W-01 inherited Compound Applicator clearance `LocalSplashGuard <-> log ~= 0.025000052 m` — `DURABLE WARN`
-- W-02 inherited Procedure margin `ProcedureGuide <-> log ~= 0.005000019 m` — `DURABLE INHERITED WARN`
-- W-03 Unity / engine import for `b940f515…` / `68912b8b…` = `UNTESTED` — `NON-BLOCKING WARN`
+- W-01 inherited Compound Applicator clearance `LocalSplashGuard <-> log ~= 0.025000052 m` — `DURABLE WARN`. Underlying Compound Applicator geometry is unchanged.
+- W-02 inherited Procedure margin `ProcedureGuide <-> log ~= 0.005000019 m` — `DURABLE INHERITED WARN`. Underlying Procedure geometry is unchanged.
+- W-03 Repair Face route semantics: RepairStanding separation `≈ 0.110 m` but `DEDICATED_REPAIR_ROUTE=NOT_DEFINED` — `NON-BLOCKING CONTRACT NOTE`. Do not describe 0.110 m as accepted passage/player-body clearance.
+- W-04 Repair Face moving behavior: accepted scope `CLOSED STATIC PRODUCTION POSE`; opening/sweep/moving collision unvalidated — `NON-BLOCKING CONTRACT LIMITATION`
+- W-05 Unity / engine import for exact target `b940f515…` / `68912b8b…` = `UNTESTED` — `NON-BLOCKING WARN — UNITY IMPORT UNTESTED FOR THIS TARGET`. Do not confuse this with the older successful Unity smoke for the previous canonical.
 
-RepairStanding separation `≈ 0.110 m` is standing-zone separation, **not** generic
-player-route clearance. `ACTUAL_PLAYER_ROUTE_INTRUSION=NO`. Dedicated repair route
-remains `NOT_DEFINED`.
+`ACTUAL_PLAYER_ROUTE_INTRUSION=NO`.
 
 ---
 

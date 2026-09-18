@@ -14,6 +14,10 @@ baseline **conditional on merge of this promotion PR**.
 
 `PROMOTION_EFFECTIVE_ON_MERGE_ONLY=YES`
 
+`PR_MERGED=NO`
+
+`INTEGRATED_CANDIDATE ≠ ACTIVE_CANONICAL UNTIL MERGE`
+
 Do **not** merge this PR as part of this gate. Effective active canonical remains
 `be48b091…` / `eba529c0…` until Control Center separately authorizes merge.
 
@@ -43,6 +47,7 @@ PR_MERGED=NO
 EFFECTIVE_ACTIVE_CANONICAL=be48b0910205b2a6135a131e49d2b3f099b75e1cbccea449d4cd98639968527a
 PROMOTION_CHANGESET_READY=YES
 PROMOTION_PERFORMED=NO
+INTEGRATED_CANDIDATE ≠ ACTIVE_CANONICAL UNTIL MERGE
 ```
 
 `COMMIT_SHA` is the disposition-content commit. This follow-up docs commit on the
@@ -259,8 +264,9 @@ New canonical disposition retains these WARNs. They are not converted to PASS.
 
 Classification: `DURABLE WARN`
 
-Independent integration review records this relationship on an unchanged
-canonical subtree. Not consumed by Repair Face integration.
+Underlying Compound Applicator geometry is unchanged. Independent integration
+review records this relationship on an unchanged canonical subtree. Not consumed
+by Repair Face integration.
 
 ### W-02 — inherited canonical Procedure margin
 
@@ -268,16 +274,47 @@ canonical subtree. Not consumed by Repair Face integration.
 
 Classification: `DURABLE INHERITED WARN`
 
-Official OBB vs ProcedureCradleSide. Inherited from prior canonical parent.
-Not consumed by Repair Face integration.
+Underlying Procedure geometry is unchanged. Official OBB vs ProcedureCradleSide.
+Inherited from prior canonical parent. Not consumed by Repair Face integration.
 
-### W-03 — Unity / engine import
+### W-03 — Repair Face route semantics
 
-`Unity / engine import for b940f515… / 68912b8b… = UNTESTED`
+`RepairStanding separation ≈ 0.110 m`
 
-Classification: `NON-BLOCKING WARN`
+but:
 
-Independent integration review N-05. This promotion gate did not run Unity.
+`DEDICATED_REPAIR_ROUTE=NOT_DEFINED`
+
+Classification: `NON-BLOCKING CONTRACT NOTE`
+
+Do not describe 0.110 m as accepted passage/player-body clearance.
+`ACTUAL_PLAYER_ROUTE_INTRUSION=NO`. Standing-zone separation only.
+
+### W-04 — Repair Face moving behavior
+
+Accepted scope:
+
+`CLOSED STATIC PRODUCTION POSE`
+
+Opening/sweep/moving collision unvalidated.
+
+Classification: `NON-BLOCKING CONTRACT LIMITATION`
+
+This promotion does not approve opening angle, opening animation, swept volume,
+moving collision, repair interaction timing, or repair gameplay/procedure.
+
+### W-05 — Unity / engine import for target canonical
+
+For exact target:
+
+`b940f515… / 68912b8b…`
+
+no separate Unity import smoke has yet been authorized/completed.
+
+Classification: `NON-BLOCKING WARN — UNITY IMPORT UNTESTED FOR THIS TARGET`
+
+Do not confuse this with the older successful Unity smoke for the previous
+canonical `be48b091…` / `eba529c0…`. This promotion gate did not run Unity.
 
 ---
 
@@ -291,7 +328,7 @@ Tracked current-state canonical identity records:
 |---|---|
 | `art/environment/sawmill/TLAW_REPAIR_FACE_01_DURABLE_PRODUCTION_ARTIFACTS_GIT_LFS_01.manifest.md` | **UPDATED** — current-state disposition overlay + table |
 | `art/environment/sawmill/TLAW_REPAIR_FACE_01_DURABLE_PRODUCTION_ARTIFACTS_GIT_LFS_01.report.md` | NOT updated — historical custody-gate report |
-| `art/environment/sawmill/TLAW_DURABLE_PRODUCTION_ARTIFACTS_GIT_LFS_01.manifest.md` | NOT updated — Compound Applicator historical custody/disposition; Repair Face overlay supersedes its active-canonical claim after merge of this PR |
+| `art/environment/sawmill/TLAW_DURABLE_PRODUCTION_ARTIFACTS_GIT_LFS_01.manifest.md` | **UPDATED** — current-state overlay only so it no longer claims `be48b091…` / `eba529c0…` remain active after this PR merges; historical Compound Applicator PR #195 section preserved |
 | imported worker/review reports listed in the Repair Face manifest | NOT updated — immutable evidence |
 
 Not in Git on `origin/main` (local untracked; not added by this gate):
@@ -320,7 +357,8 @@ External registry (outside repo):
 | file | change |
 |---|---|
 | `art/environment/sawmill/TLAW_REPAIR_FACE_01_DURABLE_PRODUCTION_ARTIFACTS_GIT_LFS_01.manifest.md` | disposition: `b940f515…` / `68912b8b…` become `CANONICAL PRODUCTION BASELINE — ACCEPT WITH WARN` conditional on merge; `be48b091…` / `eba529c0…` become `PREVIOUS CANONICAL BASELINE / PARENT` |
-| `art/environment/sawmill/TLAW_REPAIR_FACE_01_CANONICAL_PROMOTION_01.report.md` | this report (new) |
+| `art/environment/sawmill/TLAW_DURABLE_PRODUCTION_ARTIFACTS_GIT_LFS_01.manifest.md` | current-state overlay: after merge of this PR, `be48b091…` / `eba529c0…` are previous canonical parent; historical PR #195 section preserved |
+| `art/environment/sawmill/TLAW_REPAIR_FACE_01_CANONICAL_PROMOTION_01.report.md` | this report |
 | `C:\Projects\TLAW_Handoff\registry\ARTIFACT_REGISTRY.csv` | pending promotion PR / lineage; not a repo file |
 
 No production binary paths staged.

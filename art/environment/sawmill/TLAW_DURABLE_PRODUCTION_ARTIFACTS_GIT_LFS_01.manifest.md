@@ -6,13 +6,57 @@ Git/LFS custody manifest for the reviewed Compound Applicator production lineage
 
 Disposition remains controlled by identified owner / Control Center decisions.
 
-This file is the current-state authoritative custody + disposition record for
-these versioned production bytes. Historical custody-gate facts below are
-preserved. Imported immutable review reports are not altered.
+This file remains the Compound Applicator lineage custody record. Historical
+custody-gate and PR #195 promotion facts below are preserved and are not
+rewritten as though they were wrong. Imported immutable review reports are not
+altered.
+
+After merge of the Repair Face promotion PR, this file no longer claims that
+`be48b091…` / `eba529c0…` remain the effective active 3D canonical.
 
 ---
 
-## Current disposition — TLAW_COMPOUND_APPLICATOR_01_CANONICAL_PROMOTION_01
+## Current disposition — TLAW_REPAIR_FACE_01_CANONICAL_PROMOTION_01 (overlay)
+
+Owner gate: `TLAW_REPAIR_FACE_01_CANONICAL_PROMOTION_01`
+
+Promotion changeset branch: `task/TLAW-repair-face-canonical-promotion-01`
+
+Repository base: `origin/main` `e0e4073f10fae5058a0059d66c17ced5cc7b46f9` (PR #196 durable Repair Face artifact custody merge)
+
+`PROMOTION_IS_DISPOSITION_ONLY=YES`
+
+`PRODUCTION_BINARY_MUTATION=NO`
+
+`PROMOTION_EFFECTIVE_ON_MERGE_ONLY=YES`
+
+`INTEGRATED_CANDIDATE ≠ ACTIVE_CANONICAL UNTIL MERGE`
+
+Until merge of the Repair Face promotion PR, effective active canonical on
+`main` remains:
+
+- `.blend` `be48b0910205b2a6135a131e49d2b3f099b75e1cbccea449d4cd98639968527a`
+- scene-scoped GLB `eba529c0ebd04086d5fe4c4defb731e3580ca408a31e140f341a4da730a8cd65`
+
+Conditional on merge of the Repair Face promotion PR:
+
+| role | SHA-256 | disposition |
+|---|---|---|
+| new active canonical `.blend` | `b940f515e42795aaab785662067da1b39ef26226ddbc76410398faf4be683a5b` | **CANONICAL PRODUCTION BASELINE — ACCEPT WITH WARN** |
+| new active canonical scene-scoped GLB | `68912b8b8862daea523ba5d8532a63451de4cd1a6b0a3f0416160020d5090ca7` | **CANONICAL PRODUCTION BASELINE — ACCEPT WITH WARN** |
+| previous canonical `.blend` | `be48b0910205b2a6135a131e49d2b3f099b75e1cbccea449d4cd98639968527a` | **PREVIOUS CANONICAL BASELINE / PARENT** |
+| previous canonical scene-scoped GLB | `eba529c0ebd04086d5fe4c4defb731e3580ca408a31e140f341a4da730a8cd65` | **PREVIOUS CANONICAL BASELINE / PARENT** |
+
+`be48b091…` / `eba529c0…` are not deleted. They become previous canonical parent
+after merge only.
+
+The Compound Applicator promotion section below is **historical** (PR #195,
+merged). It records how `be48b091…` became canonical. It must not be read as
+claiming that pair remains active after the Repair Face promotion PR merges.
+
+---
+
+## Historical disposition — TLAW_COMPOUND_APPLICATOR_01_CANONICAL_PROMOTION_01
 
 Owner gate: `TLAW_COMPOUND_APPLICATOR_01_CANONICAL_PROMOTION_01`
 
