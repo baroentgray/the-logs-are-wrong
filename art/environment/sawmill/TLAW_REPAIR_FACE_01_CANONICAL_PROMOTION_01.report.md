@@ -26,6 +26,10 @@ RESULT=PASS WITH WARN
 OWNER_GATE_ID=TLAW_REPAIR_FACE_01_CANONICAL_PROMOTION_01
 BASE_MAIN_SHA=e0e4073f10fae5058a0059d66c17ced5cc7b46f9
 BRANCH=task/TLAW-repair-face-canonical-promotion-01
+PROMOTION_RECORD_COMMIT=582251c1b31461e562af46027742a1fcfe27fc4d
+COMMIT_SHA=582251c1b31461e562af46027742a1fcfe27fc4d
+PR_NUMBER=197
+PR_URL=https://github.com/baroentgray/the-logs-are-wrong/pull/197
 PREVIOUS_CANONICAL_BLEND_SHA256=be48b0910205b2a6135a131e49d2b3f099b75e1cbccea449d4cd98639968527a
 PREVIOUS_CANONICAL_GLB_SHA256=eba529c0ebd04086d5fe4c4defb731e3580ca408a31e140f341a4da730a8cd65
 TARGET_CANONICAL_BLEND_SHA256=b940f515e42795aaab785662067da1b39ef26226ddbc76410398faf4be683a5b
@@ -33,15 +37,19 @@ TARGET_CANONICAL_GLB_SHA256=68912b8b8862daea523ba5d8532a63451de4cd1a6b0a3f041616
 PRODUCTION_BINARY_MUTATION=NO
 PROMOTION_ELIGIBILITY=CONFIRMED
 PROMOTION_ELIGIBLE=YES
+LOCAL_VERIFY=PASS
+GITHUB_CI=SUCCESS
 PR_MERGED=NO
 EFFECTIVE_ACTIVE_CANONICAL=be48b0910205b2a6135a131e49d2b3f099b75e1cbccea449d4cd98639968527a
 PROMOTION_CHANGESET_READY=YES
 PROMOTION_PERFORMED=NO
 ```
 
-Commit SHA, PR number/URL, local verify, and GitHub CI are recorded after commit
-and PR on this same branch. A follow-up docs commit may record those identities;
-it does not change production bytes.
+`COMMIT_SHA` is the disposition-content commit. This follow-up docs commit on the
+same PR records these identities; it does not change production bytes.
+
+GitHub Repository verification on `582251c1…`: SUCCESS
+https://github.com/baroentgray/the-logs-are-wrong/actions/runs/35334179269/job/105565105538
 
 ---
 
@@ -343,7 +351,16 @@ merge.
 
 ## 13 — Git / PR / verify
 
-Filled after commit + PR on this same branch.
+| field | value |
+|---|---|
+| BRANCH | `task/TLAW-repair-face-canonical-promotion-01` |
+| BASE_MAIN_SHA | `e0e4073f10fae5058a0059d66c17ced5cc7b46f9` |
+| COMMIT_SHA | `582251c1b31461e562af46027742a1fcfe27fc4d` |
+| PR_NUMBER | 197 |
+| PR_URL | https://github.com/baroentgray/the-logs-are-wrong/pull/197 |
+| PR_MERGED | NO |
+| LOCAL_VERIFY | PASS (`git diff --check` + `Tlaw.Verify` on `582251c1…`) |
+| GITHUB_CI | SUCCESS on `582251c1…` (run `35334179269`) |
 
 Suggested commit message:
 
